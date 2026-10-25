@@ -154,10 +154,29 @@ def _load_system_prompt() -> str:
 
 _CTRL_RE = re.compile(r"<ctrl\d+>", re.IGNORECASE)
 
-def _clean_transcript(text: str) -> str:    
+def _clean_transcript(text: str) -> str:
     text = _CTRL_RE.sub("", text)
     text = re.sub(r"[\x00-\x08\x0b-\x1f]", "", text)
     return text.strip()
+
+
+def _exception_summary(error: BaseException) -> str:
+    """Flatten TaskGroup errors without printing a duplicate exception tree."""
+    parts: list[str] = []
+
+    def collect(item: BaseException) -> None:
+        nested = getattr(item, "exceptions", None)
+        if isinstance(nested, tuple):
+            for child in nested:
+                if isinstance(child, BaseException):
+                    collect(child)
+            return
+        text = f"{type(item).__name__}: {item}".strip()
+        if text not in parts:
+            parts.append(text)
+
+    collect(error)
+    return " | ".join(parts)[:1500] or type(error).__name__
 
 TOOL_DECLARATIONS = [
     {
@@ -1862,8 +1881,10 @@ class EdithLive:
                         # events must continue while a tool is running or speaking.
                         self._tool_call_queue.put_nowait(response.tool_call.function_calls)
         except Exception as e:
-            print(f"[Assistant] ❌ Recv: {e}")
-            traceback.print_exc()
+            # The session owner converts this into one concise reconnect event.
+            # Printing here as well previously produced the same 1011 traceback
+            # twice (once here and once in the TaskGroup exception tree).
+            print(f"[Assistant] Live receive ended: {type(e).__name__}: {e}")
             raise
 
     async def _process_tool_calls(self):
@@ -2385,7 +2406,7 @@ class EdithLive:
                 # externally, which `except Exception` would miss, letting the
                 # exception escape the while-loop and causing asyncio.run() to
                 # start shutdown — resulting in "executor after shutdown" errors).
-                err_str = str(e)
+                err_str = _exception_summary(e)
                 if self._reconfigure_reason:
                     reason = self._reconfigure_reason
                     self._reconfigure_reason = None
@@ -2395,8 +2416,16 @@ class EdithLive:
                     self.ui.write_log(f"SYS: Applying {reason}; opening a fresh Gemini Live session.")
                     continue
 
-                print(f"[Assistant] Error ({type(e).__name__}): {e}")
-                traceback.print_exc()
+                transient_live_disconnect = any(token in err_str.casefold() for token in (
+                    "1011", "connectionclosed", "internal error occurred",
+                    "websocket", "connection closed",
+                ))
+                if transient_live_disconnect:
+                    print(f"[Assistant] Live session disconnected: {err_str}")
+                    self.ui.write_log("NET: Gemini Live session disconnected; reconnecting automatically.")
+                else:
+                    print(f"[Assistant] Error ({type(e).__name__}): {err_str}")
+                    traceback.print_exc()
 
                 # Enhanced audio features rejected by the server (preview API
                 # drift) — drop them and reconnect with the plain config.
@@ -2431,6 +2460,7 @@ class EdithLive:
                 is_net_err = any(k in err_str for k in (
                     "TimeoutError", "timed out", "getaddrinfo", "CancelledError",
                     "ConnectionRefusedError", "OSError", "Cannot connect",
+                    "1011", "ConnectionClosed", "Internal error occurred", "WebSocket",
                 ))
                 if is_net_err:
                     _conn_backoff = retry_delay(getattr(self, "_conn_backoff", 0))

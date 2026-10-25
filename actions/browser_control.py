@@ -504,6 +504,16 @@ class _BrowserSession:
                 pass
         self._context = self._page = None
 
+    async def _discard_context(self):
+        """Forget a browser context closed outside EDITH but keep Playwright alive."""
+        context = self._context
+        self._context = self._page = None
+        if context:
+            try:
+                await context.close()
+            except Exception:
+                pass
+
     async def _adopt_page(self) -> Page:
         """
         launch_persistent_context zaten bir başlangıç sekmesi açar.
@@ -627,8 +637,17 @@ class _BrowserSession:
 
     async def _get_page(self) -> Page:
         await self._launch()
-        # If somehow page got closed, open a fresh one
-        if self._page is None or self._page.is_closed():
+        # A user can close the automation window at any time.  Playwright then
+        # raises "Target page, context or browser has been closed" on every
+        # later action unless the stale context is explicitly discarded.
+        try:
+            closed = self._page is None or self._page.is_closed()
+            if closed:
+                self._page = await self._context.new_page()
+                await asyncio.sleep(0.2)
+        except Exception:
+            await self._discard_context()
+            await self._launch()
             self._page = await self._context.new_page()
             await asyncio.sleep(0.2)
         return self._page
@@ -647,8 +666,13 @@ class _BrowserSession:
             except PlaywrightTimeout:
                 pass   # page may have partially loaded — check URL below
             except Exception as e:
-                print(f"[Browser] goto exception (non-fatal): {e}")
-            return p.url
+                print(f"[Browser] goto failed: {e}")
+                return ""
+            try:
+                return p.url
+            except Exception as e:
+                print(f"[Browser] navigation context closed: {e}")
+                return ""
 
         result_url = await _do_goto(page)
 

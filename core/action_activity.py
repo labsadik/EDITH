@@ -161,6 +161,7 @@ def activity_outcome(result: object) -> str:
         "element not found", "not found on screen", "unsupported operating system",
         "access denied", "path not found", "file not found", "source not found",
         "not a directory", "cancelled by user", "nothing was executed",
+        "context or browser has been closed", "browser context closed",
     )
     if any(token in text for token in failures):
         return "error"
