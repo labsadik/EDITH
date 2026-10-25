@@ -91,6 +91,7 @@ from core.live_audio import response_pcm
 from core.execution import SERVICE as EXECUTION, configure_execution, run_code_tool
 from core.device_tools import DeviceToolService, format_device_result
 from core.latency_metrics import LatencyMetrics
+from core.reconnect_policy import retry_delay
 from core.secrets import get_gemini_api_key
 from core.audio_meter          import pcm16_level
 from core.product_identity import PRODUCT_IDENTITY
@@ -2415,6 +2416,9 @@ class EdithLive:
                     self._pending_text_started_at = None
 
                     print("[Assistant] Connected.")
+                    # A healthy connection starts a fresh retry sequence. In
+                    # particular, do not carry an old 60-second delay forward.
+                    self._conn_backoff = 0
                     live_connect_ms = round((time.perf_counter() - connect_started_at) * 1000)
                     self._latency_metrics.record("live_connect", live_connect_ms)
                     self.ui.write_log(
@@ -2453,6 +2457,10 @@ class EdithLive:
                         self._briefing_sent = True
                         tg.create_task(self._send_startup_briefing())
 
+            except asyncio.CancelledError:
+                # asyncio.run() shutdown must not be swallowed by the broad
+                # TaskGroup error handler and turned into another connection.
+                raise
             except KeyboardInterrupt:
                 raise
             except SystemExit:
@@ -2512,7 +2520,7 @@ class EdithLive:
                     "ConnectionRefusedError", "OSError", "Cannot connect",
                 ))
                 if is_net_err:
-                    _conn_backoff = min(getattr(self, "_conn_backoff", 3) * 2, 60)
+                    _conn_backoff = retry_delay(getattr(self, "_conn_backoff", 0))
                     self._conn_backoff = _conn_backoff
                     self.ui.write_log(
                         f"NET: Bağlantı kurulamadı — {_conn_backoff}s sonra tekrar deneniyor. "
@@ -2534,7 +2542,10 @@ class EdithLive:
             if self._dashboard:
                 await self._dashboard.broadcast({"type": "status", "state": "sleeping"})
 
-            delay = getattr(self, "_conn_backoff", 3)
+            # A clean close or an explicit reset also needs a nonzero pause;
+            # otherwise a closing transport can spin the connect loop.
+            delay = getattr(self, "_conn_backoff", 0) or 3
+            self._latency_metrics.record("live_reconnect_wait", delay * 1000)
             print(f"[Assistant] Reconnecting in {delay}s...")
             await asyncio.sleep(delay)
 

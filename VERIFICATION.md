@@ -53,7 +53,9 @@ Additional completion gates from the staged plan:
   OS permission and hardware evidence.
 - Performance: `tests/test_latency_metrics.py` validates aggregation, while
   the read-only `performance_metrics` tool reports local p50/p95 observations.
-  There is no universal subsecond guarantee; record target-device values.
+  Reconnect regression tests cover zero-delay recovery, bounded exponential
+  backoff and cancellation. There is no universal subsecond guarantee; record
+  target-device values and retry observations.
 - Third-party security tooling and arbitrary vehicle/device takeover are not
   integrated or certified by this branch. Only documented local OS capabilities
   have been wired into the device bridge.
