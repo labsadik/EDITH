@@ -89,6 +89,7 @@ from core.realtime_audio      import enqueue_latest_audio
 from core.narration_audio     import SpeechBuffer, SpeechPlayer
 from core.live_audio import response_pcm
 from core.execution import SERVICE as EXECUTION, configure_execution, run_code_tool
+from core.device_tools import DeviceToolService, format_device_result
 from core.secrets import get_gemini_api_key
 from core.audio_meter          import pcm16_level
 from core.product_identity import PRODUCT_IDENTITY
@@ -252,6 +253,37 @@ TOOL_DECLARATIONS = [
             "type": "OBJECT",
             "properties": {},
         }
+    },
+    {
+        "name": "platform_system",
+        "description": (
+            "Use only for local-device diagnostics or a direct local OS control request. "
+            "Read-only operations: system_info, telemetry, network_info, process_list, "
+            "window_list, installed_apps, capabilities, theme. Controls require the user's "
+            "local confirmation: process_kill, app_launch, volume, brightness, power. "
+            "This is not a network scanner, remote access tool, or command shell."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "operation": {
+                    "type": "STRING",
+                    "enum": [
+                        "system_info", "telemetry", "network_info", "process_list",
+                        "window_list", "installed_apps", "capabilities", "theme",
+                        "process_kill", "app_launch", "volume", "brightness", "power",
+                    ],
+                },
+                "arguments": {
+                    "type": "OBJECT",
+                    "description": (
+                        "Only as needed: process_kill={pid}; app_launch={app}; "
+                        "volume/brightness={value 0..100}; power={action sleep|restart|shutdown}."
+                    ),
+                },
+            },
+            "required": ["operation"],
+        },
     },
     {
         "name": "weather_report",
@@ -668,6 +700,9 @@ class EdithLive:
         _load_action_modules()
         self.ui             = ui
         configure_execution(ui)
+        # Reuse execution's broker/audit so device tools cannot bypass the
+        # dispatcher confirmation, activity receipts or global interrupt.
+        self._device_tools = DeviceToolService(EXECUTION.controller)
         self._asst_name     = "EDITH"
         try:
             _saved_cfg = json.loads(API_CONFIG_PATH.read_text(encoding="utf-8"))
@@ -1449,6 +1484,8 @@ class EdithLive:
             approved_ops = {name}
             if name in {"shell_execute", "code_helper", "dev_agent", "desktop_control", "file_processor"}:
                 approved_ops.add("shell")
+            if name == "platform_system":
+                approved_ops.add(str(args.get("operation") or ""))
             approval_scope = EXECUTION.broker.approved_context(*approved_ops)
             approval_scope.__enter__()
             if args.get("_confirmation_window_target"):
@@ -1611,6 +1648,10 @@ class EdithLive:
             elif name == "system_status":
                 r = await loop.run_in_executor(None, get_system_status)
                 result = str(r)
+
+            elif name == "platform_system":
+                receipt = await loop.run_in_executor(None, self._device_tools.execute, args)
+                result = format_device_result(receipt)
 
             elif name == "manage_monitor":
                 action = args.get("action", "").lower().strip()
