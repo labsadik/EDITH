@@ -2025,8 +2025,8 @@ class CustomizeOverlay(QWidget):
 
     def _cancel(self):
         # Önizleme uygulandıysa açılıştaki renge geri dön
-        if getattr(self, "on_theme_preview", None) and self._sel_theme != self._initial_theme:
-            self.on_theme_preview(self._initial_theme)
+        if getattr(self, "on_theme_preview", None):
+            self.on_theme_preview(None)
         if self.on_preview and self._sel_color != self._initial_color:
             self.on_preview(self._initial_color)
         self.hide()
@@ -2514,6 +2514,7 @@ class MainWindow(QMainWindow):
         if self._theme_preference not in {"system", "dark", "light"}:
             self._theme_preference = "system"
         self._system_theme = "dark"  # watcher replaces this without blocking startup
+        self._theme_preview_preference: str | None = None
         self._assistant_name: str = "EDITH"
         _display = _display_assistant_name(self._assistant_name)
         self._display_name = _display
@@ -2724,12 +2725,14 @@ class MainWindow(QMainWindow):
         apply_ui_theme(self._resolved_theme(preference), self._ui_accent)
         retheme_all_widgets(old, current_palette())
 
-    def _preview_theme_preference(self, preference: str) -> None:
+    def _preview_theme_preference(self, preference: str | None) -> None:
+        self._theme_preview_preference = preference
         self._render_theme(preference)
 
     def _save_theme_preference(self, preference: str) -> None:
         preference = str(preference or "system").lower()
         self._theme_preference = preference if preference in {"system", "dark", "light"} else "system"
+        self._theme_preview_preference = None
         self._render_theme()
         try:
             data = _read_full_config()
@@ -2742,8 +2745,11 @@ class MainWindow(QMainWindow):
 
     def _on_system_theme_changed(self, theme: str) -> None:
         self._system_theme = normalise_theme(theme)
-        if self._theme_preference == "system":
-            self._render_theme()
+        active = self._theme_preview_preference
+        if active is None:
+            active = self._theme_preference
+        if active == "system":
+            self._render_theme(active)
 
     def closeEvent(self, event):
         if getattr(self, "_theme_monitor", None):
@@ -4358,8 +4364,8 @@ class MainWindow(QMainWindow):
 
     def _open_customize(self):
         cfg = _read_full_config()
-        if self._customize_overlay:
-            self._customize_overlay.hide()
+        if self._customize_overlay and self._customize_overlay.isVisible():
+            self._customize_overlay._cancel()
         cw = self.centralWidget()
         ov = CustomizeOverlay(
             self._display_name,

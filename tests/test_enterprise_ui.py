@@ -123,8 +123,11 @@ class WorkspaceTests(unittest.TestCase):
         panel._theme_picker.setCurrentIndex(2)  # Light
         self.app.processEvents()
         self.assertEqual(self.ui.C.BG, self.ui._THEME_DEFAULTS["light"]["BG"])
+        self.window._on_system_theme_changed("dark")
+        self.assertEqual(self.ui.C.BG, self.ui._THEME_DEFAULTS["light"]["BG"])
         panel._cancel()
         self.assertEqual(self.window._theme_preference, "system")
+        self.assertIsNone(self.window._theme_preview_preference)
         self.assertEqual({k:v.lower() for k,v in original.items()},
                          {k:v.lower() for k,v in self.ui.current_palette().items()})
 
