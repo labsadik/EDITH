@@ -175,3 +175,20 @@ exposes it. Each result is bounded and has a documented unsupported fallback.
 The next unit will add dedicated adapters only for hardware with a documented
 local control API; capability discovery determines which adapter can run.
 
+## Active MCP plugin expansion
+
+The HexStrike or exploit-tool expansion is deferred by the owner and is not part
+of the active branch plan.  The current replacement is a standards-based MCP
+plugin host.  Each server is declared in `config/mcp_servers.json`, has an
+independent Plugins-panel ON/OFF toggle, and is never advertised to the model
+while OFF.  The host accepts only explicit, owner-configured stdio commands; it
+does not execute a command supplied in an assistant request.
+
+The starter catalog contains Gmail, GitHub and filesystem entries, but commands
+are deliberately blank until the owner selects and installs a trusted MCP
+server.  A server exposes its own tools through `tools/list`; EDITH invokes only
+those declared tool names.  If that server reports a login/OAuth requirement,
+EDITH opens the configured browser URL and retains the tool request for the
+`resume` action after login.  Fully automatic OAuth callback completion is
+server-specific work and is not claimed by the generic host.
+

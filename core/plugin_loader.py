@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
+import json
 import re
 import sys
 import traceback
@@ -32,6 +33,9 @@ class PluginRecord:
     file: str = ""
     valid: bool = False
     error: str = ""
+    kind: str = "python"
+    enabled_check: Optional[Callable[[], bool]] = None
+    set_enabled: Optional[Callable[[bool], bool]] = None
 
 
 class PluginRegistry:
@@ -41,10 +45,14 @@ class PluginRegistry:
         self._logger = logger
 
     # -- called by main.py at LiveConnectConfig build time --
+    @staticmethod
+    def _enabled(rec: PluginRecord) -> bool:
+        return bool(get_plugin_enabled(rec.name) and (rec.enabled_check is None or rec.enabled_check()))
+
     def get_tool_declarations(self) -> list[dict]:
         decls = []
         for name, rec in self._plugins.items():
-            if get_plugin_enabled(name):
+            if self._enabled(rec):
                 decls.append({
                     "name": rec.name,
                     "description": rec.description,
@@ -60,7 +68,7 @@ class PluginRegistry:
         rec = self._plugins.get(name)
         if rec is None or not rec.valid:
             return f"Plugin '{name}' is not available."
-        if not get_plugin_enabled(name):
+        if not self._enabled(rec):
             return f"The '{name}' plugin is currently disabled."
         try:
             return _call_run(rec.run, parameters, player, session_memory) or "Done."
@@ -79,7 +87,9 @@ class PluginRegistry:
                 "file": rec.file,
                 "valid": rec.valid,
                 "error": rec.error,
-                "enabled": get_plugin_enabled(rec.name) if rec.valid else False,
+                "enabled": self._enabled(rec) if rec.valid else False,
+                "kind": rec.kind,
+                "toggle": rec.set_enabled,
             })
         return out
 
@@ -180,6 +190,63 @@ def discover_plugins(plugins_dir: Path, core_tool_names: set[str],
             logger(f"Plugin loaded: {rec.name} ({path.name})")
         else:
             logger(f"Plugin rejected: {path.name} — {rec.error}")
+
+    # MCP servers use the same tool and toggle UI as Python plugins. A server
+    # command comes only from the owner's local config, never from model text.
+    try:
+        from core.mcp_registry import MCPRegistry, MCPProtocolError
+        mcp_registry = MCPRegistry(logger=logger)
+        for spec in mcp_registry.specs():
+            tool_name = spec.plugin_name
+            if tool_name in core_tool_names or tool_name in valid:
+                rec = PluginRecord(name=tool_name, file="config/mcp_servers.json",
+                                   error=f"Name '{tool_name}' collides with an existing tool.")
+            else:
+                def _enabled(server_id=spec.id, registry=mcp_registry):
+                    item = registry.spec(server_id)
+                    return bool(item and item.enabled)
+
+                def _set_enabled(value, server_id=spec.id, registry=mcp_registry):
+                    return registry.set_enabled(server_id, value)
+
+                def _run(parameters, player=None, session_memory=None, server_id=spec.id, registry=mcp_registry):
+                    action = str((parameters or {}).get("action") or "list_tools").strip().lower()
+                    try:
+                        if action == "list_tools":
+                            return json.dumps({"server": server_id, "tools": registry.list_tools(server_id)}, ensure_ascii=False)[:18000]
+                        if action == "resume":
+                            return json.dumps(registry.resume(server_id), ensure_ascii=False, default=str)[:18000]
+                        if action == "call":
+                            tool = str((parameters or {}).get("tool") or "").strip()
+                            arguments = (parameters or {}).get("arguments") or {}
+                            if not tool or not isinstance(arguments, dict):
+                                return "Specify a MCP tool name and an object of arguments."
+                            return json.dumps(registry.call(server_id, tool, arguments), ensure_ascii=False, default=str)[:18000]
+                        return "MCP action must be list_tools, call, or resume."
+                    except MCPProtocolError as exc:
+                        return str(exc)
+
+                rec = PluginRecord(
+                    name=tool_name, description=(
+                        f"{spec.description} Use action=list_tools first, then action=call with a discovered "
+                        "tool name and object arguments. Use action=resume after an owner completes login."
+                    ),
+                    parameters={"type": "OBJECT", "properties": {
+                        "action": {"type": "STRING", "enum": ["list_tools", "call", "resume"]},
+                        "tool": {"type": "STRING"},
+                        "arguments": {"type": "OBJECT"},
+                    }, "required": ["action"]},
+                    run=_run, file="config/mcp_servers.json", valid=True, kind="mcp",
+                    enabled_check=_enabled, set_enabled=_set_enabled,
+                )
+            all_records.append(rec)
+            if rec.valid:
+                valid[rec.name] = rec
+                logger(f"MCP plugin discovered: {rec.name}")
+            else:
+                logger(f"MCP plugin rejected: {rec.error}")
+    except Exception as exc:
+        logger(f"MCP catalog unavailable: {type(exc).__name__}: {exc}")
 
     registry = PluginRegistry(valid, logger)
     registry._all_records = all_records

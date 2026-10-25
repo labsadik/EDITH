@@ -1,0 +1,28 @@
+{
+  "servers": [
+    {
+      "id": "gmail",
+      "name": "Gmail MCP",
+      "description": "Use the owner's configured Gmail MCP server to search, draft, or send mail.",
+      "command": [],
+      "enabled": false,
+      "login_url": "https://accounts.google.com/"
+    },
+    {
+      "id": "github",
+      "name": "GitHub MCP",
+      "description": "Use the owner's configured GitHub MCP server for repository work.",
+      "command": [],
+      "enabled": false,
+      "login_url": "https://github.com/login"
+    },
+    {
+      "id": "filesystem",
+      "name": "Filesystem MCP",
+      "description": "Use the owner's configured filesystem MCP server for its explicitly configured workspace.",
+      "command": [],
+      "enabled": false,
+      "login_url": ""
+    }
+  ]
+}

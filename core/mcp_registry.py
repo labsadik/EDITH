@@ -1,0 +1,279 @@
+"""Optional MCP server catalog and a small, dependency-free stdio MCP client.
+
+Server commands live in ``config/mcp_servers.json`` and are never supplied by
+model text. Each configured server becomes an independently toggleable plugin.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+from pathlib import Path
+import queue
+import subprocess
+import sys
+import threading
+import time
+from typing import Any, Callable
+import webbrowser
+
+
+ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_CONFIG_PATH = ROOT / "config" / "mcp_servers.json"
+PROTOCOL_VERSION = "2024-11-05"
+
+DEFAULT_SERVERS = (
+    {
+        "id": "gmail",
+        "name": "Gmail MCP",
+        "description": "Use the owner's configured Gmail MCP server to search, draft, or send mail.",
+        "command": [],
+        "enabled": False,
+        "login_url": "https://accounts.google.com/",
+    },
+    {
+        "id": "github",
+        "name": "GitHub MCP",
+        "description": "Use the owner's configured GitHub MCP server for repository work.",
+        "command": [],
+        "enabled": False,
+        "login_url": "https://github.com/login",
+    },
+    {
+        "id": "filesystem",
+        "name": "Filesystem MCP",
+        "description": "Use the owner's configured filesystem MCP server for its explicitly configured workspace.",
+        "command": [],
+        "enabled": False,
+        "login_url": "",
+    },
+)
+
+
+@dataclass(frozen=True)
+class MCPServerSpec:
+    id: str
+    name: str
+    description: str
+    command: tuple[str, ...]
+    enabled: bool
+    login_url: str = ""
+    timeout_seconds: float = 25.0
+
+    @property
+    def plugin_name(self) -> str:
+        return "mcp_" + self.id
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.command)
+
+
+class MCPProtocolError(RuntimeError):
+    def __init__(self, message: str, *, data: Any = None):
+        super().__init__(message)
+        self.data = data
+
+
+class MCPStdioClient:
+    """A one-request stdio client. New processes keep plugin calls isolated."""
+
+    def __init__(self, spec: MCPServerSpec):
+        self.spec = spec
+        self.process: subprocess.Popen[str] | None = None
+        self._lines: queue.Queue[str | None] = queue.Queue()
+        self._next_id = 0
+
+    def __enter__(self):
+        if not self.spec.configured:
+            raise MCPProtocolError(
+                f"{self.spec.name} has no command configured. Add its trusted server command to config/mcp_servers.json."
+            )
+        self.process = subprocess.Popen(
+            list(self.spec.command), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, encoding="utf-8", bufsize=1,
+        )
+        threading.Thread(target=self._read_stdout, daemon=True, name=f"edith-mcp-{self.spec.id}").start()
+        self.request("initialize", {
+            "protocolVersion": PROTOCOL_VERSION,
+            "capabilities": {},
+            "clientInfo": {"name": "EDITH", "version": "1.0"},
+        })
+        self.notify("notifications/initialized", {})
+        return self
+
+    def __exit__(self, *_):
+        if self.process is None:
+            return
+        try:
+            if self.process.poll() is None:
+                self.process.terminate()
+                self.process.wait(timeout=1)
+        except Exception:
+            try:
+                self.process.kill()
+            except Exception:
+                pass
+        finally:
+            # Popen owns three file objects.  Explicitly closing them avoids
+            # descriptor accumulation when an assistant makes several MCP
+            # requests in one session.
+            for stream in (self.process.stdin, self.process.stdout, self.process.stderr):
+                try:
+                    if stream is not None:
+                        stream.close()
+                except OSError:
+                    pass
+
+    def _read_stdout(self) -> None:
+        assert self.process is not None and self.process.stdout is not None
+        for line in self.process.stdout:
+            self._lines.put(line)
+        self._lines.put(None)
+
+    def _send(self, payload: dict) -> None:
+        if not self.process or not self.process.stdin:
+            raise MCPProtocolError("MCP server is not running")
+        self.process.stdin.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
+        self.process.stdin.flush()
+
+    def notify(self, method: str, params: dict) -> None:
+        self._send({"jsonrpc": "2.0", "method": method, "params": params})
+
+    def request(self, method: str, params: dict) -> Any:
+        self._next_id += 1
+        request_id = self._next_id
+        self._send({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
+        deadline = time.monotonic() + max(1.0, self.spec.timeout_seconds)
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise MCPProtocolError(f"{self.spec.name} did not respond within {self.spec.timeout_seconds:g} seconds")
+            try:
+                line = self._lines.get(timeout=remaining)
+            except queue.Empty:
+                continue
+            if line is None:
+                raise MCPProtocolError(f"{self.spec.name} exited before responding")
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if message.get("id") != request_id:
+                continue
+            if "error" in message:
+                error = message["error"] or {}
+                raise MCPProtocolError(str(error.get("message") or "MCP request failed"), data=error.get("data"))
+            return message.get("result")
+
+    def list_tools(self) -> list[dict]:
+        value = self.request("tools/list", {}) or {}
+        tools = value.get("tools", []) if isinstance(value, dict) else []
+        return [tool for tool in tools if isinstance(tool, dict)][:100]
+
+    def call_tool(self, tool: str, arguments: dict) -> Any:
+        return self.request("tools/call", {"name": tool, "arguments": arguments})
+
+
+class MCPRegistry:
+    def __init__(self, config_path: Path = DEFAULT_CONFIG_PATH, logger: Callable[[str], None] = print):
+        self.config_path = Path(config_path)
+        self.logger = logger
+        self._pending: dict[str, tuple[str, dict]] = {}
+
+    def _read_config(self) -> dict:
+        if not self.config_path.exists():
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+            self.config_path.write_text(json.dumps({"servers": list(DEFAULT_SERVERS)}, indent=2) + "\n", encoding="utf-8")
+        try:
+            data = json.loads(self.config_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {"servers": []}
+        return data if isinstance(data, dict) else {"servers": []}
+
+    def specs(self) -> list[MCPServerSpec]:
+        data = self._read_config()
+        raw = data.get("servers", [])
+        if not isinstance(raw, list):
+            return []
+        seen: set[str] = set()
+        result = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            server_id = str(item.get("id") or "").strip().lower().replace("-", "_")
+            if not server_id or not server_id.replace("_", "").isalnum() or server_id in seen:
+                continue
+            command = item.get("command") or []
+            if isinstance(command, str):
+                command = [command]
+            if not isinstance(command, list) or not all(isinstance(part, str) and part.strip() for part in command):
+                command = []
+            try:
+                timeout_seconds = min(120.0, max(3.0, float(item.get("timeout_seconds", 25))))
+            except (TypeError, ValueError):
+                timeout_seconds = 25.0
+            seen.add(server_id)
+            result.append(MCPServerSpec(
+                id=server_id,
+                name=str(item.get("name") or server_id),
+                description=str(item.get("description") or f"MCP server: {server_id}"),
+                command=tuple(command), enabled=bool(item.get("enabled", False)),
+                login_url=str(item.get("login_url") or ""),
+                timeout_seconds=timeout_seconds,
+            ))
+        return result
+
+    def spec(self, server_id: str) -> MCPServerSpec | None:
+        return next((item for item in self.specs() if item.id == server_id), None)
+
+    def set_enabled(self, server_id: str, enabled: bool) -> bool:
+        data = self._read_config()
+        servers = data.get("servers", [])
+        for item in servers if isinstance(servers, list) else []:
+            if isinstance(item, dict) and str(item.get("id") or "").strip().lower().replace("-", "_") == server_id:
+                item["enabled"] = bool(enabled)
+                self.config_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+                return True
+        return False
+
+    def _require_enabled(self, server_id: str) -> MCPServerSpec:
+        spec = self.spec(server_id)
+        if spec is None:
+            raise MCPProtocolError(f"Unknown MCP server '{server_id}'.")
+        if not spec.enabled:
+            raise MCPProtocolError(f"{spec.name} is OFF. Enable its toggle in Plugins first.")
+        return spec
+
+    def list_tools(self, server_id: str) -> list[dict]:
+        spec = self._require_enabled(server_id)
+        with MCPStdioClient(spec) as client:
+            return client.list_tools()
+
+    def call(self, server_id: str, tool: str, arguments: dict) -> Any:
+        spec = self._require_enabled(server_id)
+        try:
+            with MCPStdioClient(spec) as client:
+                return client.call_tool(tool, arguments)
+        except MCPProtocolError as exc:
+            text = str(exc).lower()
+            if "auth" not in text and "login" not in text and "oauth" not in text:
+                raise
+            self._pending[server_id] = (tool, dict(arguments))
+            if spec.login_url:
+                webbrowser.open(spec.login_url)
+            raise MCPProtocolError(
+                f"{spec.name} requires login. The browser login page was opened; use action=resume after login.",
+                data={"login_url": spec.login_url},
+            ) from exc
+
+    def resume(self, server_id: str) -> Any:
+        pending = self._pending.get(server_id)
+        if pending is None:
+            raise MCPProtocolError(f"No pending login task for MCP server '{server_id}'.")
+        tool, arguments = pending
+        value = self.call(server_id, tool, arguments)
+        self._pending.pop(server_id, None)
+        return value
+
+
+__all__ = ["MCPRegistry", "MCPServerSpec", "MCPStdioClient", "MCPProtocolError"]

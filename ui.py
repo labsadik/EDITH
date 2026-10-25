@@ -2230,7 +2230,7 @@ class PluginManagerOverlay(QWidget):
         else:
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self._style_toggle(btn, p["enabled"])
-            btn.clicked.connect(lambda _, name=p["name"], b=btn: self._toggle(name, b))
+            btn.clicked.connect(lambda _, record=p, b=btn: self._toggle(record, b))
         row.addWidget(btn)
         return row
 
@@ -2254,10 +2254,17 @@ class PluginManagerOverlay(QWidget):
                 QPushButton:hover {{ color: {C.TEXT}; border-color: {C.BORDER_B}; }}
             """)
 
-    def _toggle(self, name: str, btn: QPushButton):
+    def _toggle(self, record: dict, btn: QPushButton):
         from memory.config_manager import get_plugin_enabled, save_plugin_enabled
-        new_val = not get_plugin_enabled(name)
-        save_plugin_enabled(name, new_val)
+        toggle = record.get("toggle")
+        if callable(toggle):
+            new_val = not bool(record.get("enabled"))
+            toggle(new_val)
+        else:
+            name = record["name"]
+            new_val = not get_plugin_enabled(name)
+            save_plugin_enabled(name, new_val)
+        record["enabled"] = new_val
         self._style_toggle(btn, new_val)
 
 
