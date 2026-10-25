@@ -20,8 +20,9 @@ not certify physical hardware. Keep the owner's reference video and layout.
 | 17. Memory durability and retrieval | Implemented | The bounded JSON store now uses lock-protected read/modify/write, same-directory atomic replacement and a last-valid backup. Corrupt-primary recovery, legacy-data migration, bounded lexical retrieval and restart-safe session summaries are covered by regressions. Existing monitor and push-up tools now use this shared persistence path. |
 | 18. Device tool bridge | Implemented (curated local scope) | `platform_system` now reaches the existing OS controller through the shared permission broker, audit stream and interrupt-aware process ownership. It supports bounded local diagnostics plus explicitly confirmed process/app/volume/brightness/power controls. It deliberately excludes generic shell execution, binary screen capture, network scanning, remote access and exploit/security tooling. Unsupported OS functions return structured results. |
 | 19. Performance/resilience observability | Implemented (measurement scope) | Bounded local metrics now record Live-connect, text-to-first-audio and per-tool completion duration, with p50/p95/range exposed by the read-only `performance_metrics` tool. Existing reconnect/backoff, no-replay behavior and bounded queues remain in force. These measurements are diagnostics, not a sub-second guarantee; target-device/network p50/p95 evidence is still required for release. |
-| 20. Release verification | Pending | Need target-device evidence, Windows/macOS/Linux audio and OS-permission checks, plus the full acceptance report. |
+| 20. Release verification | Automated gate expanded; device gate pending | `VERIFICATION.md` records each acceptance item and its limits. CI now exercises recent memory/device/latency regressions on Windows, macOS and Linux in addition to existing tests. Real audio, permissions, window managers, provider keys and hardware on target devices still need owner evidence. |
 | 21. Main merge | Not authorized | Owner tests branch first, then explicitly requests merge |
 
-The next implementation task is Step 18 device/isolated-tool integration. Do not
-repeat completed primitives or call later stages complete simply because a prototype exists.
+The next gate is target-device validation in `VERIFICATION.md` and `TESTING.md`,
+followed by fixes informed by those results. Main merge requires the owner's
+explicit instruction after branch testing.

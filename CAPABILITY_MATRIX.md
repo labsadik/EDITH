@@ -1,8 +1,8 @@
 # Platform capability matrix
 
 Targets: Windows 10/11, macOS 13+, Ubuntu 22.04+; compatible Linux distributions
-can use the same adapters. This matrix is a plan/capability contract, not proof of
-physical testing. Mocked tests and actual local results are recorded in VERIFICATION.md.
+can use the same adapters. This matrix describes implemented paths and explicit limits, not proof of
+physical testing. Automated results and outstanding device checks are recorded in VERIFICATION.md.
 
 | Feature | Windows | macOS | Linux | Fallback / prerequisite |
 | --- | --- | --- | --- | --- |
@@ -23,9 +23,9 @@ physical testing. Mocked tests and actual local results are recorded in VERIFICA
 | Brightness | WMI supported displays | optional brightness utility | brightnessctl | External displays/no interface: N/A/unsupported; do not silently simulate dimming |
 | Sleep/restart/shutdown | OS power/UAC | AppleScript OS authorization | logind/systemctl/polkit | Always critical confirmation; OS can deny |
 | OS theme | winreg AppsUseLightTheme | defaults AppleInterfaceStyle | GNOME gsettings → KDE kdeglobals | Unknown dark; worker polls every 2s |
-| Secure API secrets | keyring Windows Credential Manager | keyring Keychain | keyring Secret Service/KWallet | No unlocked secure backend: explicit error; no plaintext fallback |
-| Glass desktop / local JS | Qt WebEngine | Qt WebEngine | Qt WebEngine | Platform Qt libraries/display session required; native compatibility fallback |
-| Three.js sphere / GSAP | WebGL2 with supported driver | WebGL2 | WebGL2 | Static accessible orb if unavailable; no 60fps guarantee without measurement |
+| Secure API secrets | keyring Windows Credential Manager | keyring Keychain | keyring Secret Service/KWallet | Keychain preferred. If unavailable, existing compatibility code retains a clearly labelled legacy plaintext value pending migration; secure storage cannot be claimed in that state. |
+| Desktop UI | PyQt6 native Qt | PyQt6 native Qt | PyQt6 native Qt | Local bundled video and native windows; remote dashboard HTML is separate. WebEngine/Tailwind desktop redesign is not implemented. |
+| Three.js sphere / GSAP | Not implemented | Not implemented | Not implemented | The owner's later instruction keeps the existing exact bundled video and native Qt layout. No 60 fps claim. |
 | Microphone/speaker | PortAudio | PortAudio + mic permission | PortAudio/PipeWire/Pulse/ALSA | Text/remote input survive absent hardware; exact 16/24k formats checked |
 | Camera | OpenCV | OpenCV + camera permission | OpenCV/V4L | Missing camera: explicit unavailable |
 | Full arbitrary device/kernel/vehicle control | No | No | No | Only documented, authorized OS/device APIs; never bypass safety controllers |
@@ -34,3 +34,4 @@ Power/elevation, native desktop and live provider tests must be performed on rea
 supported targets. OS version support depends on installed Qt/PortAudio/browser
 runtime and distribution libraries. Do not interpret mocked adapter selection as
 Windows/macOS/Linux production certification.
+

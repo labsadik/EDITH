@@ -1,6 +1,7 @@
 # EDITH — Full Verification Checklist
 
 This checklist separates automated repository checks from manual tests that must be run on the computer where EDITH will be used. Passing CI does **not** prove every OS-specific GUI action works on every machine.
+See [VERIFICATION.md](VERIFICATION.md) for the twelve-item release acceptance ledger.
 
 ## Phase 1 release gate — complete before Phase 2
 

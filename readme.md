@@ -21,6 +21,8 @@ creator Sadik Laskar, separately from provider IDs and user memory. These labels
 not imply that the creator trained the underlying provider model.
 
 See [docs/UPGRADE_STATUS.md](docs/UPGRADE_STATUS.md) for runtime work still pending.
+The [verification ledger](VERIFICATION.md) tracks all twelve acceptance items
+and distinguishes automated results from target-device checks.
 Real provider, microphone, camera and OS workflows require target-device validation.
 
 ## Voice activity and popup contrast fixes
