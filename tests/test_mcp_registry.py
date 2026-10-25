@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 
-from core.mcp_registry import MCPRegistry, MCPServerSpec, MCPStdioClient
+from core.mcp_registry import MCPHttpClient, MCPRegistry, MCPServerSpec, MCPStdioClient
 from core.plugin_loader import PluginRecord, PluginRegistry
 
 
@@ -58,6 +58,27 @@ class MCPRegistryTests(unittest.TestCase):
         registry._all_records = [rec]
         self.assertEqual(registry.get_tool_declarations(), [])
         self.assertFalse(registry.list_for_ui()[0]["enabled"])
+
+    def test_streamable_http_client_uses_configured_url_and_protocol(self):
+        class _Response:
+            headers = {}
+            def __init__(self, request_id): self.request_id = request_id
+            def read(self):
+                return json.dumps({"jsonrpc": "2.0", "id": self.request_id, "result": {"tools": []}}).encode("utf-8")
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+        seen = []
+        def opener(request, timeout):
+            seen.append((request.full_url, request.get_method(), timeout))
+            return _Response(json.loads(request.data.decode("utf-8")).get("id"))
+        spec = MCPServerSpec(
+            id="remote", name="Remote", description="test", command=(), enabled=True,
+            transport="streamable_http", url="https://mcp.example.test/mcp",
+        )
+        with MCPHttpClient(spec, opener=opener) as client:
+            self.assertEqual(client.list_tools(), [])
+        self.assertEqual(seen[0][0], "https://mcp.example.test/mcp")
+        self.assertEqual(seen[0][1], "POST")
 
 
 if __name__ == "__main__":

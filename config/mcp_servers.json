@@ -3,10 +3,13 @@
     {
       "id": "gmail",
       "name": "Gmail MCP",
-      "description": "Use the owner's configured Gmail MCP server to search, draft, or send mail.",
+      "description": "Google remote Gmail MCP profile. Configure the Google Cloud OAuth client before enabling.",
+      "transport": "streamable_http",
+      "url": "https://gmailmcp.googleapis.com/mcp/v1",
       "command": [],
       "enabled": false,
-      "login_url": "https://accounts.google.com/"
+      "token_env": "EDITH_GMAIL_MCP_ACCESS_TOKEN",
+      "login_url": "https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server"
     },
     {
       "id": "github",

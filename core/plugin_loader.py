@@ -214,6 +214,8 @@ def discover_plugins(plugins_dir: Path, core_tool_names: set[str],
                     try:
                         if action == "list_tools":
                             return json.dumps({"server": server_id, "tools": registry.list_tools(server_id)}, ensure_ascii=False)[:18000]
+                        if action == "login":
+                            return json.dumps(registry.begin_login(server_id), ensure_ascii=False)
                         if action == "resume":
                             return json.dumps(registry.resume(server_id), ensure_ascii=False, default=str)[:18000]
                         if action == "call":
@@ -222,7 +224,7 @@ def discover_plugins(plugins_dir: Path, core_tool_names: set[str],
                             if not tool or not isinstance(arguments, dict):
                                 return "Specify a MCP tool name and an object of arguments."
                             return json.dumps(registry.call(server_id, tool, arguments), ensure_ascii=False, default=str)[:18000]
-                        return "MCP action must be list_tools, call, or resume."
+                        return "MCP action must be login, list_tools, call, or resume."
                     except MCPProtocolError as exc:
                         return str(exc)
 
@@ -232,7 +234,7 @@ def discover_plugins(plugins_dir: Path, core_tool_names: set[str],
                         "tool name and object arguments. Use action=resume after an owner completes login."
                     ),
                     parameters={"type": "OBJECT", "properties": {
-                        "action": {"type": "STRING", "enum": ["list_tools", "call", "resume"]},
+                        "action": {"type": "STRING", "enum": ["login", "list_tools", "call", "resume"]},
                         "tool": {"type": "STRING"},
                         "arguments": {"type": "OBJECT"},
                     }, "required": ["action"]},

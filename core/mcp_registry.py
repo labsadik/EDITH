@@ -14,6 +14,8 @@ import sys
 import threading
 import time
 from typing import Any, Callable
+import urllib.error
+import urllib.request
 import webbrowser
 
 
@@ -25,10 +27,13 @@ DEFAULT_SERVERS = (
     {
         "id": "gmail",
         "name": "Gmail MCP",
-        "description": "Use the owner's configured Gmail MCP server to search, draft, or send mail.",
+        "description": "Google's remote Gmail MCP profile. Configure OAuth before enabling it.",
+        "transport": "streamable_http",
+        "url": "https://gmailmcp.googleapis.com/mcp/v1",
         "command": [],
         "enabled": False,
-        "login_url": "https://accounts.google.com/",
+        "token_env": "EDITH_GMAIL_MCP_ACCESS_TOKEN",
+        "login_url": "https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server",
     },
     {
         "id": "github",
@@ -56,6 +61,9 @@ class MCPServerSpec:
     description: str
     command: tuple[str, ...]
     enabled: bool
+    transport: str = "stdio"
+    url: str = ""
+    token_env: str = ""
     login_url: str = ""
     timeout_seconds: float = 25.0
 
@@ -65,7 +73,7 @@ class MCPServerSpec:
 
     @property
     def configured(self) -> bool:
-        return bool(self.command)
+        return bool(self.url) if self.transport == "streamable_http" else bool(self.command)
 
 
 class MCPProtocolError(RuntimeError):
@@ -174,6 +182,118 @@ class MCPStdioClient:
         return self.request("tools/call", {"name": tool, "arguments": arguments})
 
 
+class MCPHttpClient:
+    """Minimal Streamable-HTTP MCP client for explicitly configured servers.
+
+    The configured token environment variable is intentionally the only
+    credential input here. EDITH neither reads browser cookies nor accepts a
+    bearer token from model text.
+    """
+
+    def __init__(self, spec: MCPServerSpec, *, opener=urllib.request.urlopen):
+        self.spec = spec
+        self._opener = opener
+        self._next_id = 0
+        self._session_id = ""
+
+    def __enter__(self):
+        if not self.spec.configured:
+            raise MCPProtocolError(f"{self.spec.name} has no remote MCP URL configured.")
+        self.request("initialize", {
+            "protocolVersion": PROTOCOL_VERSION,
+            "capabilities": {},
+            "clientInfo": {"name": "EDITH", "version": "1.0"},
+        })
+        self.notify("notifications/initialized", {})
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    @staticmethod
+    def _decode_body(raw: bytes) -> Any:
+        text = raw.decode("utf-8", errors="replace").strip()
+        if not text:
+            return {}
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            # Streamable HTTP servers may reply as an SSE sequence. Only MCP
+            # JSON data events are relevant to the request/reply contract.
+            for line in text.splitlines():
+                if line.startswith("data:"):
+                    try:
+                        return json.loads(line[5:].strip())
+                    except json.JSONDecodeError:
+                        continue
+        raise MCPProtocolError("MCP HTTP server returned an invalid JSON response")
+
+    def _headers(self) -> dict[str, str]:
+        headers = {
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+        }
+        if self._session_id:
+            headers["Mcp-Session-Id"] = self._session_id
+        if self.spec.token_env:
+            import os
+            token = os.environ.get(self.spec.token_env, "").strip()
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+        return headers
+
+    def _post(self, payload: dict) -> Any:
+        request = urllib.request.Request(
+            self.spec.url,
+            data=json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
+            headers=self._headers(), method="POST",
+        )
+        try:
+            with self._opener(request, timeout=self.spec.timeout_seconds) as response:
+                session = response.headers.get("Mcp-Session-Id", "")
+                if session:
+                    self._session_id = session
+                return self._decode_body(response.read())
+        except urllib.error.HTTPError as exc:
+            body = exc.read() if hasattr(exc, "read") else b""
+            detail = ""
+            try:
+                decoded = self._decode_body(body)
+                detail = str(decoded.get("error", {}).get("message", "")) if isinstance(decoded, dict) else ""
+            except MCPProtocolError:
+                pass
+            message = detail or f"HTTP {exc.code} from {self.spec.name}"
+            if exc.code in (401, 403):
+                message = f"{message}; authentication is required"
+            raise MCPProtocolError(message) from exc
+        except (OSError, ValueError) as exc:
+            raise MCPProtocolError(f"{self.spec.name} HTTP connection failed: {exc}") from exc
+
+    def notify(self, method: str, params: dict) -> None:
+        self._post({"jsonrpc": "2.0", "method": method, "params": params})
+
+    def request(self, method: str, params: dict) -> Any:
+        self._next_id += 1
+        request_id = self._next_id
+        response = self._post({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
+        if not isinstance(response, dict):
+            raise MCPProtocolError("MCP HTTP server returned a non-object response")
+        if "error" in response:
+            error = response.get("error") or {}
+            raise MCPProtocolError(str(error.get("message") or "MCP request failed"), data=error.get("data"))
+        if response.get("id") not in (None, request_id):
+            raise MCPProtocolError("MCP HTTP server returned a mismatched response id")
+        return response.get("result")
+
+    def list_tools(self) -> list[dict]:
+        value = self.request("tools/list", {}) or {}
+        tools = value.get("tools", []) if isinstance(value, dict) else []
+        return [tool for tool in tools if isinstance(tool, dict)][:100]
+
+    def call_tool(self, tool: str, arguments: dict) -> Any:
+        return self.request("tools/call", {"name": tool, "arguments": arguments})
+
+
 class MCPRegistry:
     def __init__(self, config_path: Path = DEFAULT_CONFIG_PATH, logger: Callable[[str], None] = print):
         self.config_path = Path(config_path)
@@ -203,6 +323,9 @@ class MCPRegistry:
             server_id = str(item.get("id") or "").strip().lower().replace("-", "_")
             if not server_id or not server_id.replace("_", "").isalnum() or server_id in seen:
                 continue
+            transport = str(item.get("transport") or "stdio").strip().lower()
+            if transport not in {"stdio", "streamable_http"}:
+                continue
             command = item.get("command") or []
             if isinstance(command, str):
                 command = [command]
@@ -218,6 +341,9 @@ class MCPRegistry:
                 name=str(item.get("name") or server_id),
                 description=str(item.get("description") or f"MCP server: {server_id}"),
                 command=tuple(command), enabled=bool(item.get("enabled", False)),
+                transport=transport,
+                url=str(item.get("url") or "").strip(),
+                token_env=str(item.get("token_env") or "").strip(),
                 login_url=str(item.get("login_url") or ""),
                 timeout_seconds=timeout_seconds,
             ))
@@ -246,13 +372,13 @@ class MCPRegistry:
 
     def list_tools(self, server_id: str) -> list[dict]:
         spec = self._require_enabled(server_id)
-        with MCPStdioClient(spec) as client:
+        with self._client(spec) as client:
             return client.list_tools()
 
     def call(self, server_id: str, tool: str, arguments: dict) -> Any:
         spec = self._require_enabled(server_id)
         try:
-            with MCPStdioClient(spec) as client:
+            with self._client(spec) as client:
                 return client.call_tool(tool, arguments)
         except MCPProtocolError as exc:
             text = str(exc).lower()
@@ -266,6 +392,23 @@ class MCPRegistry:
                 data={"login_url": spec.login_url},
             ) from exc
 
+    @staticmethod
+    def _client(spec: MCPServerSpec):
+        return MCPHttpClient(spec) if spec.transport == "streamable_http" else MCPStdioClient(spec)
+
+    def begin_login(self, server_id: str) -> dict[str, str]:
+        """Open the owner's configured authorization/setup URL, never a browser session."""
+        spec = self._require_enabled(server_id)
+        if not spec.login_url:
+            raise MCPProtocolError(f"{spec.name} has no login URL configured.")
+        opened = bool(webbrowser.open(spec.login_url))
+        return {
+            "server": spec.id,
+            "url": spec.login_url,
+            "opened": str(opened).lower(),
+            "next": "Finish the provider's OAuth setup, then use action=resume for a pending task.",
+        }
+
     def resume(self, server_id: str) -> Any:
         pending = self._pending.get(server_id)
         if pending is None:
@@ -276,4 +419,4 @@ class MCPRegistry:
         return value
 
 
-__all__ = ["MCPRegistry", "MCPServerSpec", "MCPStdioClient", "MCPProtocolError"]
+__all__ = ["MCPRegistry", "MCPServerSpec", "MCPStdioClient", "MCPHttpClient", "MCPProtocolError"]
