@@ -18,7 +18,8 @@ class SystemController:
     OPERATIONS = ('telemetry','system_info','process_list','process_kill','shell','file_list','file_read',
         'file_create','folder_create','file_write','file_delete','file_move','app_launch','url_open',
         'window_list','clipboard_get','clipboard_set','screenshot','volume','brightness','network_info',
-        'power','installed_apps','theme','capabilities')
+        'power','installed_apps','theme','capabilities','hardware_inventory',
+        'display_list','audio_devices')
 
     def __init__(self, *, permissions=None, audit=None):
         self.permissions = permissions or PermissionBroker()
@@ -76,6 +77,9 @@ class SystemController:
     def power(self,action): return self.invoke('power',{'action':action})
     def installed_apps(self): return self.invoke('installed_apps')
     def theme(self): return self.invoke('theme')
+    def hardware_inventory(self): return self.invoke('hardware_inventory')
+    def display_list(self): return self.invoke('display_list')
+    def audio_devices(self): return self.invoke('audio_devices')
 
     def _read_command(self,argv,timeout=3):
         completed = subprocess.run(argv,capture_output=True,text=True,timeout=timeout,check=False)
@@ -93,6 +97,15 @@ class SystemController:
     def _op_capabilities(self):
         return {'system':self.system,'operations':list(self.OPERATIONS),
                 'note':'Each operation reports actual permission/dependency failure at execution; declared availability is not a device test.'}
+    def _hardware_snapshot(self):
+        from .hardware import collect_hardware_inventory
+        return collect_hardware_inventory(self.system, self._read_command)
+    def _op_hardware_inventory(self):
+        return self._hardware_snapshot()
+    def _op_display_list(self):
+        return self._hardware_snapshot().get('displays', [])
+    def _op_audio_devices(self):
+        return self._hardware_snapshot().get('audio_devices', [])
     def _op_telemetry(self):
         if self._collector is None:
             from .telemetry import TelemetryCollector

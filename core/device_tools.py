@@ -16,7 +16,8 @@ from edith.platform.audit import redact
 
 _OPERATIONS = frozenset({
     "system_info", "telemetry", "network_info", "process_list", "window_list",
-    "installed_apps", "capabilities", "theme", "process_kill", "app_launch",
+    "installed_apps", "capabilities", "hardware_inventory", "display_list",
+    "audio_devices", "theme", "process_kill", "app_launch",
     "volume", "brightness", "power",
 })
 
@@ -125,3 +126,4 @@ def format_device_result(receipt: dict[str, Any]) -> str:
 
 
 __all__ = ["DeviceToolService", "format_device_result"]
+

@@ -1,8 +1,4 @@
-"""Helpful EDITH startup diagnostics; never alter the installed environment.
-
-Run `python -m core.startup_check` to check dependencies before launching.
-Both Gemini Live and local-agent configuration remain unchanged.
-"""
+"""EDITH startup diagnostics and bootstrap for its allowlisted runtime packages."""
 from __future__ import annotations
 
 import importlib.util
@@ -47,8 +43,35 @@ def format_install_help(missing: list[tuple[str, str]]) -> str:
     )
 
 
+def bootstrap_missing_dependencies(
+    find_spec: Callable[[str], object] = importlib.util.find_spec,
+    install: Callable[[dict, Callable | None], None] | None = None,
+    log: Callable[[str], None] | None = None,
+) -> list[tuple[str, str]]:
+    """Install only EDITH's declared Python dependencies, then re-check imports.
+
+    This never accepts a package name from model text, a file, or a webpage.
+    It is intentionally limited to the static allowlist in ``core.installer``.
+    """
+    missing = missing_startup_dependencies(find_spec)
+    if not missing:
+        return []
+    if install is None:
+        from core.installer import install_for_config
+        install = install_for_config
+    if log:
+        log("SYS: Installing missing EDITH runtime tools: " + ", ".join(pkg for _, pkg in missing))
+    install({}, log)
+    return missing_startup_dependencies(find_spec)
+
+
 def check_startup_dependencies() -> None:
-    missing = missing_startup_dependencies()
+    try:
+        missing = bootstrap_missing_dependencies(log=lambda message: print(message, file=sys.stderr))
+    except Exception as exc:
+        missing = missing_startup_dependencies()
+        if missing:
+            print(f"EDITH dependency bootstrap failed: {type(exc).__name__}", file=sys.stderr)
     if not missing:
         return
     message = format_install_help(missing)
@@ -69,3 +92,4 @@ if __name__ == "__main__":
         print(format_install_help(missing))
         raise SystemExit(2)
     print("EDITH startup dependencies are installed.")
+

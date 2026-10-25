@@ -7,6 +7,8 @@ physical testing. Automated results and outstanding device checks are recorded i
 | Feature | Windows | macOS | Linux | Fallback / prerequisite |
 | --- | --- | --- | --- | --- |
 | CPU total/per-core/frequency/load | psutil; load if available | psutil | psutil | Missing individual field is null/N/A |
+| Hardware inventory | CIM display/GPU/USB probes | system_profiler display/USB probes | DRM, PCI and USB probes | CPU, RAM, storage, network, audio, battery and attached-hardware fields use one stable result shape; unavailable probes return empty/N/A |
+| Display and audio device lists | CIM / PortAudio | system_profiler / PortAudio | DRM / PortAudio | Inventory is read-only; it never invents device names or control support |
 | RAM/swap/disk/I/O/uptime/processes | psutil | psutil | psutil | AccessDenied/missing sensor does not crash collector |
 | Network counters/throughput/interfaces | psutil | psutil | psutil | First throughput sample N/A; counters are not an Internet speed test |
 | Battery | psutil | psutil | psutil | Desktop/no sensor: N/A |
@@ -28,7 +30,7 @@ physical testing. Automated results and outstanding device checks are recorded i
 | Three.js sphere / GSAP | Not implemented | Not implemented | Not implemented | The owner's later instruction keeps the existing exact bundled video and native Qt layout. No 60 fps claim. |
 | Microphone/speaker | PortAudio | PortAudio + mic permission | PortAudio/PipeWire/Pulse/ALSA | Text/remote input survive absent hardware; exact 16/24k formats checked |
 | Camera | OpenCV | OpenCV + camera permission | OpenCV/V4L | Missing camera: explicit unavailable |
-| Full arbitrary device/kernel/vehicle control | No | No | No | Only documented, authorized OS/device APIs; never bypass safety controllers |
+| Full arbitrary device/kernel/vehicle control | No | No | No | EDITH discovers and controls documented local OS capabilities. New hardware needs a matching OS API or a dedicated adapter; unknown hardware is reported, never simulated. |
 
 Power/elevation, native desktop and live provider tests must be performed on real
 supported targets. OS version support depends on installed Qt/PortAudio/browser

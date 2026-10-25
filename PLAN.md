@@ -166,3 +166,12 @@ a direct recent user request. The bundled video content remains unchanged and
 its immediate stage background is black in both themes. Physical audio and
 OS permission behavior still require target-device verification.
 
+## Active hardware expansion
+
+The current implementation unit adds normalized local hardware discovery before
+adding more controls. EDITH can now identify CPU, memory, storage, network,
+display, audio, battery, graphics and connected USB information where each OS
+exposes it. Each result is bounded and has a documented unsupported fallback.
+The next unit will add dedicated adapters only for hardware with a documented
+local control API; capability discovery determines which adapter can run.
+

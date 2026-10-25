@@ -25,7 +25,7 @@ def operation_tier(operation, arguments=None):
         path=str(args.get('path','')).replace('\\','/').lower()
         if operation not in {'file_list','file_read'} and (path.startswith(('/etc/','/system/','/usr/','/boot/')) or re.match(r'^[a-z]:/(windows|program files)(/|$)',path)):
             return 3
-    if operation in {'telemetry','process_list','network_info','window_list','installed_apps','theme','capabilities','clipboard_get','screenshot','file_list','file_read','system_info'}:
+    if operation in {'telemetry','process_list','network_info','window_list','installed_apps','theme','capabilities','hardware_inventory','display_list','audio_devices','clipboard_get','screenshot','file_list','file_read','system_info'}:
         return 0
     if operation in {'power','elevate','registry','system_config'}:
         return 3

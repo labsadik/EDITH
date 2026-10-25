@@ -23,6 +23,7 @@ not certify physical hardware. Keep the owner's reference video and layout.
 | 20. Release verification | Automated gate expanded; device gate pending | `VERIFICATION.md` records each acceptance item and its limits. CI now exercises recent memory/device/latency regressions on Windows, macOS and Linux in addition to existing tests. Real audio, permissions, window managers, provider keys and hardware on target devices still need owner evidence. |
 | 21. Main merge | Not authorized | Owner tests branch first, then explicitly requests merge |
 | 22. Black video stage and stable voice | Implemented; device test pending | Only the HUD video stage is black in both themes. Playback gates PC/phone mic packets from the first speaker frame through a short hardware tail; model-driven voice changes need a recent explicit user request. Synthetic tests pass; physical narration and microphone still require owner testing. |
+| 23. Hardware discovery and tool bootstrap | Implemented; device test pending | The platform bridge now exposes `hardware_inventory`, `display_list` and `audio_devices` across Windows, macOS and Linux through a structured, bounded result. Startup automatically installs only missing packages from EDITH's static dependency allowlist, then rechecks imports. Physical inventory and package-manager/network behavior still need target-device validation. |
 
 The next gate is target-device validation in `VERIFICATION.md` and `TESTING.md`,
 followed by fixes informed by those results. Main merge requires the owner's

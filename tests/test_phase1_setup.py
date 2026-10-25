@@ -8,7 +8,7 @@ from core.branding import prepare_agent_profiles_dir, prepare_projects_dir, prep
 from core.icons import icon_names, svg_markup
 from core.app_icon import build_edith_icon
 from core.startup_check import (
-    format_install_help, missing_startup_dependencies,
+    bootstrap_missing_dependencies, format_install_help, missing_startup_dependencies,
 )
 from memory import config_manager
 
@@ -130,6 +130,18 @@ class BrandingAndStartupTests(unittest.TestCase):
             [("google.genai", "google-genai>=2.8.0")],
         )
 
+    def test_missing_runtime_tools_are_bootstrapped_from_static_installer(self):
+        present = {name: object() for name, _ in __import__("core.startup_check", fromlist=["STARTUP_IMPORTS"]).STARTUP_IMPORTS}
+        calls = []
+        def checker(name):
+            return present.get(name)
+        def install(_config, _log):
+            calls.append(True)
+            present["sounddevice"] = object()
+        present.pop("sounddevice")
+        self.assertEqual(bootstrap_missing_dependencies(checker, install), [])
+        self.assertEqual(calls, [True])
+
     def test_edith_ico_has_real_windows_icon_sizes(self):
         try:
             from PIL import Image
@@ -250,4 +262,5 @@ class BrandingAndStartupTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 

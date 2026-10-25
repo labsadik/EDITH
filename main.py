@@ -271,7 +271,7 @@ TOOL_DECLARATIONS = [
         "description": (
             "Use only for local-device diagnostics or a direct local OS control request. "
             "Read-only operations: system_info, telemetry, network_info, process_list, "
-            "window_list, installed_apps, capabilities, theme. Controls include "
+            "window_list, installed_apps, capabilities, hardware_inventory, display_list, audio_devices, theme. Controls include "
             "process_kill, app_launch, volume, brightness and power. Announce the target before acting. "
             "This is not a network scanner, remote access tool, or command shell."
         ),
@@ -282,7 +282,7 @@ TOOL_DECLARATIONS = [
                     "type": "STRING",
                     "enum": [
                         "system_info", "telemetry", "network_info", "process_list",
-                        "window_list", "installed_apps", "capabilities", "theme",
+                        "window_list", "installed_apps", "capabilities", "hardware_inventory", "display_list", "audio_devices", "theme",
                         "process_kill", "app_launch", "volume", "brightness", "power",
                     ],
                 },

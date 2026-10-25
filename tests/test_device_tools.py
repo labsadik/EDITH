@@ -27,6 +27,14 @@ class DeviceToolTests(unittest.TestCase):
         self.assertEqual(controller.calls, [("system_info", {})])
         self.assertIn('"Linux"', format_device_result(receipt))
 
+    def test_hardware_inventory_and_device_lists_are_declared_read_only_operations(self):
+        controller = _Controller()
+        service = DeviceToolService(controller)
+        for operation in ("hardware_inventory", "display_list", "audio_devices"):
+            with self.subTest(operation=operation):
+                self.assertTrue(service.execute({"operation": operation})["ok"])
+        self.assertEqual([name for name, _ in controller.calls], ["hardware_inventory", "display_list", "audio_devices"])
+
     def test_controls_are_validated_before_native_invocation(self):
         controller = _Controller()
         service = DeviceToolService(controller)
@@ -81,3 +89,4 @@ class DeviceToolTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
