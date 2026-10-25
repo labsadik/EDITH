@@ -158,6 +158,23 @@ This foundation does not guarantee that every workflow in every third-party appl
 
 Actual response time depends on network conditions, API availability, the requested action, and the local system. Long-running actions such as web searches, downloads, or application startup cannot be guaranteed to finish within a fixed number of seconds.
 
+## Local device diagnostics and performance measurements
+
+The `platform_system` tool uses the cross-platform controller for bounded local
+diagnostics: system/telemetry/network-interface details and
+window/process/application inventory. It can request a small set of local
+controls—process termination, app launch, volume, brightness and power—through
+the same local confirmation, audit and interrupt path. Unsupported OS features
+return a structured unavailable result instead of crashing. It does not add a
+network scanner, remote-access channel, binary screen-capture bridge or generic
+security/exploitation runner.
+
+Ask EDITH for **performance metrics** to see local observed sample counts, p50,
+p95 and range for Live connection, text-to-first-audio and completed tools.
+Those values exclude request content and credentials, and are measurements on
+the current device—not a promised response time. See the release gate in
+[TESTING.md](TESTING.md) for target-device validation.
+
 ## Phase 4 — Refinements to the existing EDITH desktop UI
 
 The original EDITH HUD, layout, colors, chat/voice interaction, optional remote

@@ -602,3 +602,30 @@ access and a valid API key. These two modes remain separate; do not alter
 
 A portability PASS requires working real hardware and explicit user approval
 on each OS/device class of interest. A green CI matrix is only a baseline.
+
+## Release gate — local-device bridge and latency evidence
+
+Run this only on a machine you own or are authorized to administer. It verifies
+local operating-system capabilities; it does not test remote machines, scan a
+network, or authorize security assessment tooling.
+
+1. Start EDITH and ask for local system information, telemetry, network
+   interfaces, open windows and installed applications. Unsupported capability
+   must be shown as unavailable/N/A rather than invented.
+2. After one text request and one harmless tool request, ask for **performance
+   metrics**. Record `live_connect`, `text_to_first_audio` and `tool.*` sample
+   counts/p50/p95 alongside OS version, provider and network type. They are
+   observed measurements on that machine, not a speed commitment.
+3. For a Tier 2 control, request a harmless volume change, cancel the local
+   confirmation, and verify the setting did not change. Repeat only when you
+   approve the displayed value. For Tier 3 power, cancel the dialog; do not
+   approve shutdown or restart merely to complete this checklist.
+4. Only with a disposable non-system process and its verified exact PID, test
+   termination. Never target EDITH, a shell, a service or an unknown process.
+5. Press **Interrupt** during a confirmed long-running owned test command and
+   verify cancellation is reported instead of success. Never substitute an
+   arbitrary system command for this test.
+
+Report PASS/FAIL/NOT TESTED for every target OS with sanitized errors only.
+Release remains pending until target-device results and GitHub CI are green.
+
