@@ -5,6 +5,7 @@ import math
 import os
 import platform
 import random
+import re
 import subprocess
 import sys
 import threading
@@ -29,7 +30,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QApplication, QFileDialog, QComboBox, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
-    QMainWindow, QPushButton, QScrollArea, QSizePolicy, QSplitter,
+    QGraphicsDropShadowEffect, QMainWindow, QPushButton, QScrollArea, QSizePolicy, QSplitter,
     QStackedWidget, QTextEdit, QVBoxLayout, QWidget, QProgressBar, QInputDialog,
 )
 
@@ -69,29 +70,43 @@ _RIGHT_W = 340
 _OS = platform.system()  # "Windows" | "Darwin" | "Linux"
 
 class C:
-    # Futuristic high-contrast refinement of the existing EDITH layout.
-    # Saved user accent overrides still apply; model and device settings do not change.
-    BG        = "#070D17"
-    PANEL     = "#101C2D"
-    PANEL2    = "#14263B"
-    BORDER    = "#214159"
-    BORDER_B  = "#32647E"
-    BORDER_A  = "#417A92"
-    PRI       = "#61DFF5"
-    PRI_DIM   = "#39AAC8"
-    PRI_GHO   = "#14364B"
-    ACC       = "#C0A5FD"
-    ACC2      = "#F1C78E"
-    GREEN     = "#64EDBE"
-    GREEN_D   = "#2DA888"
-    RED       = "#F48F9D"
-    MUTED_C   = "#F48F9D"
-    TEXT      = "#F2F7FF"
-    TEXT_DIM  = "#95A7BB"
-    TEXT_MED  = "#BED0E2"
+    # Opaque text/palette values and layered native glass surfaces. All
+    # widget styles consume these tokens so OS appearance changes repaint live.
+    BG        = "#0A1625"
+    PANEL     = "#17283B"
+    PANEL2    = "#20364C"
+    BORDER    = "#38536B"
+    BORDER_B  = "#58768F"
+    BORDER_A  = "#7296AA"
+    PRI       = "#7FE1F4"
+    PRI_DIM   = "#69C8DD"
+    PRI_GHO   = "#21495C"
+    ACC       = "#C5B4FF"
+    ACC2      = "#F0CE97"
+    GREEN     = "#80E7C4"
+    GREEN_D   = "#3CAD8C"
+    RED       = "#FFA3AF"
+    MUTED_C   = "#FFA3AF"
+    TEXT      = "#F4F8FD"
+    TEXT_DIM  = "#A8BDCD"
+    TEXT_MED  = "#D4E1EA"
     WHITE     = "#FFFFFF"
-    DARK      = "#060B13"
-    BAR_BG    = "#101A2A"
+    DARK      = "#0C1928"
+    BAR_BG    = "#2A4054"
+    HEADER    = "#F0142537"
+    SIDEBAR   = "#D6132233"
+    GLASS     = "#C721364B"
+    GLASS_CARD = "#B32D4358"
+    GLASS_RIM = "#38DAF1FF"
+    INPUT     = "#C70C1A2A"
+    SHEET     = "#F71B2C3E"
+    HOVER     = "#B8446A87"
+    DANGER_BG = "#576F2638"
+    DANGER_HOVER = "#808B3245"
+    SUCCESS_BG = "#4D216551"
+    SUCCESS_HOVER = "#7529775E"
+    VIDEO_BG  = "#091321"
+    SHADOW    = "#90000000"
 
 
 # Complete palettes are centralised. Widgets retain the original native layout
@@ -100,17 +115,35 @@ _THEME_COLOR_KEYS = (
     "BG", "PANEL", "PANEL2", "BORDER", "BORDER_B", "BORDER_A", "PRI",
     "PRI_DIM", "PRI_GHO", "ACC", "ACC2", "GREEN", "GREEN_D", "RED",
     "MUTED_C", "TEXT", "TEXT_DIM", "TEXT_MED", "WHITE", "DARK", "BAR_BG",
+    "HEADER", "SIDEBAR", "GLASS", "GLASS_CARD", "GLASS_RIM", "INPUT",
+    "SHEET", "HOVER", "DANGER_BG", "DANGER_HOVER", "SUCCESS_BG",
+    "SUCCESS_HOVER", "VIDEO_BG",
+    "SHADOW",
 )
 _THEME_DEFAULTS = {
     "dark": {key: getattr(C, key) for key in _THEME_COLOR_KEYS},
     "light": {
-        "BG": "#EDF4F8", "PANEL": "#F8FBFD", "PANEL2": "#E2EEF4",
-        "BORDER": "#B9CDD8", "BORDER_B": "#7BA1B5", "BORDER_A": "#4A819C",
+        "BG": "#E9F1F7", "PANEL": "#F8FBFE", "PANEL2": "#E7F1F7",
+        "BORDER": "#B7CBD8", "BORDER_B": "#8CAAB9", "BORDER_A": "#5D869A",
         "PRI": "#007C9D", "PRI_DIM": "#176B86", "PRI_GHO": "#CDEDF5",
         "ACC": "#6348AF", "ACC2": "#8A5512", "GREEN": "#147A58",
         "GREEN_D": "#216A55", "RED": "#B62D45", "MUTED_C": "#B62D45",
-        "TEXT": "#122735", "TEXT_DIM": "#526C7B", "TEXT_MED": "#294554",
-        "WHITE": "#FFFFFF", "DARK": "#E5EFF4", "BAR_BG": "#DCE9F0",
+        "TEXT": "#152A39", "TEXT_DIM": "#4F6879", "TEXT_MED": "#29495C",
+        "WHITE": "#FFFFFF", "DARK": "#E2ECF3", "BAR_BG": "#D2E3ED",
+        "HEADER": "#F5FAFDFF",
+        "SIDEBAR": "#E0FAFDFF",
+        "GLASS": "#D1FFFFFF",
+        "GLASS_CARD": "#B3FFFFFF",
+        "GLASS_RIM": "#FAFFFFFF",
+        "INPUT": "#E6FFFFFF",
+        "SHEET": "#FAF8FCFF",
+        "HOVER": "#EBDAEDF7",
+        "DANGER_BG": "#D1FFE4E9",
+        "DANGER_HOVER": "#FAFFD3DC",
+        "SUCCESS_BG": "#DBD7F5E8",
+        "SUCCESS_HOVER": "#FABFEAD5",
+        "VIDEO_BG": "#091321",
+        "SHADOW": "#42234257",
     },
 }
 
@@ -153,7 +186,8 @@ def apply_ui_accent(accent_hex: str) -> bool:
     dh   = acc_h - base_h
     grey = acc_s < 0.08   # griye yakın accent → tüm tema desaturize edilir
 
-    for key, hex0 in _PALETTE_DEFAULTS.items():
+    for key in _HUE_LINKED:
+        hex0 = _PALETTE_DEFAULTS[key]
         h, s, v = _hsv(hex0)
         if grey:
             s *= 0.15
@@ -181,6 +215,22 @@ def current_palette() -> dict[str, str]:
     return {k: getattr(C, k) for k in _THEME_COLOR_KEYS}
 
 
+def _set_theme_icon(button: QPushButton, name: str, color_role: str) -> None:
+    button.setProperty("edith_icon", name)
+    button.setProperty("edith_icon_color", color_role)
+    button.setIcon(svg_icon(name, getattr(C, color_role)))
+
+
+def _glass_shadow(widget: QWidget) -> None:
+    """Add a soft composited shadow to a floating sheet, never to the video."""
+    effect = QGraphicsDropShadowEffect(widget)
+    effect.setBlurRadius(28)
+    effect.setOffset(0, 9)
+    effect.setColor(QColor(C.SHADOW))
+    widget.setGraphicsEffect(effect)
+    widget.setProperty("edith_glass_shadow", True)
+
+
 def retheme_all_widgets(old: dict[str, str], new: dict[str, str]) -> None:
     """
     CANLI tam tema değişimi. Uygulamadaki HER widget'ın stylesheet'inde eski
@@ -196,16 +246,30 @@ def retheme_all_widgets(old: dict[str, str], new: dict[str, str]) -> None:
     if app is None:
         return
     apply_dark_theme(app, C)
+    # One case-insensitive pass is essential: QSS literals are often uppercase
+    # while a replacement may itself match another old palette value.
+    pattern = re.compile(
+        "(?:" + "|".join(re.escape(value) for value in
+                          sorted(mapping, key=len, reverse=True)) + ")(?![0-9a-f])",
+        re.IGNORECASE,
+    )
     for w in app.allWidgets():
         try:
             ss = w.styleSheet()
             if ss:
-                s2 = ss
-                for o, n in mapping.items():
-                    if o in s2:
-                        s2 = s2.replace(o, n)
+                s2 = pattern.sub(lambda match: mapping[match.group().lower()], ss)
                 if s2 != ss:
                     w.setStyleSheet(s2)
+            if isinstance(w, LogWidget):
+                w.retheme_entries(old, new)
+            icon_name = w.property("edith_icon")
+            icon_color = w.property("edith_icon_color")
+            if icon_name and icon_color and hasattr(w, "setIcon"):
+                w.setIcon(svg_icon(str(icon_name), getattr(C, str(icon_color))))
+            if w.property("edith_glass_shadow"):
+                effect = w.graphicsEffect()
+                if isinstance(effect, QGraphicsDropShadowEffect):
+                    effect.setColor(QColor(C.SHADOW))
             w.update()
         except Exception:
             pass
@@ -453,14 +517,21 @@ class HudCanvas(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(self.rect(), QColor(C.BG))
         clip = QPainterPath()
-        clip.addRoundedRect(QRectF(self.rect()), 22, 22)
+        clip.addRoundedRect(QRectF(self.rect()), 18, 18)
         painter.setClipPath(clip)
-        painter.fillRect(self.rect(), QColor(C.BG))
-        visual = QRectF(0, 0, self.width(), max(60, self.height() - 88))
+        visual = QRectF(12, 10, max(1, self.width() - 24), max(60, self.height() - 104))
         fresh = time.monotonic() - self._mic_last_packet < .65
         input_level = self._mic_level if fresh and not self.muted and not self.speaking else 0.0
         output_level = self._out_level if self.speaking and time.monotonic() - self._out_last < .65 else 0.0
-        draw_blended_video(painter, visual, self._video.frame, C.BG)
+        stage = QPainterPath()
+        stage.addRoundedRect(visual, 16, 16)
+        painter.save()
+        painter.setClipPath(stage, Qt.ClipOperation.IntersectClip)
+        draw_blended_video(painter, visual, self._video.frame, C.VIDEO_BG)
+        painter.restore()
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor(C.BORDER), 1))
+        painter.drawRoundedRect(visual, 16, 16)
         if self._video.frame.isNull():
             painter.setPen(QColor(C.TEXT_DIM))
             painter.setFont(QFont(FONT_MAIN, 10))
@@ -490,7 +561,7 @@ class HudCanvas(QWidget):
 
 class MetricBar(QWidget):
 
-    def __init__(self, label: str, color: str = C.PRI, parent=None):
+    def __init__(self, label: str, color: str = "PRI", parent=None):
         super().__init__(parent)
         self._label = label
         self._color = color
@@ -509,9 +580,11 @@ class MetricBar(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         W, H = self.width(), self.height()
 
-        p.setBrush(QBrush(qcol(C.PANEL2)))
-        p.setPen(QPen(qcol(C.BORDER_A), 1))
-        p.drawRoundedRect(QRectF(1, 1, W - 2, H - 2), 4, 4)
+        p.setBrush(QBrush(qcol(C.GLASS_CARD)))
+        p.setPen(QPen(qcol(C.BORDER), 1))
+        p.drawRoundedRect(QRectF(1, 1, W - 2, H - 2), 9, 9)
+        p.setPen(QPen(qcol(C.GLASS_RIM), 1))
+        p.drawLine(QPointF(9, 2), QPointF(W - 9, 2))
 
         bar_h   = 4
         bar_y   = H - bar_h - 5
@@ -528,18 +601,18 @@ class MetricBar(QWidget):
         elif self._value > 65:
             bar_col = qcol(C.ACC)
         else:
-            bar_col = qcol(self._color)
+            bar_col = qcol(getattr(C, self._color, self._color))
 
         if fill_w > 0:
             p.setBrush(QBrush(bar_col))
             p.drawRoundedRect(QRectF(bar_x, bar_y, fill_w, bar_h), 2, 2)
 
-        p.setFont(QFont(FONT_MAIN, 7, QFont.Weight.Bold))
+        p.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
         p.setPen(QPen(qcol(C.TEXT_DIM), 1))
         p.drawText(QRectF(8, 5, 50, 14), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self._label)
 
         p.setFont(QFont(FONT_MONO, 9, QFont.Weight.Bold))
-        p.setPen(QPen(bar_col if self._text != "--" else qcol(C.TEXT_DIM), 1))
+        p.setPen(QPen(qcol(C.TEXT_DIM) if self._text in {"--", "N/A"} else bar_col, 1))
         p.drawText(QRectF(0, 4, W - 6, 16), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, self._text)
 
 class LogWidget(QTextEdit):
@@ -553,10 +626,10 @@ class LogWidget(QTextEdit):
         self.setFont(QFont(FONT_MONO, 9))
         self.setStyleSheet(f"""
             QTextEdit {{
-                background: {C.PANEL};
+                background: {C.GLASS};
                 color: {C.TEXT};
                 border: 1px solid {C.BORDER};
-                border-radius: 6px;
+                border-radius: 12px;
                 padding: 8px;
                 selection-background-color: {C.PRI_GHO};
             }}
@@ -589,6 +662,32 @@ class LogWidget(QTextEdit):
         """Display new log entries promptly, without the typewriter effect."""
         self._reduced_motion = bool(enabled)
 
+    def retheme_entries(self, old: dict[str, str], new: dict[str, str]) -> None:
+        """Keep already printed activity lines legible after a live OS switch."""
+        colors = {QColor(old[key]).name(): QColor(new[key]) for key in
+                  ("TEXT", "PRI", "RED", "GREEN", "ACC2")}
+        document = self.document()
+        replacements = []
+        block = document.begin()
+        while block.isValid():
+            iterator = block.begin()
+            while not iterator.atEnd():
+                fragment = iterator.fragment()
+                if fragment.isValid():
+                    previous = fragment.charFormat().foreground().color().name()
+                    replacement = colors.get(previous)
+                    if replacement is not None:
+                        fmt = fragment.charFormat()
+                        fmt.setForeground(replacement)
+                        replacements.append((fragment.position(), fragment.length(), fmt))
+                iterator += 1
+            block = block.next()
+        for position, length, fmt in replacements:
+            cursor = self.textCursor()
+            cursor.setPosition(position)
+            cursor.setPosition(position + length, cursor.MoveMode.KeepAnchor)
+            cursor.setCharFormat(fmt)
+
     def _enqueue(self, text: str):
         self._queue.append(text)
         if not self._typing:
@@ -619,7 +718,7 @@ class LogWidget(QTextEdit):
             cur = self.textCursor()
             fmt = cur.charFormat()
             col = {
-                "you":  qcol(C.WHITE),
+                "you":  qcol(C.TEXT),
                 "ai":   qcol(C.PRI),
                 "err":  qcol(C.RED),
                 "file": qcol(C.GREEN),
@@ -773,9 +872,9 @@ class _DropCanvas(QWidget):
         pad  = 4
         rect = QRectF(pad, pad, W - pad * 2, H - pad * 2)
 
-        bg_col = qcol("#0A151C" if z._drag_over else ("#0B1015" if z._hovering else C.PANEL))
+        bg_col = qcol(C.HOVER if z._drag_over or z._hovering else C.GLASS_CARD)
         p.setBrush(QBrush(bg_col)); p.setPen(Qt.PenStyle.NoPen)
-        p.drawRoundedRect(rect, 6, 6)
+        p.drawRoundedRect(rect, 12, 12)
 
         if z._current_file:   border_col = qcol(C.GREEN, 200)
         elif z._drag_over:    border_col = qcol(C.PRI, 230)
@@ -785,7 +884,7 @@ class _DropCanvas(QWidget):
         pen = QPen(border_col, 1.5, Qt.PenStyle.DashLine)
         pen.setDashOffset(z._dash_offset)
         p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRoundedRect(rect, 6, 6)
+        p.drawRoundedRect(rect, 12, 12)
 
         if z._current_file:   self._paint_file(p, W, H)
         elif z._drag_over:    self._paint_drag_over(p, W, H)
@@ -804,7 +903,7 @@ class _DropCanvas(QWidget):
         p.drawText(QRectF(0, cy + 8, W, 16), Qt.AlignmentFlag.AlignCenter,
                    "Drop file here or Click to Browse")
         p.setFont(QFont(FONT_MAIN, 7))
-        p.setPen(QPen(qcol(C.BORDER_A), 1))
+        p.setPen(QPen(qcol(C.TEXT_DIM), 1))
         p.drawText(QRectF(0, cy + 22, W, 14), Qt.AlignmentFlag.AlignCenter,
                    "Images · Video · Audio · PDF · Docs · Code")
 
@@ -849,7 +948,7 @@ class _DropCanvas(QWidget):
         tw = W - tx - 32
 
         p.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
-        p.setPen(QPen(qcol(C.WHITE), 1))
+        p.setPen(QPen(qcol(C.TEXT), 1))
         name = path.name if len(path.name) <= 32 else path.name[:29] + "..."
         p.drawText(QRectF(tx, H * 0.18, tw, 16),
                    Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, name)
@@ -884,12 +983,13 @@ class _CameraPreview(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        _glass_shadow(self)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"""
             _CameraPreview {{
-                background: rgba(5, 6, 8, 240);
+                background: {C.SHEET};
                 border: 1px solid {C.PRI};
-                border-radius: 8px;
+                border-radius: 16px;
             }}
         """)
         self.setFixedWidth(self._W)
@@ -905,7 +1005,7 @@ class _CameraPreview(QWidget):
         hdr.addWidget(title)
         hdr.addStretch()
         close_btn = QPushButton()
-        close_btn.setIcon(svg_icon("x", C.TEXT_DIM))
+        _set_theme_icon(close_btn, "x", "TEXT_DIM")
         close_btn.setIconSize(QSize(12, 12))
         close_btn.setFixedSize(18, 18)
         close_btn.setFont(QFont(FONT_MAIN, 8))
@@ -957,12 +1057,13 @@ class ApiKeyOverlay(QWidget):
 
     def __init__(self, current_key: str = "", parent=None):
         super().__init__(parent)
+        _glass_shadow(self)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"""
             ApiKeyOverlay {{
-                background: rgba(16, 19, 28, 252);
+                background: {C.SHEET};
                 border: 1px solid {C.BORDER_B};
-                border-radius: 12px;
+                border-radius: 18px;
             }}
         """)
         self._tested_key = ""
@@ -989,7 +1090,7 @@ class ApiKeyOverlay(QWidget):
 
         status_card = QFrame(self)
         status_card.setStyleSheet(
-            f"QFrame {{ background: {C.PANEL2}; border: 1px solid {C.BORDER}; border-radius: 7px; }}"
+            f"QFrame {{ background: {C.GLASS_CARD}; border: 1px solid {C.BORDER}; border-radius: 12px; }}"
         )
         status_layout = QVBoxLayout(status_card)
         status_layout.setContentsMargins(8, 6, 8, 6)
@@ -1045,8 +1146,8 @@ class ApiKeyOverlay(QWidget):
         self._key_input.setFixedHeight(38)
         self._key_input.setStyleSheet(f"""
             QLineEdit {{
-                background: {C.DARK}; color: {C.TEXT};
-                border: 1px solid {C.BORDER}; border-radius: 6px; padding: 7px 10px;
+                background: {C.INPUT}; color: {C.TEXT};
+                border: 1px solid {C.BORDER}; border-radius: 10px; padding: 7px 10px;
                 selection-background-color: {C.PRI_GHO};
             }}
             QLineEdit:focus {{ border: 1px solid {C.PRI}; }}
@@ -1505,9 +1606,10 @@ class ProviderSettingsOverlay(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        _glass_shadow(self)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"""
-            ProviderSettingsOverlay {{ background: {C.PANEL}; border: 1px solid {C.BORDER_B}; border-radius: 12px; }}
+            ProviderSettingsOverlay {{ background: {C.SHEET}; border: 1px solid {C.BORDER_B}; border-radius: 18px; }}
         """)
         self._tested_signature: tuple[str, str, str, str] | None = None
         layout = QVBoxLayout(self)
@@ -1632,12 +1734,13 @@ class SetupOverlay(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        _glass_shadow(self)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"""
             SetupOverlay {{
-                background: rgba(5, 6, 8, 250);
+                background: {C.SHEET};
                 border: 1px solid {C.BORDER_B};
-                border-radius: 8px;
+                border-radius: 18px;
             }}
         """)
 
@@ -1857,12 +1960,13 @@ class CustomizeOverlay(QWidget):
     def __init__(self, assistant_name="EDITH", user_name="",
                  ui_color=DEFAULT_UI_COLOR, theme_preference="system", parent=None):
         super().__init__(parent)
+        _glass_shadow(self)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"""
             CustomizeOverlay {{
-                background: {C.PANEL};
+                background: {C.SHEET};
                 border: 1px solid {C.BORDER_B};
-                border-radius: 8px;
+                border-radius: 18px;
             }}
         """)
         lay = QVBoxLayout(self)
@@ -1876,8 +1980,8 @@ class CustomizeOverlay(QWidget):
             w.setStyleSheet(f"color: {color}; background: transparent;")
             return w
 
-        _fs = (f"QLineEdit {{ background: {C.DARK}; color: {C.TEXT}; "
-               f"border: 1px solid {C.BORDER}; border-radius: 4px; padding: 6px 10px; }}"
+        _fs = (f"QLineEdit {{ background: {C.INPUT}; color: {C.TEXT}; "
+               f"border: 1px solid {C.BORDER}; border-radius: 9px; padding: 6px 10px; }}"
                f"QLineEdit:focus {{ border: 1px solid {C.PRI}; }}")
 
         lay.addWidget(_lbl("PREFERENCES", 13, True))
@@ -1910,11 +2014,11 @@ class CustomizeOverlay(QWidget):
         self._theme_picker.setCurrentIndex(("system", "dark", "light").index(self._sel_theme))
         self._theme_picker.setAccessibleName("EDITH appearance theme")
         self._theme_picker.setStyleSheet(f"""
-            QComboBox {{ background: {C.DARK}; color: {C.TEXT}; border: 1px solid {C.BORDER};
-                         border-radius: 4px; padding: 5px 10px; }}
+            QComboBox {{ background: {C.INPUT}; color: {C.TEXT}; border: 1px solid {C.BORDER};
+                         border-radius: 9px; padding: 5px 10px; }}
             QComboBox:hover, QComboBox:focus {{ border-color: {C.PRI}; }}
-            QComboBox QAbstractItemView {{ background: {C.PANEL}; color: {C.TEXT};
-                                           selection-background-color: {C.PRI_GHO}; }}
+            QComboBox QAbstractItemView {{ background: {C.SHEET}; color: {C.TEXT};
+                                           selection-background-color: {C.HOVER}; }}
         """)
         self._theme_picker.currentIndexChanged.connect(self._on_theme_changed)
         lay.addWidget(self._theme_picker)
@@ -2052,12 +2156,13 @@ class PluginManagerOverlay(QWidget):
 
     def __init__(self, plugins: list[dict], parent=None):
         super().__init__(parent)
+        _glass_shadow(self)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"""
             PluginManagerOverlay {{
-                background: rgba(5, 6, 8, 250);
+                background: {C.SHEET};
                 border: 1px solid {C.BORDER_B};
-                border-radius: 8px;
+                border-radius: 18px;
             }}
         """)
         self.setFixedWidth(self._OW)
@@ -2134,10 +2239,10 @@ class PluginManagerOverlay(QWidget):
             btn.setText("ON")
             btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: #001A08; color: {C.GREEN};
-                    border: 1px solid {C.GREEN_D}; border-radius: 4px;
+                    background: {C.SUCCESS_BG}; color: {C.GREEN};
+                    border: 1px solid {C.GREEN_D}; border-radius: 8px;
                 }}
-                QPushButton:hover {{ background: #002010; }}
+                QPushButton:hover {{ background: {C.SUCCESS_HOVER}; }}
             """)
         else:
             btn.setText("OFF")
@@ -2164,12 +2269,13 @@ class ClipboardPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        _glass_shadow(self)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"""
             ClipboardPanel {{
-                background: rgba(10, 13, 18, 250);
+                background: {C.SHEET};
                 border: 1px solid {C.BORDER_B};
-                border-radius: 8px;
+                border-radius: 16px;
             }}
         """)
         self.setFixedWidth(self._W)
@@ -2204,9 +2310,9 @@ class ClipboardPanel(QWidget):
         lay.addWidget(self._preview)
 
         btn_row = QHBoxLayout(); btn_row.setSpacing(5)
-        _bs = (f"QPushButton {{ background: {C.PANEL2}; color: {C.TEXT_MED}; "
-               f"border: none; border-radius: 4px; }}"
-               f"QPushButton:hover {{ color: {C.PRI}; background: {C.PANEL}; }}")
+        _bs = (f"QPushButton {{ background: {C.GLASS_CARD}; color: {C.TEXT_MED}; "
+               f"border: 1px solid {C.BORDER}; border-radius: 8px; }}"
+               f"QPushButton:hover {{ color: {C.PRI}; background: {C.HOVER}; }}")
         for label, cmd_fmt in [
             ("Translate", "Translate this text to English: {text}"),
             ("Summarise", "Summarise this: {text}"),
@@ -2252,10 +2358,11 @@ class RemoteKeyOverlay(QWidget):
     def __init__(self, url: str, key: str, auto_login_url: str = "",
                  manual_url: str = "", expiry_secs: int = 600, parent=None):
         super().__init__(parent)
+        _glass_shadow(self)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"""
             RemoteKeyOverlay {{
-                background: rgba(5, 6, 8, 0.95);
+                background: {C.SHEET};
                 border: 1px solid {C.BORDER_B};
                 border-radius: 12px;
             }}
@@ -2513,7 +2620,10 @@ class MainWindow(QMainWindow):
         self._theme_preference = str(_cfg.get("ui_theme") or "system").strip().lower()
         if self._theme_preference not in {"system", "dark", "light"}:
             self._theme_preference = "system"
-        self._system_theme = "dark"  # watcher replaces this without blocking startup
+        # Qt's native hint avoids a light-mode flash while the OS-specific
+        # appearance worker starts and watches for subsequent changes.
+        scheme = QApplication.styleHints().colorScheme()
+        self._system_theme = "light" if scheme == Qt.ColorScheme.Light else "dark"
         self._theme_preview_preference: str | None = None
         self._assistant_name: str = "EDITH"
         _display = _display_assistant_name(self._assistant_name)
@@ -2521,7 +2631,7 @@ class MainWindow(QMainWindow):
 
         # Keep the new default theme when an older installation saved the old cyan default.
         _ui_color = (_cfg.get("ui_color") or "").strip()
-        if _ui_color.lower() == "#00e5ff":
+        if _ui_color.lower() in {"#00e5ff", "#61dff5"}:
             _ui_color = DEFAULT_UI_COLOR
         self._ui_accent = _ui_color if _ui_color and _ui_color.lower() != DEFAULT_UI_COLOR else DEFAULT_UI_COLOR
         apply_ui_theme(self._resolved_theme(), self._ui_accent)
@@ -2563,7 +2673,13 @@ class MainWindow(QMainWindow):
         self._voice_male_btn: QPushButton | None = None
 
         central = QWidget()
-        central.setStyleSheet(f"background: {C.BG};")
+        central.setObjectName("EdithRoot")
+        central.setStyleSheet(f"""
+            QWidget#EdithRoot {{
+                background: qradialgradient(cx:0.52,cy:0.16,radius:1.0,
+                    fx:0.52,fy:0.16,stop:0 {C.PANEL},stop:1 {C.BG});
+            }}
+        """)
         self.setCentralWidget(central)
 
         root = QVBoxLayout(central)
@@ -2597,7 +2713,7 @@ class MainWindow(QMainWindow):
         _cam_hdr.addWidget(_cam_title)
         _cam_hdr.addStretch()
         _cam_x = QPushButton("CLOSE")
-        _cam_x.setIcon(svg_icon("x", C.TEXT_DIM))
+        _set_theme_icon(_cam_x, "x", "TEXT_DIM")
         _cam_x.setIconSize(QSize(13, 13))
         _cam_x.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
         _cam_x.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -2724,6 +2840,7 @@ class MainWindow(QMainWindow):
         old = current_palette()
         apply_ui_theme(self._resolved_theme(preference), self._ui_accent)
         retheme_all_widgets(old, current_palette())
+        self.setWindowIcon(svg_icon("edith-app", C.PRI))
 
     def _preview_theme_preference(self, preference: str | None) -> None:
         self._theme_preview_preference = preference
@@ -3240,9 +3357,8 @@ class MainWindow(QMainWindow):
         w = QWidget()
         w.setFixedHeight(54)
         w.setStyleSheet(
-            f"background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-            f"stop:0 {C.DARK}, stop:0.5 {C.PANEL}, stop:1 {C.DARK}); "
-            f"border-bottom: 1px solid {C.PRI_DIM};"
+            f"background: {C.HEADER}; "
+            f"border-bottom: 1px solid {C.BORDER};"
         )
         lay = QHBoxLayout(w)
         lay.setContentsMargins(12, 0, 16, 0)
@@ -3256,17 +3372,17 @@ class MainWindow(QMainWindow):
         lay.addWidget(_badge("EDITH SYSTEMS", C.PRI_DIM))
         lay.addSpacing(12)
         self._drawer_btn = QPushButton()
-        self._drawer_btn.setIcon(svg_icon("settings", C.PRI))
+        _set_theme_icon(self._drawer_btn, "settings", "PRI")
         self._drawer_btn.setIconSize(QSize(17, 17))
         self._drawer_btn.setFixedSize(28, 28)
         self._drawer_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._drawer_btn.setToolTip("Settings & Controls")
         self._drawer_btn.setStyleSheet(f"""
             QPushButton {{
-                background: transparent; color: {C.TEXT_DIM};
-                border: 1px solid {C.BORDER}; border-radius: 6px;
+                background: {C.GLASS_CARD}; color: {C.TEXT_DIM};
+                border: 1px solid {C.BORDER}; border-radius: 9px;
             }}
-            QPushButton:hover {{ color: {C.PRI}; border-color: {C.PRI_DIM}; }}
+            QPushButton:hover {{ color: {C.PRI}; background: {C.HOVER}; border-color: {C.PRI_DIM}; }}
             QPushButton:checked {{ color: {C.PRI}; border-color: {C.PRI}; background: {C.PRI_GHO}; }}
         """)
         self._drawer_btn.setCheckable(True)
@@ -3311,7 +3427,7 @@ class MainWindow(QMainWindow):
     def _build_left_panel(self) -> QWidget:
         w = QWidget()
         w.setFixedWidth(_LEFT_W)
-        w.setStyleSheet(f"background: {C.DARK}; border-right: 1px solid {C.BORDER};")
+        w.setStyleSheet(f"background: {C.SIDEBAR}; border-right: 1px solid {C.BORDER};")
         lay = QVBoxLayout(w)
         lay.setContentsMargins(10, 12, 10, 12)
         lay.setSpacing(8)
@@ -3323,11 +3439,11 @@ class MainWindow(QMainWindow):
         lay.addWidget(hdr)
         lay.addSpacing(4)
 
-        self._bar_cpu = MetricBar("CPU", C.PRI)
-        self._bar_mem = MetricBar("MEM", C.ACC2)
-        self._bar_net = MetricBar("NET", C.GREEN)
-        self._bar_gpu = MetricBar("GPU", C.ACC)
-        self._bar_tmp = MetricBar("TMP", "#ff6688")
+        self._bar_cpu = MetricBar("CPU", "PRI")
+        self._bar_mem = MetricBar("MEM", "ACC2")
+        self._bar_net = MetricBar("NET", "GREEN")
+        self._bar_gpu = MetricBar("GPU", "ACC")
+        self._bar_tmp = MetricBar("TMP", "RED")
 
         for bar in [self._bar_cpu, self._bar_mem, self._bar_net,
                     self._bar_gpu, self._bar_tmp]:
@@ -3337,7 +3453,7 @@ class MainWindow(QMainWindow):
 
         info_panel = QWidget()
         info_panel.setStyleSheet(
-            f"background: {C.PANEL2}; border: 1px solid {C.BORDER}; border-radius: 6px;"
+            f"background: {C.GLASS_CARD}; border: 1px solid {C.BORDER}; border-radius: 11px;"
         )
         ip_lay = QVBoxLayout(info_panel)
         ip_lay.setContentsMargins(8, 6, 8, 6)
@@ -3371,8 +3487,8 @@ class MainWindow(QMainWindow):
             lbl.setFont(QFont(FONT_MAIN, 7, QFont.Weight.Bold))
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lbl.setStyleSheet(
-                f"color: {col}; background: {C.PANEL2};"
-                f"border: 1px solid {C.BORDER_A}; border-radius: 4px; padding: 6px;"
+                f"color: {col}; background: {C.GLASS_CARD};"
+                f"border: 1px solid {C.BORDER}; border-radius: 9px; padding: 6px;"
             )
             lay.addWidget(lbl)
 
@@ -3436,7 +3552,7 @@ class MainWindow(QMainWindow):
     def _build_right_panel(self) -> QWidget:
         w = QWidget()
         w.setFixedWidth(_RIGHT_W)
-        w.setStyleSheet(f"background: {C.DARK}; border-left: 1px solid {C.BORDER};")
+        w.setStyleSheet(f"background: {C.SIDEBAR}; border-left: 1px solid {C.BORDER};")
         lay = QVBoxLayout(w)
         lay.setContentsMargins(12, 12, 12, 12)
         lay.setSpacing(10)
@@ -3464,8 +3580,8 @@ class MainWindow(QMainWindow):
         self._cancel_queued_btn.setFont(QFont(FONT_MAIN, 7, QFont.Weight.Bold))
         self._cancel_queued_btn.setStyleSheet(f"""
             QPushButton {{
-                color: {C.TEXT_MED}; background: {C.PANEL2};
-                border: 1px solid {C.BORDER}; border-radius: 4px;
+                color: {C.TEXT_MED}; background: {C.GLASS_CARD};
+                border: 1px solid {C.BORDER}; border-radius: 8px;
             }}
             QPushButton:hover {{ color: {C.PRI}; border-color: {C.PRI}; }}
             QPushButton:disabled {{ color: {C.TEXT_DIM}; }}
@@ -3478,7 +3594,7 @@ class MainWindow(QMainWindow):
         tasks_row.addWidget(self._cancel_queued_btn)
 
         self._task_details_btn = QPushButton()
-        self._task_details_btn.setIcon(svg_icon("chevron-down", C.TEXT_MED))
+        _set_theme_icon(self._task_details_btn, "chevron-down", "TEXT_MED")
         self._task_details_btn.setIconSize(QSize(13, 13))
         self._task_details_btn.setFixedSize(26, 25)
         self._task_details_btn.setCheckable(True)
@@ -3487,8 +3603,8 @@ class MainWindow(QMainWindow):
         self._task_details_btn.setAccessibleName("Show or hide EDITH task details")
         self._task_details_btn.setStyleSheet(f"""
             QPushButton {{
-                background: {C.PANEL2}; border: 1px solid {C.BORDER};
-                border-radius: 4px;
+                background: {C.GLASS_CARD}; border: 1px solid {C.BORDER};
+                border-radius: 8px;
             }}
             QPushButton:checked {{ border-color: {C.PRI_DIM}; }}
             QPushButton:hover {{ border-color: {C.PRI}; }}
@@ -3502,8 +3618,8 @@ class MainWindow(QMainWindow):
         self._task_details_panel.setObjectName("TaskDetailsPanel")
         self._task_details_panel.setStyleSheet(f"""
             QFrame#TaskDetailsPanel {{
-                background: {C.PANEL}; border: 1px solid {C.BORDER};
-                border-radius: 5px;
+                background: {C.GLASS}; border: 1px solid {C.BORDER};
+                border-radius: 11px;
             }}
         """)
         detail_lay = QVBoxLayout(self._task_details_panel)
@@ -3566,21 +3682,21 @@ class MainWindow(QMainWindow):
         lay.addLayout(self._build_input_row())
 
         self._interrupt_btn = QPushButton("INTERRUPT  [ESC]")
-        self._interrupt_btn.setIcon(svg_icon("stop-circle", C.MUTED_C))
+        _set_theme_icon(self._interrupt_btn, "stop-circle", "MUTED_C")
         self._interrupt_btn.setIconSize(QSize(16, 16))
         self._interrupt_btn.setFixedHeight(34)
         self._interrupt_btn.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
         self._interrupt_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._interrupt_btn.setStyleSheet(f"""
             QPushButton {{
-                background: #140008; color: {C.MUTED_C};
-                border: 1px solid {C.MUTED_C}; border-radius: 4px;
+                background: {C.DANGER_BG}; color: {C.MUTED_C};
+                border: 1px solid {C.MUTED_C}; border-radius: 9px;
             }}
             QPushButton:hover {{
-                background: #200010; border: 1px solid #ff6688;
+                background: {C.DANGER_HOVER}; border: 1px solid {C.RED};
             }}
             QPushButton:pressed {{
-                background: #300018;
+                background: {C.DANGER_HOVER};
             }}
         """)
         self._interrupt_btn.clicked.connect(self._do_interrupt)
@@ -3600,29 +3716,29 @@ class MainWindow(QMainWindow):
         """Floating overlay panel shown when the settings header button is toggled."""
         _BTN_STYLE_PRI = f"""
             QPushButton {{
-                background: {C.PANEL2}; color: {C.PRI};
-                border: 1px solid {C.PRI_DIM}; border-radius: 4px;
+                background: {C.GLASS_CARD}; color: {C.PRI};
+                border: 1px solid {C.PRI_DIM}; border-radius: 9px;
                 text-align: left; padding: 0 10px;
             }}
-            QPushButton:hover {{ background: {C.PRI_GHO}; border-color: {C.PRI}; }}
+            QPushButton:hover {{ background: {C.HOVER}; border-color: {C.PRI}; }}
         """
         _BTN_STYLE_DIM = f"""
             QPushButton {{
-                background: transparent; color: {C.TEXT_MED};
-                border: 1px solid {C.BORDER}; border-radius: 4px;
+                background: {C.GLASS_CARD}; color: {C.TEXT_MED};
+                border: 1px solid {C.BORDER}; border-radius: 9px;
                 text-align: left; padding: 0 10px;
             }}
-            QPushButton:hover {{ color: {C.PRI}; border-color: {C.BORDER_B}; }}
+            QPushButton:hover {{ color: {C.PRI}; background: {C.HOVER}; border-color: {C.BORDER_B}; }}
         """
 
         w = QWidget(self.centralWidget())
         w.setObjectName("QuickDrawer")
+        _glass_shadow(w)
         w.setStyleSheet(f"""
             QWidget#QuickDrawer {{
-                background: {C.DARK};
+                background: {C.SHEET};
                 border: 1px solid {C.BORDER_B};
-                border-top: none;
-                border-radius: 0 0 8px 8px;
+                border-radius: 16px;
             }}
         """)
         w.hide()
@@ -3646,7 +3762,7 @@ class MainWindow(QMainWindow):
         lay.addWidget(remote_btn)
 
         fs_btn = QPushButton("FULLSCREEN  [F11]")
-        fs_btn.setIcon(svg_icon("maximize", C.PRI))
+        _set_theme_icon(fs_btn, "maximize", "PRI")
         fs_btn.setIconSize(QSize(15, 15))
         fs_btn.setFixedHeight(28)
         fs_btn.setFont(QFont(FONT_MAIN, 8))
@@ -3671,7 +3787,7 @@ class MainWindow(QMainWindow):
         lay.addWidget(self._autostart_btn)
 
         cust_btn = QPushButton("PREFERENCES & THEME")
-        cust_btn.setIcon(svg_icon("settings", C.PRI))
+        _set_theme_icon(cust_btn, "settings", "PRI")
         cust_btn.setIconSize(QSize(15, 15))
         cust_btn.setFixedHeight(28)
         cust_btn.setFont(QFont(FONT_MAIN, 8))
@@ -3730,7 +3846,7 @@ class MainWindow(QMainWindow):
         lay.addWidget(self._brief_btn)
 
         plugin_btn = QPushButton("PLUGINS")
-        plugin_btn.setIcon(svg_icon("puzzle", C.PRI))
+        _set_theme_icon(plugin_btn, "puzzle", "PRI")
         plugin_btn.setIconSize(QSize(15, 15))
         plugin_btn.setFixedHeight(28)
         plugin_btn.setFont(QFont(FONT_MAIN, 8))
@@ -3831,9 +3947,9 @@ class MainWindow(QMainWindow):
         self._input.setFixedHeight(36)
         self._input.setStyleSheet(f"""
             QLineEdit {{
-                background: {C.DARK}; color: {C.WHITE};
+                background: {C.INPUT}; color: {C.TEXT};
                 selection-background-color: {C.PRI_DIM};
-                border: 1px solid {C.BORDER_B}; border-radius: 7px;
+                border: 1px solid {C.BORDER_B}; border-radius: 10px;
                 padding: 5px 12px;
             }}
             QLineEdit:hover {{ border: 1px solid {C.PRI_DIM}; }}
@@ -3842,17 +3958,19 @@ class MainWindow(QMainWindow):
         self._input.returnPressed.connect(self._send)
         row.addWidget(self._input)
 
-        send = QPushButton("▸")
+        send = QPushButton()
+        _set_theme_icon(send, "arrow-up", "PRI")
+        send.setIconSize(QSize(17, 17))
         send.setFixedSize(36, 36)
         send.setFont(QFont(FONT_MAIN, 12, QFont.Weight.Bold))
         send.setCursor(Qt.CursorShape.PointingHandCursor)
         send.setStyleSheet(f"""
             QPushButton {{
-                background: {C.PANEL}; color: {C.PRI};
-                border: 1px solid {C.PRI_DIM}; border-radius: 7px;
+                background: {C.GLASS_CARD}; color: {C.PRI};
+                border: 1px solid {C.PRI_DIM}; border-radius: 10px;
             }}
-            QPushButton:hover {{ background: {C.PRI_GHO}; border: 1px solid {C.PRI}; }}
-            QPushButton:pressed {{ background: {C.BORDER_B}; }}
+            QPushButton:hover {{ background: {C.HOVER}; border: 1px solid {C.PRI}; }}
+            QPushButton:pressed {{ background: {C.PRI_GHO}; }}
         """)
         send.setAccessibleName("Send command to EDITH")
         send.setToolTip("Send command (Enter)")
@@ -3873,7 +3991,7 @@ class MainWindow(QMainWindow):
         w.setObjectName("ContentPanel")
         w.setStyleSheet(f"""
             QWidget#ContentPanel {{
-                background: {C.PANEL};
+                background: {C.GLASS};
                 border-top: 1px solid {C.BORDER};
             }}
         """)
@@ -3905,7 +4023,7 @@ class MainWindow(QMainWindow):
         hdr.addWidget(self._content_ts_lbl)
 
         dismiss = QPushButton("DISMISS")
-        dismiss.setIcon(svg_icon("x", C.TEXT_DIM))
+        _set_theme_icon(dismiss, "x", "TEXT_DIM")
         dismiss.setIconSize(QSize(12, 12))
         dismiss.setFont(QFont(FONT_MAIN, 8))
         dismiss.setFixedHeight(22)
@@ -3935,10 +4053,10 @@ class MainWindow(QMainWindow):
         )
         self._content_display.setStyleSheet(f"""
             QTextEdit {{
-                background: {C.DARK};
+                background: {C.INPUT};
                 color: {C.TEXT};
                 border: 1px solid {C.BORDER};
-                border-radius: 4px;
+                border-radius: 11px;
                 padding: 8px 10px;
                 selection-background-color: {C.PRI_GHO};
             }}
@@ -3973,7 +4091,7 @@ class MainWindow(QMainWindow):
             dialog.resize(760, 560)
             dialog.setStyleSheet(f"""
                 QDialog {{
-                    background: {C.PANEL};
+                    background: {C.SHEET};
                     color: {C.TEXT};
                 }}
                 QLabel {{
@@ -3981,27 +4099,29 @@ class MainWindow(QMainWindow):
                     background: transparent;
                 }}
                 QTextEdit {{
-                    background: {C.DARK};
+                    background: {C.INPUT};
                     color: {C.TEXT};
                     border: 1px solid {C.BORDER_B};
-                    border-radius: 6px;
+                    border-radius: 12px;
                     padding: 10px;
                     selection-background-color: {C.PRI_GHO};
                 }}
                 QPushButton {{
                     min-height: 34px;
                     padding: 0 14px;
-                    border-radius: 5px;
-                    background: {C.PANEL2};
+                    border-radius: 9px;
+                    background: {C.GLASS_CARD};
                     color: {C.TEXT};
                     border: 1px solid {C.BORDER_B};
                 }}
+                QPushButton:hover {{ background: {C.HOVER}; border-color: {C.PRI_DIM}; }}
                 QPushButton#confirmAction {{
-                    background: {C.PRI_GHO};
-                    border-color: {C.PRI};
-                    color: {C.TEXT};
+                    background: {C.DANGER_BG};
+                    border-color: {C.RED};
+                    color: {C.RED};
                     font-weight: 600;
                 }}
+                QPushButton#confirmAction:hover {{ background: {C.DANGER_HOVER}; }}
             """)
             layout = QVBoxLayout(dialog)
             layout.setContentsMargins(18, 18, 18, 16)
@@ -4311,10 +4431,10 @@ class MainWindow(QMainWindow):
             self._autostart_btn.setText("◉  AUTO-START: ON")
             self._autostart_btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: #001A08; color: {C.GREEN};
-                    border: 1px solid {C.GREEN_D}; border-radius: 4px;
+                    background: {C.SUCCESS_BG}; color: {C.GREEN};
+                    border: 1px solid {C.GREEN_D}; border-radius: 8px;
                 }}
-                QPushButton:hover {{ background: #002010; }}
+                QPushButton:hover {{ background: {C.SUCCESS_HOVER}; }}
             """)
         else:
             self._autostart_btn.setText("◉  AUTO-START: OFF")
@@ -4337,19 +4457,19 @@ class MainWindow(QMainWindow):
             return
         if enabled:
             self._brief_btn.setText("MORNING BRIEF: ON")
-            self._brief_btn.setIcon(svg_icon("sun", C.ACC2))
+            _set_theme_icon(self._brief_btn, "sun", "ACC2")
             self._brief_btn.setIconSize(QSize(15, 15))
             self._brief_btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: #001A08; color: {C.GREEN};
-                    border: 1px solid {C.GREEN_D}; border-radius: 4px;
+                    background: {C.SUCCESS_BG}; color: {C.GREEN};
+                    border: 1px solid {C.GREEN_D}; border-radius: 8px;
                     text-align: left; padding: 0 10px;
                 }}
-                QPushButton:hover {{ background: #002010; }}
+                QPushButton:hover {{ background: {C.SUCCESS_HOVER}; }}
             """)
         else:
             self._brief_btn.setText("MORNING BRIEF: OFF")
-            self._brief_btn.setIcon(svg_icon("sun", C.TEXT_DIM))
+            _set_theme_icon(self._brief_btn, "sun", "TEXT_DIM")
             self._brief_btn.setIconSize(QSize(15, 15))
             self._brief_btn.setStyleSheet(f"""
                 QPushButton {{
@@ -4494,24 +4614,24 @@ class MainWindow(QMainWindow):
     def _style_mute_btn(self):
         if self._muted:
             self._mute_btn.setText("MICROPHONE MUTED")
-            self._mute_btn.setIcon(svg_icon("mic-off", C.MUTED_C))
+            _set_theme_icon(self._mute_btn, "mic-off", "MUTED_C")
             self._mute_btn.setIconSize(QSize(16, 16))
             self._mute_btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: #140006; color: {C.MUTED_C};
-                    border: 1px solid {C.MUTED_C}; border-radius: 4px;
+                    background: {C.DANGER_BG}; color: {C.MUTED_C};
+                    border: 1px solid {C.MUTED_C}; border-radius: 9px;
                 }}
             """)
         else:
             self._mute_btn.setText("MICROPHONE ACTIVE")
-            self._mute_btn.setIcon(svg_icon("mic", C.GREEN))
+            _set_theme_icon(self._mute_btn, "mic", "GREEN")
             self._mute_btn.setIconSize(QSize(16, 16))
             self._mute_btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: #00140A; color: {C.GREEN};
-                    border: 1px solid {C.GREEN}; border-radius: 4px;
+                    background: {C.SUCCESS_BG}; color: {C.GREEN};
+                    border: 1px solid {C.GREEN}; border-radius: 9px;
                 }}
-                QPushButton:hover {{ background: #001F10; }}
+                QPushButton:hover {{ background: {C.SUCCESS_HOVER}; }}
             """)
 
     def _restore_unsent_command(self, text: str) -> None:

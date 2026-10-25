@@ -119,6 +119,12 @@ The GitHub Actions Quality checks workflow runs these same checks on the branch.
 9. Inspect the main controls and file cards: icons should render as line icons rather than emoji placeholders.
 10. Close and restart EDITH normally once to check that the local configuration remains available.
 
+### Native glass appearance check
+
+1. In Preferences choose **System**. Switch the OS between Light and Dark. Within two seconds, verify the header, both side panels, metric cards, Activity Log, input, existing log text and popups switch together. The center reference video should continue playing on its dark stage.
+2. Open the command field's right-click menu and the provider/settings popups in each mode. Check text, selection, placeholder, disabled controls and buttons remain readable; the OS title-bar controls remain native.
+3. Choose **Light** and **Dark** manually, restart EDITH, and verify the saved choice overrides the OS until **System** is selected again. Repeat with a news/content panel open and at the minimum supported window size.
+
 ## 4. Voice and identity
 
 - Ask a harmless question and confirm EDITH answers.

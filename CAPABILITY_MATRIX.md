@@ -24,7 +24,7 @@ physical testing. Automated results and outstanding device checks are recorded i
 | Sleep/restart/shutdown | OS power/UAC | AppleScript OS authorization | logind/systemctl/polkit | Always critical confirmation; OS can deny |
 | OS theme | winreg AppsUseLightTheme | defaults AppleInterfaceStyle | GNOME gsettings → KDE kdeglobals | Unknown dark; worker polls every 2s |
 | Secure API secrets | keyring Windows Credential Manager | keyring Keychain | keyring Secret Service/KWallet | Keychain preferred. If unavailable, existing compatibility code retains a clearly labelled legacy plaintext value pending migration; secure storage cannot be claimed in that state. |
-| Desktop UI | PyQt6 native Qt | PyQt6 native Qt | PyQt6 native Qt | Local bundled video and native windows; remote dashboard HTML is separate. WebEngine/Tailwind desktop redesign is not implemented. |
+| Desktop UI | PyQt6 native Qt | PyQt6 native Qt | PyQt6 native Qt | Shared dark/light glass palette, bundled looping video, native window controls and local SVG icons. Remote dashboard HTML is separate; WebEngine/Tailwind is not used for this desktop. |
 | Three.js sphere / GSAP | Not implemented | Not implemented | Not implemented | The owner's later instruction keeps the existing exact bundled video and native Qt layout. No 60 fps claim. |
 | Microphone/speaker | PortAudio | PortAudio + mic permission | PortAudio/PipeWire/Pulse/ALSA | Text/remote input survive absent hardware; exact 16/24k formats checked |
 | Camera | OpenCV | OpenCV + camera permission | OpenCV/V4L | Missing camera: explicit unavailable |

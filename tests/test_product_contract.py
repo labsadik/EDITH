@@ -114,8 +114,8 @@ class ProductContractTests(unittest.TestCase):
 
     def test_ui_uses_bundled_svg_controls_instead_of_emoji(self):
         self.assertIn("from core.icons import svg_icon", self.ui)
-        self.assertIn('svg_icon("mic"', self.ui)
-        self.assertIn('svg_icon("settings"', self.ui)
+        self.assertIn('_set_theme_icon(self._mute_btn, "mic", "GREEN")', self.ui)
+        self.assertIn('_set_theme_icon(self._drawer_btn, "settings", "PRI")', self.ui)
         self.assertNotIn("Segoe UI Emoji", self.ui)
         for glyph in ("🎙", "🔇", "🧩", "🐧", "☀"):
             self.assertNotIn(glyph, self.ui)

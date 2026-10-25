@@ -166,7 +166,7 @@ class WorkspaceTests(unittest.TestCase):
         w._on_mic_level(.9, 'PC')
         self.assertEqual(w.hud._mic_level, 0)
 
-    def test_standard_right_click_menu_has_light_text_and_dark_surface(self):
+    def test_standard_right_click_menu_uses_theme_surface_and_text(self):
         from PyQt6.QtGui import QPalette, QColor
         w = self.window
         w._input.setText('Select and copy')
@@ -177,11 +177,36 @@ class WorkspaceTests(unittest.TestCase):
         try:
             palette = menu.palette()
             self.assertEqual(palette.color(QPalette.ColorRole.Text), QColor(self.ui.C.TEXT))
-            self.assertEqual(palette.color(QPalette.ColorRole.Window), QColor(self.ui.C.PANEL))
+            self.assertEqual(palette.color(QPalette.ColorRole.Window), QColor(self.ui.C.SHEET))
             self.assertGreater(palette.color(QPalette.ColorRole.Text).lightness(), 200)
             self.assertLess(palette.color(QPalette.ColorRole.Window).lightness(), 70)
             self.assertIn('QMenu::item:selected', menu.styleSheet())
             self.assertIn(self.ui.C.TEXT, menu.styleSheet())
+        finally:
+            menu.close()
+            menu.deleteLater()
+
+    def test_live_light_switch_repaints_panels_icons_log_and_context_menu(self):
+        from PyQt6.QtGui import QColor, QPalette
+        w = self.window
+        w._log.set_reduced_motion(True)
+        w._log.append_log('SYS: Ready')
+        self.app.processEvents()
+        w._log._step()
+        w._preview_theme_preference('light')
+        self.app.processEvents()
+        self.assertIn(self.ui.C.SIDEBAR.lower(), w._right_panel.styleSheet().lower())
+        self.assertIn(self.ui.C.HEADER.lower(), w._title_lbl.parentWidget().styleSheet().lower())
+        self.assertIn(self.ui.C.INPUT.lower(), w._input.styleSheet().lower())
+        fragment = w._log.document().begin().begin().fragment()
+        self.assertEqual(fragment.charFormat().foreground().color(), QColor(self.ui.C.ACC2))
+        self.assertFalse(w._drawer_btn.icon().isNull())
+        menu = w._input.createStandardContextMenu()
+        menu.popup(w._input.mapToGlobal(w._input.rect().topLeft()))
+        self.app.processEvents()
+        try:
+            self.assertEqual(menu.palette().color(QPalette.ColorRole.Window), QColor(self.ui.C.SHEET))
+            self.assertEqual(menu.palette().color(QPalette.ColorRole.Text), QColor(self.ui.C.TEXT))
         finally:
             menu.close()
             menu.deleteLater()

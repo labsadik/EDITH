@@ -1,4 +1,4 @@
-"""Dark Qt palette and explicit popup colors for native editing context menus."""
+"""Native Qt palette and popup styling for system light/dark appearance."""
 from PyQt6.QtCore import QObject, QEvent
 from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import QMenu
@@ -6,12 +6,22 @@ from PyQt6.QtWidgets import QMenu
 
 def popup_style(c):
     return f"""
-        QMenu {{background:{c.PANEL};color:{c.TEXT};border:1px solid {c.BORDER_B};padding:5px;}}
-        QMenu::item {{color:{c.TEXT};background:transparent;padding:7px 25px 7px 16px;}}
-        QMenu::item:selected {{background:{c.PRI_GHO};color:{c.TEXT};}}
+        QMenu {{background:{c.SHEET};color:{c.TEXT};border:1px solid {c.BORDER_B};
+                border-radius:12px;padding:6px;}}
+        QMenu::item {{color:{c.TEXT};background:transparent;padding:8px 26px 8px 15px;
+                     border-radius:7px;}}
+        QMenu::item:selected {{background:{c.HOVER};color:{c.TEXT};}}
         QMenu::item:disabled {{color:{c.TEXT_DIM};}}
         QMenu::separator {{height:1px;background:{c.BORDER};margin:4px 8px;}}
-        QToolTip {{background:{c.PANEL};color:{c.TEXT};border:1px solid {c.BORDER_B};padding:6px;}}
+        QToolTip {{background:{c.SHEET};color:{c.TEXT};border:1px solid {c.BORDER_B};
+                   border-radius:8px;padding:7px;}}
+        QComboBox {{background:{c.INPUT};color:{c.TEXT};border:1px solid {c.BORDER};
+                    border-radius:9px;padding:5px 10px;min-height:25px;}}
+        QComboBox:hover, QComboBox:focus {{border-color:{c.PRI};}}
+        QComboBox::drop-down {{border:0;width:24px;}}
+        QComboBox QAbstractItemView {{background:{c.SHEET};color:{c.TEXT};
+            border:1px solid {c.BORDER_B};selection-background-color:{c.HOVER};
+            selection-color:{c.TEXT};outline:0;}}
     """
 
 
