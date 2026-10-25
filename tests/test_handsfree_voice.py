@@ -48,7 +48,9 @@ class HandsFreeVoiceTests(unittest.TestCase):
 
     def test_voice_request_requires_an_instruction(self):
         self.assertEqual(requested_voice_mode("Switch to a male voice"), "male")
+        self.assertEqual(requested_voice_mode("male voice please"), "male")
         self.assertEqual(requested_voice_mode("মেয়েদের কণ্ঠে কথা বলো"), "female")
+        self.assertEqual(requested_voice_mode("মেয়েদের ভয়েস"), "female")
         self.assertIsNone(requested_voice_mode("Why did the voice switch to another place?"))
         self.assertIsNone(requested_voice_mode("What are the male voice options?"))
 

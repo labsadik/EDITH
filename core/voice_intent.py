@@ -10,6 +10,11 @@ def requested_voice_mode(text: str) -> str | None:
     male = bool(re.search(r"\bmale\b|\bman's\b|\bman\b|\bboy\b|পুরুষ|ছেলেদের", statement))
     if female == male:
         return None
+    shorthand = bool(re.fullmatch(
+        r"(?:a |the )?(?:female|male|woman's|man's) voice(?: please)?|"
+        r"(?:মেয়েদের|মেয়েদের|মেয়েলি|মেয়েলি|পুরুষ|ছেলেদের)\s*(?:ভয়েস|ভয়েস|কণ্ঠ)",
+        statement,
+    ))
     english = bool(re.search(r"\b(change|switch|set|use|speak|talk|make)\b.{0,75}\b(voice|female|male|woman|man)\b", statement))
     bengali = bool(re.search(r"(?:ভয়েস|ভয়েস|কণ্ঠ|গলা).{0,55}(?:করো|করে দাও|বলো|বলবে|চাই|চালাও|দাও)|(?:মেয়েদের|মেয়েদের|মেয়েলি|মেয়েলি|পুরুষ|ছেলেদের).{0,55}(?:কথা বলো|ভয়েস করো|ভয়েস করো|কণ্ঠে বলো)", statement))
-    return ("female" if female else "male") if english or bengali else None
+    return ("female" if female else "male") if shorthand or english or bengali else None
