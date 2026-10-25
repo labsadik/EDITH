@@ -116,7 +116,7 @@ class LegacyToolIntegrationTests(unittest.TestCase):
             self.assertIn("cancelled", _execute_generated_code("print('ok')").lower())
             service.run_argv.assert_called_once()
             call = service.run_argv.call_args
-            self.assertTrue(any(str(arg).endswith("core/desktop_worker.py") for arg in call.args[0]))
+            self.assertTrue(any(Path(arg).parts[-2:] == ("core", "desktop_worker.py") for arg in call.args[0]))
             self.assertNotIn("exec(", str(call.kwargs.get("input_data", b"")))
 
     def test_dependency_install_is_exact_and_decline_is_not_retried(self):

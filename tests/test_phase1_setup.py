@@ -2,6 +2,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from core.branding import prepare_agent_profiles_dir, prepare_projects_dir, prepare_uploads_dir
 from core.icons import icon_names, svg_markup
@@ -15,7 +16,26 @@ from memory import config_manager
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class _MemoryKeyring:
+    def __init__(self):
+        self.values = {}
+
+    def get_password(self, service, name):
+        return self.values.get((service, name))
+
+    def set_password(self, service, name, value):
+        self.values[(service, name)] = value
+
+
 class BrandingAndStartupTests(unittest.TestCase):
+    def setUp(self):
+        # These tests exercise the config/keychain contract without changing
+        # the developer's real OS credential store or leaking state to the
+        # next test's temporary config file.
+        backend = patch("core.secrets._keyring_backend", return_value=_MemoryKeyring())
+        backend.start()
+        self.addCleanup(backend.stop)
+
     def test_old_upload_directory_migrates_with_contents(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
@@ -230,3 +250,4 @@ class BrandingAndStartupTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
