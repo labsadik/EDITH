@@ -14,7 +14,7 @@ from typing import Any, Awaitable, Callable, Mapping
 _TERMINAL = {"succeeded", "failed", "blocked", "cancelled", "interrupted"}
 
 # Deliberate allowlist: new and unknown tools remain sequential by default.
-_READ_ONLY_TOOLS = {"web_search", "system_status", "task_history"}
+_READ_ONLY_TOOLS = {"web_search", "system_status", "performance_metrics", "task_history"}
 _READ_ONLY_FILE_ACTIONS = {"list", "read", "find", "info", "largest", "disk_usage"}
 _READ_ONLY_OPEN_APP_ACTIONS = {"list", "list_installed", "discover", "search", "find"}
 

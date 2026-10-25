@@ -90,6 +90,7 @@ from core.narration_audio     import SpeechBuffer, SpeechPlayer
 from core.live_audio import response_pcm
 from core.execution import SERVICE as EXECUTION, configure_execution, run_code_tool
 from core.device_tools import DeviceToolService, format_device_result
+from core.latency_metrics import LatencyMetrics
 from core.secrets import get_gemini_api_key
 from core.audio_meter          import pcm16_level
 from core.product_identity import PRODUCT_IDENTITY
@@ -253,6 +254,15 @@ TOOL_DECLARATIONS = [
             "type": "OBJECT",
             "properties": {},
         }
+    },
+    {
+        "name": "performance_metrics",
+        "description": (
+            "Returns local observed latency statistics (sample count, p50, p95 and range) "
+            "for Live connection, text-to-first-audio and completed tools. These are diagnostics, "
+            "not a promise of future response speed."
+        ),
+        "parameters": {"type": "OBJECT", "properties": {}},
     },
     {
         "name": "platform_system",
@@ -703,6 +713,7 @@ class EdithLive:
         # Reuse execution's broker/audit so device tools cannot bypass the
         # dispatcher confirmation, activity receipts or global interrupt.
         self._device_tools = DeviceToolService(EXECUTION.controller)
+        self._latency_metrics = LatencyMetrics()
         self._asst_name     = "EDITH"
         try:
             _saved_cfg = json.loads(API_CONFIG_PATH.read_text(encoding="utf-8"))
@@ -1330,6 +1341,7 @@ class EdithLive:
     async def _execute_tool(self, fc) -> types.FunctionResponse:
         name = fc.name
         args = dict(fc.args or {})
+        tool_started_at = time.perf_counter()
         approval_scope = None
         # Internal foreground-target fields are dispatcher-owned, never model-authorized.
         args.pop("_confirmation_window_target", None)
@@ -1346,6 +1358,9 @@ class EdithLive:
         self._audit_tool_event("start", name, args, backend_tier)
 
         def _completed(response):
+            metrics = getattr(self, "_latency_metrics", None)
+            if metrics is not None:
+                metrics.record(f"tool.{name}", (time.perf_counter() - tool_started_at) * 1000)
             self._audit_tool_event(
                 "finish", name, args, backend_tier,
                 (response.response or {}).get("result") if response else None,
@@ -1649,6 +1664,9 @@ class EdithLive:
                 r = await loop.run_in_executor(None, get_system_status)
                 result = str(r)
 
+            elif name == "performance_metrics":
+                result = self._latency_metrics.format()
+
             elif name == "platform_system":
                 receipt = await loop.run_in_executor(None, self._device_tools.execute, args)
                 result = format_device_result(receipt)
@@ -1813,6 +1831,9 @@ class EdithLive:
                                     (time.perf_counter() - self._pending_text_started_at) * 1000
                                 )
                                 self._pending_text_started_at = None
+                                metrics = getattr(self, "_latency_metrics", None)
+                                if metrics is not None:
+                                    metrics.record("text_to_first_audio", elapsed_ms)
                                 self.ui.write_log(
                                     f"PERF: Gemini Live first audio after text request: {elapsed_ms} ms."
                                 )
@@ -2394,9 +2415,11 @@ class EdithLive:
                     self._pending_text_started_at = None
 
                     print("[Assistant] Connected.")
+                    live_connect_ms = round((time.perf_counter() - connect_started_at) * 1000)
+                    self._latency_metrics.record("live_connect", live_connect_ms)
                     self.ui.write_log(
                         f"PERF: Gemini Live session ready in "
-                        f"{round((time.perf_counter() - connect_started_at) * 1000)} ms."
+                        f"{live_connect_ms} ms."
                     )
                     self.ui.set_state("LISTENING")
                     self.ui.write_log("SYS: Assistant ready.")
