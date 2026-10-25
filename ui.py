@@ -105,7 +105,7 @@ class C:
     DANGER_HOVER = "#808B3245"
     SUCCESS_BG = "#4D216551"
     SUCCESS_HOVER = "#7529775E"
-    VIDEO_BG  = "#091321"
+    VIDEO_BG  = "#000000"
     SHADOW    = "#90000000"
 
 
@@ -142,7 +142,7 @@ _THEME_DEFAULTS = {
         "DANGER_HOVER": "#FAFFD3DC",
         "SUCCESS_BG": "#DBD7F5E8",
         "SUCCESS_HOVER": "#FABFEAD5",
-        "VIDEO_BG": "#091321",
+        "VIDEO_BG": "#000000",
         "SHADOW": "#42234257",
     },
 }
@@ -4929,3 +4929,4 @@ class EdithUI:
     def stop_speaking(self):
         if not self.muted:
             self.set_state("LISTENING")
+

@@ -110,7 +110,7 @@ class PermissionBroker:
     def authorize(self, operation, arguments, *, minimum=None, preapproved=False):
         self.check_cancelled()
         tier = self.tier(operation, arguments, minimum)
-        if tier >= 2:
+        if tier >= 2 and not self.settings.get('unattended', False):
             # Never trust an argument such as confirmed=true or autoApprove.
             context_approved = operation in _APPROVED_OPERATIONS.get()
             if not preapproved and not context_approved and self.confirmer is None:
@@ -122,3 +122,4 @@ class PermissionBroker:
                     raise PermissionDenied('Cancelled or expired; nothing was executed')
             self.check_cancelled()
         return tier
+

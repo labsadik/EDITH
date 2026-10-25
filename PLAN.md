@@ -154,3 +154,15 @@ procedural sphere. Keep the exact bundled `assets/hud_reference.mp4`, its origin
 URL, loop and framing. Any future Tailwind/GSAP/Three.js work must preserve that
 video content; shader or library adoption does not authorize changing the visual.
 The unfinished web/platform prototype is not part of the published CI/runtime fix.
+
+## Later owner update: hands-free execution and audio continuity
+
+The owner subsequently requested no separate EDITH confirmation for a direct
+instruction. The app logs the action and target, then dispatches it. Audit
+tiers, task cancellation, argument checks and native OS authorization remain.
+The voice pipeline suppresses microphone packets during speaker playback and
+its short output tail; a model tool may change the configured voice only after
+a direct recent user request. The bundled video content remains unchanged and
+its immediate stage background is black in both themes. Physical audio and
+OS permission behavior still require target-device verification.
+

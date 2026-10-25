@@ -75,9 +75,9 @@ class ProductContractTests(unittest.TestCase):
         self.assertIn("def call_llm(", self.llm_client)
         self.assertNotIn("self._local_endpoint", self.ui)
 
-    def test_prompt_includes_low_latency_behavior_without_skipping_safety(self):
+    def test_prompt_includes_brief_progress_without_repeated_confirmation(self):
         self.assertIn("LOW-LATENCY BEHAVIOR", self.prompt)
-        self.assertIn("do not preface actions with filler", self.prompt)
+        self.assertIn("one brief progress sentence", self.prompt)
         self.assertIn("Never sacrifice target verification", self.prompt)
 
     def test_prompt_is_action_focused_and_voice_aware(self):
@@ -148,16 +148,16 @@ class ProductContractTests(unittest.TestCase):
     def test_full_end_to_end_testing_checklist_is_linked(self):
         self.assertIn("TESTING.md", self.readme)
 
-    def test_neuron_intelligence_product_identity_and_confirmation_policy(self):
+    def test_neuron_intelligence_identity_and_handsfree_policy(self):
         self.assertIn("Neuron Intelligence", self.prompt)
         self.assertIn("Sadik Laskar", self.prompt)
         self.assertIn("PRODUCT_IDENTITY.instruction()", self.main)
         self.assertIn("Do not reveal backend provider names", self.prompt)
-        self.assertIn("actual local confirmation dialog", self.prompt)
+        self.assertIn("without asking the user to confirm it again", self.prompt)
         self.assertIn("delete_permanent", self.prompt)
         self.assertIn("PROMPT-INJECTION AND DATA HANDLING", self.prompt)
         self.assertIn("confirmation_requirement(name, args)", self.main)
-        self.assertIn("confirm_sensitive_action", self.main)
+        self.assertIn("ACTIVITY RUNNING", self.main)
 
     def test_youtube_channel_search_is_distinct_from_video_playback(self):
         self.assertIn('"channel"', self.main)
@@ -183,4 +183,5 @@ class ProductContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 

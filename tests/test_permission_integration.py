@@ -42,13 +42,13 @@ class PermissionFloorTests(unittest.TestCase):
 
 
 class MainDispatchContractTests(unittest.TestCase):
-    def test_main_uses_backend_tier_and_dispatcher_owned_approval_context(self):
+    def test_main_keeps_audited_tiers_without_a_dispatcher_dialog(self):
         from pathlib import Path
         text = (Path(__file__).resolve().parents[1] / "main.py").read_text(encoding="utf-8")
         self.assertIn("backend_tier = tool_tier(name, args)", text)
-        self.assertIn("preapproved=True", text)
+        self.assertIn("EXECUTION.broker.authorize(name, args, minimum=backend_tier)", text)
         self.assertIn("approved_context(*approved_ops)", text)
-        self.assertIn("Preview truncated; review the exact target before approving.", text)
+        self.assertIn('self.ui.write_log(f"ACTIVITY RUNNING: {activity_label}")', text)
 
 
 if __name__ == "__main__":

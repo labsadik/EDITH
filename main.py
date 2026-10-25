@@ -88,6 +88,7 @@ from edith.platform.permissions import ActionCancelled, PermissionDenied, tool_t
 from core.realtime_audio      import enqueue_latest_audio
 from core.narration_audio     import SpeechBuffer, SpeechPlayer
 from core.live_audio import response_pcm
+from core.voice_intent import requested_voice_mode
 from core.execution import SERVICE as EXECUTION, configure_execution, run_code_tool
 from core.device_tools import DeviceToolService, format_device_result
 from core.latency_metrics import LatencyMetrics
@@ -97,7 +98,7 @@ from core.audio_meter          import pcm16_level
 from core.product_identity import PRODUCT_IDENTITY
 from core.task_scheduler      import TaskScheduler, TaskSpec, TaskReportedFailure, parallel_read_only
 from core.task_view           import compact_task_view
-from core.voice_approval      import VoiceApprovalGate, is_interrupt_phrase
+from core.voice_approval      import is_interrupt_phrase
 from core.agent_reliability import (
     ActionDeduplicator, ActionEvidence, AgentTaskJournal,
     assess_action_evidence, format_task_history,
@@ -161,7 +162,7 @@ def _clean_transcript(text: str) -> str:
 TOOL_DECLARATIONS = [
     {
         "name":"shell_execute",
-        "description":"Execute an exact command in the current OS shell with working directory, streamed stdout/stderr, exit code and timeout. Requires local confirmation for every command; cancellation stops the owned process. Do not treat a timeout as success.",
+        "description":"Execute an exact command in the current OS shell with working directory, streamed stdout/stderr, exit code and timeout. Report the intended command before running it; cancellation stops the owned process. Do not treat a timeout as success.",
         "parameters":{"type":"OBJECT","properties":{
             "command":{"type":"STRING"},"cwd":{"type":"STRING"},
             "timeout":{"type":"NUMBER","description":"Timeout in seconds; default 60"}},"required":["command"]}
@@ -270,8 +271,8 @@ TOOL_DECLARATIONS = [
         "description": (
             "Use only for local-device diagnostics or a direct local OS control request. "
             "Read-only operations: system_info, telemetry, network_info, process_list, "
-            "window_list, installed_apps, capabilities, theme. Controls require the user's "
-            "local confirmation: process_kill, app_launch, volume, brightness, power. "
+            "window_list, installed_apps, capabilities, theme. Controls include "
+            "process_kill, app_launch, volume, brightness and power. Announce the target before acting. "
             "This is not a network scanner, remote access tool, or command shell."
         ),
         "parameters": {
@@ -724,6 +725,7 @@ class EdithLive:
         if self._voice_mode not in VOICE_PRESETS:
             self._voice_mode = "female"
         self._voice_confirmation: str | None = None
+        self._recent_voice_intent: tuple[str, float] | None = None
         self._reconfigure_reason: str | None = None
         self._reconfigure_event: asyncio.Event | None = None
         self._api_key_update_event: asyncio.Event | None = None
@@ -740,6 +742,7 @@ class EdithLive:
         self._speaking_lock       = threading.Lock()
         self._phone_active        = False   # True while phone mic is streaming; pauses PC mic
         self._last_mic_meter_at   = 0.0  # throttle UI samples; no audio history retained
+        self._mic_resume_at = 0.0  # keep playback tails out of Live's interruption detector
         self._pending_vision       = None    # (img_bytes, mime_type, question, angle) to inject after tool response
         self._vision_cam_active    = False   # True if camera was opened for vision → auto-close after response
         self._vision_close_pending = False   # True after vision injected; next turn_complete closes camera
@@ -748,8 +751,6 @@ class EdithLive:
         self._interrupted          = False   # True while draining audio after user interrupt
         self._kill_switch_generation = 0     # invalidates stale tool-batch completions
         self._task_input_locked = False      # one user task batch owns input until it settles
-        self._awaiting_voice_approval = False
-        self._voice_approvals = VoiceApprovalGate()
         self.ui.on_text_command   = self._on_text_command
         self.ui.on_remote_clicked = self._make_remote_key
         self.ui._win.on_api_key_saved = self._request_api_key_reconnect
@@ -875,8 +876,6 @@ class EdithLive:
 
     def _cancel_global_tasks(self) -> None:
         """Run on the Live loop: cancel queued and active scheduler wrappers."""
-        self._awaiting_voice_approval = False
-        self._voice_approvals.cancel()
         stats = self._task_scheduler.cancel_all()
         dropped = 0
         queue = self._tool_call_queue
@@ -893,81 +892,13 @@ class EdithLive:
             f"discarded {dropped} pending tool batch(es)."
         )
 
-    async def _request_voice_approval(self, name: str, args: dict, label: str) -> bool | None:
-        """Ask for one exact spoken/typed consent reply without trusting the model.
-
-        ``None`` means that speech approval was unavailable or timed out, so the
-        caller must use the existing local confirmation sheet rather than run
-        the action.  A request token is held only in memory and binds the
-        response to this precise action fingerprint.
-        """
-        if not self.session:
-            return None
-        try:
-            request = self._voice_approvals.begin(name, args, timeout=25.0)
-        except RuntimeError:
-            return None
-        self._awaiting_voice_approval = True
-        self.ui.set_state("AWAITING APPROVAL")
-        self.ui.write_log(
-            f"ACTIVITY VOICE APPROVAL REQUIRED: {label}. Say 'confirm' / 'yes' to proceed, or 'cancel' / 'no'."
-        )
-        try:
-            # This asks the connected voice model to narrate the review prompt;
-            # it cannot approve the action.  Only ``observe`` below resolves it.
-            await self.session.send_client_content(
-                turns={"parts": [{"text": (
-                    "Ask the user to approve the pending action briefly. State that they must say exactly "
-                    "'confirm' or 'yes' to proceed, or 'cancel' or 'no' to stop it. Do not claim it has run."
-                )}]},
-                turn_complete=True,
-            )
-            decision = await self._voice_approvals.wait(request.token)
-        except Exception as exc:
-            print(f"[VoiceApproval] unavailable: {type(exc).__name__}")
-            self._voice_approvals.cancel(request.token)
-            decision = None
-        finally:
-            self._awaiting_voice_approval = False
-        if decision is True:
-            self.ui.write_log(f"ACTIVITY VOICE APPROVED: {label}")
-        elif decision is False:
-            self.ui.write_log(f"ACTIVITY VOICE DECLINED: {label}")
-        else:
-            self.ui.write_log(f"ACTIVITY VOICE APPROVAL TIMED OUT: {label}")
-        return decision
-
-    async def _obtain_sensitive_approval(self, name: str, args: dict, label: str, reason: str) -> bool:
-        """Voice first, with the existing explicit local sheet as a safe fallback."""
-        decision = await self._request_voice_approval(name, args, label)
-        if decision is not None:
-            return decision
-        try:
-            return bool(await asyncio.to_thread(
-                self.ui.confirm_sensitive_action, "Confirm sensitive action", reason,
-            ))
-        except Exception as exc:
-            print(f"[Confirmation] Could not obtain user approval: {type(exc).__name__}")
-            return False
-
     def _handle_busy_input(self, text: str, source: str = "voice") -> bool:
-        """Allow only exact approval replies or the narrow local stop command."""
+        """A running batch accepts only a narrow local stop command."""
         if is_interrupt_phrase(text):
             self.ui.write_log(f"TASKS: {source.title()} interrupt accepted while work was active.")
             self.interrupt()
             return True
-        gate = getattr(self, "_voice_approvals", None)
-        decision = gate.observe(text) if gate is not None else None
-        if decision is not None:
-            self.ui.write_log(
-                f"ACTIVITY: {source.title()} approval reply received — "
-                f"{'approved' if decision else 'declined'}."
-            )
-            return True
-        if getattr(self, "_awaiting_voice_approval", False):
-            self.ui.write_log("ACTIVITY: Waiting for exact approval reply: confirm/yes or cancel/no.")
-        else:
-            self.ui.write_log("TASKS: Current work is still active; new commands were not queued. Use Interrupt to stop it.")
+        self.ui.write_log("TASKS: Current work is still active; new commands were not queued. Use Interrupt to stop it.")
         return False
 
     async def _run_checked_tool(self, fc, task_id: str) -> types.FunctionResponse:
@@ -1100,15 +1031,16 @@ class EdithLive:
 
     def _on_text_command(self, text: str) -> bool:
         """Queue text input; tell Qt whether it is safe to clear the draft."""
+        from core.voice_intent import requested_voice_mode
         if not self._loop or not self._loop.is_running() or not self.session:
             self.ui.write_log("NET: Gemini Live is not connected; command kept for retry.")
             return False
         if getattr(self, "_task_input_locked", False):
-            # The approval gate belongs to the Live loop.  Treat a typed
-            # confirmation exactly like a spoken one; any other new task is
-            # deliberately discarded while the active action is settling.
+            # An active batch accepts only an interrupt; discard new tasks.
             self._loop.call_soon_threadsafe(self._handle_busy_input, text, "text")
             return True
+        mode = requested_voice_mode(text)
+        self._recent_voice_intent = (mode, time.monotonic()) if mode else None
         self._response_pending = True
         self.ui.set_state("THINKING")
         self._pending_text_started_at = time.perf_counter()
@@ -1147,6 +1079,8 @@ class EdithLive:
 
     def set_speaking(self, value: bool):
         with self._speaking_lock:
+            if getattr(self, "_is_speaking", False) and not value:
+                self._mic_resume_at = time.monotonic() + .35
             self._is_speaking = value
         publish = getattr(self.ui, "show_playback_state", None)
         if publish:
@@ -1155,6 +1089,14 @@ class EdithLive:
             self.ui.set_state("SPEAKING")
         elif not self.ui.muted:
             self.ui.set_state("THINKING" if getattr(self, "_response_pending", False) else "LISTENING")
+
+    def _mic_can_send(self) -> bool:
+        """Suppress speaker echo, including the first/last playback packets."""
+        with self._speaking_lock:
+            if self._is_speaking:
+                return False
+        player = getattr(self, "_speech_player", None)
+        return not (player and player.snapshot()["playing"]) and time.monotonic() >= self._mic_resume_at
 
     def interrupt(self) -> None:
         """Cancel queued narration and signal the native writer to abort playback."""
@@ -1333,6 +1275,11 @@ class EdithLive:
             self._reconfigure_event.set()
         return f"Saved the {mode} voice preference. Reconnecting so the new voice takes effect."
 
+    def _model_voice_change_allowed(self, mode: str) -> bool:
+        recent = self._recent_voice_intent
+        self._recent_voice_intent = None
+        return bool(recent and recent[0] == mode and time.monotonic() - recent[1] < 45)
+
     async def _watch_session_reconfigure(self) -> None:
         if self._reconfigure_event is None:
             return
@@ -1353,8 +1300,7 @@ class EdithLive:
         self.ui.set_state("WORKING")
         self.ui.write_log(f"ACTIVITY ▶ {activity_label}")
 
-        # A model-provided "confirmed" field never grants approval. The user must
-        # approve the exact sensitive operation in EDITH's local UI on this turn.
+        # Tier labels remain in the audit receipt even in hands-free mode.
         backend_tier = tool_tier(name, args)
         self._audit_tool_event("start", name, args, backend_tier)
 
@@ -1370,16 +1316,7 @@ class EdithLive:
 
         confirmation_reason = confirmation_requirement(name, args)
         if backend_tier >= 2 and not confirmation_reason:
-            # This is the backend floor for legacy tools that do not yet have a
-            # specialized target preview.  The model cannot satisfy it with a
-            # `confirmed` argument; only the local dispatcher can approve it.
-            preview = json.dumps(redact(args), ensure_ascii=False, indent=2, default=str)
-            if len(preview) > 6000:
-                preview = preview[:6000] + "\n[Preview truncated; review the exact target before approving.]"
-            confirmation_reason = (
-                f"Tier {backend_tier} operation '{name}' requires local approval.\n\n"
-                f"Arguments to review:\n{preview}"
-            )
+            confirmation_reason = f"Tier {backend_tier} operation '{name}'"
         close_confirmation = bool(
             confirmation_reason and name == "computer_settings"
             and (
@@ -1387,13 +1324,7 @@ class EdithLive:
                 or confirmation_reason.startswith("Close the window")
             )
         )
-        restore_foreground = bool(
-            confirmation_reason and name in {"computer_control", "computer_settings"}
-            and not (
-                name == "computer_settings"
-                and str(args.get("action") or "").lower().replace("-", "_") in {"restart", "shutdown"}
-            )
-        )
+        restore_foreground = bool(confirmation_reason and name == "computer_control")
         if close_confirmation:
             try:
                 from core.action_guard import _explicit_window_target
@@ -1429,8 +1360,7 @@ class EdithLive:
                 self.ui.write_log(f"ACTIVITY CANCELLED: {activity_label} — target not identified")
                 return _completed(types.FunctionResponse(id=fc.id, name=name, response={"result": result}))
         elif restore_foreground:
-            # The local approval dialog becomes the foreground window. Capture the
-            # intended target now and restore it only after the user approves.
+            # Capture the foreground window before desktop input changes focus.
             try:
                 from actions.open_app import _active_window_description
                 foreground = await asyncio.to_thread(_active_window_description)
@@ -1463,40 +1393,19 @@ class EdithLive:
                 return _completed(types.FunctionResponse(id=fc.id, name=name, response={"result": result}))
 
         if confirmation_reason:
-            self.ui.write_log(f"ACTIVITY CONFIRMATION REQUIRED: {activity_label}")
-            approved = await self._obtain_sensitive_approval(
-                name, args, activity_label, confirmation_reason,
-            )
-
-            if not approved:
-                result = "Cancelled by user; no action was executed."
-                if not self.ui.muted:
-                    self.ui.set_state("LISTENING")
-                self.ui.write_log(f"ACTIVITY CANCELLED: {activity_label}")
-                return _completed(types.FunctionResponse(
-                    id=fc.id, name=name,
-                    response={"result": result},
-                ))
-
-            self.ui.write_log(f"ACTIVITY CONFIRMED: {activity_label}")
+            self.ui.write_log(f"ACTIVITY RUNNING: {activity_label}")
             try:
-                # Enforce the same floor in the backend broker after the local
-                # dialog.  `preapproved` is an internal call-site fact, never a
-                # model-controlled argument.
-                EXECUTION.broker.authorize(
-                    name, args, minimum=backend_tier, preapproved=True
-                )
+                EXECUTION.broker.authorize(name, args, minimum=backend_tier)
             except (PermissionDenied, ActionCancelled) as exc:
-                result = f"Cancelled by user; no action was executed. ({exc})"
+                result = f"Action could not start. ({exc})"
                 if not self.ui.muted:
                     self.ui.set_state("LISTENING")
                 self.ui.write_log(f"ACTIVITY CANCELLED: {activity_label}")
                 return _completed(types.FunctionResponse(
                     id=fc.id, name=name, response={"result": result}
                 ))
-            # Pass only dispatcher-owned approval context into controlled worker
-            # threads.  This prevents shell/code paths from opening a second
-            # dialog while preserving the backend broker check.
+            # Carry the dispatcher context into the controlled worker while
+            # preserving the broker's cancellation and audit checks.
             approved_ops = {name}
             if name in {"shell_execute", "code_helper", "dev_agent", "desktop_control", "file_processor"}:
                 approved_ops.add("shell")
@@ -1506,8 +1415,7 @@ class EdithLive:
             approval_scope.__enter__()
             if args.get("_confirmation_window_target"):
                 args["_confirmed_window_target"] = args.pop("_confirmation_window_target")
-            # computer_settings has its own guard for power actions; set this
-            # internal flag only after the real UI dialog was approved.
+            # Resolve natural-language power requests before invoking the OS.
             if name == "computer_settings":
                 selected_action = str(args.get("action") or "").lower().replace("-", "_")
                 if selected_action not in {"restart", "shutdown"}:
@@ -1517,7 +1425,6 @@ class EdithLive:
                         selected_action = "shutdown"
                 if selected_action in {"restart", "shutdown"}:
                     args["action"] = selected_action
-                    args["confirmed"] = "yes"
 
         if name == "save_memory":
             category = args.get("category", "notes")
@@ -1539,7 +1446,10 @@ class EdithLive:
 
         try:
             if name == "set_voice_mode":
-                result = await self._set_voice_mode(args.get("mode", ""), defer_reconnect=True)
+                requested_mode = str(args.get("mode") or "").strip().lower()
+                result = (await self._set_voice_mode(requested_mode, defer_reconnect=True)
+                          if self._model_voice_change_allowed(requested_mode)
+                          else "Voice unchanged. A direct user request is required to switch voices.")
 
             elif name == "open_app":
                 r = await loop.run_in_executor(None, lambda: open_app(parameters=args, response=None, player=self.ui))
@@ -1740,8 +1650,10 @@ class EdithLive:
             msg = await self.out_queue.get()
             # Do not send microphone packets captured just before playback began.
             # They can echo the assistant into Live's automatic interruption detector.
+            gate = getattr(self, "_mic_can_send", None)
             player = getattr(self, "_speech_player", None)
-            if self._is_speaking or (player and player.snapshot()["playing"]):
+            if (not gate() if gate else self._is_speaking or
+                    bool(player and player.snapshot()["playing"])):
                 continue
             await self.session.send_realtime_input(media=msg)
 
@@ -1760,9 +1672,7 @@ class EdithLive:
         loop = asyncio.get_running_loop()
 
         def callback(indata, frames, time_info, status):
-            with self._speaking_lock:
-                edith_speaking = self._is_speaking
-            if not edith_speaking and not self.ui.muted and not self._phone_active:
+            if self._mic_can_send() and not self.ui.muted and not self._phone_active:
                 data = indata.tobytes()
                 now = time.monotonic()
                 if now - self._last_mic_meter_at >= 0.10:
@@ -1806,6 +1716,7 @@ class EdithLive:
 
     async def _receive_audio(self):
         print("[Assistant] 👂 Recv started")
+        from core.voice_intent import requested_voice_mode
         out_buf, in_buf = [], []
 
         try:
@@ -1865,13 +1776,17 @@ class EdithLive:
                                     self._response_pending = True
                                     if not self._is_speaking:
                                         self.ui.set_state("THINKING")
+                                    if not in_buf:
+                                        self._recent_voice_intent = None
                                     in_buf.append(txt)
+                                    mode = requested_voice_mode(" ".join(in_buf))
+                                    if mode:
+                                        self._recent_voice_intent = (mode, time.monotonic())
 
                         if sc.turn_complete:
                             self.audio_in_queue.finish_turn()
                             self._response_pending = False
-                            if (not self._is_speaking and self.audio_in_queue.empty()
-                                    and not getattr(self, "_awaiting_voice_approval", False)):
+                            if not self._is_speaking and self.audio_in_queue.empty():
                                 self.ui.set_state("LISTENING")
                             if self._turn_done_event:
                                 self._turn_done_event.set()
@@ -2293,9 +2208,7 @@ class EdithLive:
                 self._phone_active = False
                 continue
             self._phone_active = True   # phone is streaming — silence PC mic
-            with self._speaking_lock:
-                speaking = self._is_speaking
-            if not speaking and not self.ui.muted:
+            if self._mic_can_send() and not self.ui.muted:
                 enqueue_latest_audio(self.out_queue, chunk)
                 now = time.monotonic()
                 if now - self._last_mic_meter_at >= 0.10:
@@ -2570,3 +2483,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

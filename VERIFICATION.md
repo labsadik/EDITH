@@ -28,19 +28,19 @@ runs do not validate a newer commit.
 | 2 | Starts on Windows/macOS/Linux and selects the right OS controller | Partial | `tests/test_platform_layer.py` checks runtime OS selection in mocks; the three hosted runners exercise portable modules. Complete GUI startup and permissions on each target machine are not certified. |
 | 3 | Real telemetry where supported; N/A otherwise | Partial | Collector failure isolation and cached UI reads are tested in `tests/test_platform_layer.py`; GPU, temperature, battery and network sensors still need device checks. Link speed is not Internet speed. |
 | 4 | Shell/process/file/app/power across all OS with correct tiers | Partial | Disposable shell/file tests and mocked OS power tests pass; `core/execution.py` and `edith/platform/` route controlled work through permission checks. Actual elevation, app launch, power and every independent legacy process path have not been validated on all target OSes. |
-| 5 | Tier 2/3 always confirmed before execution | Partial | Dispatcher and platform broker tests cover sensitive routed operations, including model-argument bypass attempts. Independent legacy entry points have not all been migrated; do not generalize that coverage to every installed plugin. |
+| 5 | Tier 2/3 always confirmed before execution | Superseded by owner's hands-free request | The app now runs user-requested actions without its voice or Qt confirmation step. Tier labels remain in audit receipts; cancellation and native OS authorization remain. Tests cover the no-dialog broker path. This intentionally changes the earlier acceptance item. |
 | 6 | ESC/Interrupt stops work and child processes | Partial | `tests/test_global_kill_switch.py` and execution tests cover queued tasks and owned process trees. External/legacy subprocesses outside the registry may continue; on-device interrupt must be observed. |
 | 7 | Every action in audit and Activity Log | Partial | `tests/test_audit_stream.py` covers routed dispatcher and platform receipts. Legacy actions invoked outside these entry points remain unverified. |
 | 8 | System/Dark/Light tracks three OS themes live | Partial | Native Qt startup hint, OS worker, case-insensitive live stylesheet swap, existing log recoloring and dark/light popup/context-menu tests pass. Real OS switching, app restarts and accessibility contrast still need target-device checks. |
 | 9 | Every popup uses glass styling and GSAP animation | Partial styling; GSAP absent | Existing native Qt sheets now use theme-aware translucent surfaces, contrast tokens and soft shadows. There is no desktop GSAP runtime or full popup animation; the owner's later instruction preserved the classic layout and video. |
-| 10 | Orb is Three.js, stateful, near 60 fps | Superseded visual; FPS unverified | The owner's later instruction preserves the exact bundled `assets/hud_reference.mp4` loop. State labels and audio waveforms are independently tested. Neither Three.js nor a measured 60 fps claim applies to this shipped visual. |
+| 10 | Orb is Three.js, stateful, near 60 fps | Superseded visual; FPS unverified | The exact bundled `assets/hud_reference.mp4` loop remains; only its canvas backdrop is pure black in both themes. State labels and audio waveforms are independently tested. Neither Three.js nor a measured 60 fps claim applies. |
 | 11 | No console errors and no component hardcoded colors | Not met | Qt/FFmpeg warnings may appear without app failure; native widget colors still include literals. Review actual runtime traceback and both theme contrast modes on the owner's hardware. |
 | 12 | Every existing button works | Partial | Headless tests cover major input, settings, interrupt, file, popup and remote actions. Physical microphone, camera, keyboard focus and click paths still need owner validation. |
 
 Additional completion gates from the staged plan:
 
-- Voice narration: synthetic PCM order, buffer/underrun and interruption tests
-  pass. Listen to long real responses on the owner's selected speaker and
+- Voice narration: synthetic PCM order, buffer/underrun, echo gate, voice-change
+  intent and interruption tests pass. Listen to long real responses on the owner's selected speaker and
   report any clipping with sanitized timings.
 - Providers: configured text adapters and local/Gemini Live test buttons exist;
   real provider connection, voice and tool responses must be tried using the
@@ -49,7 +49,7 @@ Additional completion gates from the staged plan:
   `tests/test_memory_durability.py`; long sessions and externally modified
   files still need practical validation.
 - Device bridge: `tests/test_device_tools.py` validates bounded local calls and
-  confirmation. Window targeting and platform-specific sensors need actual
+  argument checks. Window targeting and platform-specific sensors need actual
   OS permission and hardware evidence.
 - Performance: `tests/test_latency_metrics.py` validates aggregation, while
   the read-only `performance_metrics` tool reports local p50/p95 observations.
@@ -63,3 +63,4 @@ Additional completion gates from the staged plan:
 Release status: **pending owner target-device checks**. Keep changes on
 `ui/edith-interface`; merging to `main` follows explicit owner instruction
 after those checks and resulting fixes.
+

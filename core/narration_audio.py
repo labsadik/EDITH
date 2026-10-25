@@ -189,9 +189,14 @@ class SpeechPlayer:
                         if epoch != self.buffer.epoch:
                             continue
                         if not started:
+                            # Gate the microphone before the hardware stream
+                            # starts, so its first speaker packet cannot be
+                            # sent back as a new Live input/interruption.
+                            self._update(playing=True, level=pcm16_level(chunk))
                             stream.start()
                             started = True
-                        self._update(playing=True, level=pcm16_level(chunk))
+                        else:
+                            self._update(level=pcm16_level(chunk))
                         underflow = stream.write(chunk)
                         buffering = False
                         prefill = bool(underflow)
@@ -224,3 +229,4 @@ class SpeechPlayer:
                     self.stopping.wait(self.retry_seconds)
         finally:
             self.stopped.set()
+

@@ -133,13 +133,14 @@ class LegacyToolIntegrationTests(unittest.TestCase):
 
 
 class DispatchContractTests(unittest.TestCase):
-    def test_shell_tool_is_declared_with_confirmation_and_timeout(self):
+    def test_shell_tool_is_declared_with_progress_and_timeout(self):
         source = Path(__file__).resolve().parents[1] / "main.py"
         text = source.read_text(encoding="utf-8")
         self.assertIn('"name":"shell_execute"', text)
-        self.assertIn("Requires local confirmation for every command", text)
+        self.assertIn("Report the intended command before running it", text)
         self.assertIn("await run_code_tool(EXECUTION.shell", text)
 
 
 if __name__ == "__main__":
     unittest.main()
+

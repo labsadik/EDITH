@@ -45,17 +45,17 @@ class VoiceApprovalGateTests(unittest.IsolatedAsyncioTestCase):
 
 
 class VoiceApprovalIntegrationContracts(unittest.TestCase):
-    def test_runtime_blocks_competing_input_and_keeps_safe_fallback(self):
+    def test_runtime_blocks_competing_input_and_has_no_approval_prompt(self):
         root = Path(__file__).resolve().parents[1]
         main = (root / "main.py").read_text(encoding="utf-8")
         ui = (root / "ui.py").read_text(encoding="utf-8")
         self.assertIn("self._task_input_locked = True", main)
         self.assertIn("self._handle_busy_input", main)
         self.assertIn("new action was not queued", main)
-        self.assertIn("await self._request_voice_approval", main)
-        self.assertIn("self.ui.confirm_sensitive_action", main)
-        self.assertIn("self._voice_approvals.cancel()", main)
-        self.assertIn('"AWAITING APPROVAL"', ui)
+        self.assertNotIn("await self._request_voice_approval", main)
+        self.assertNotIn("self.ui.confirm_sensitive_action", main)
+        self.assertIn('self.ui.write_log(f"ACTIVITY RUNNING: {activity_label}")', main)
+        self.assertIn('"WORKING"', ui)
 
 
 if __name__ == "__main__":

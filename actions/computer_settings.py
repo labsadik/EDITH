@@ -585,7 +585,6 @@ ACTION_MAP: dict[str, callable] = {
     "shutdown":            shutdown_computer,
 }
 
-_DANGEROUS_ACTIONS = {"restart", "shutdown"}
 
 
 
@@ -651,14 +650,6 @@ def computer_settings(
     print(f"[Settings] Action: {action}  OS: {_OS}; supplied value omitted from logs")
     if player:
         player.write_log(f"[Settings] {action}")
-
-    if action in _DANGEROUS_ACTIONS:
-        confirmed = str(params.get("confirmed", "")).lower()
-        if confirmed not in ("yes", "true", "1", "confirm"):
-            return (
-                f"This will {action} the computer. "
-                f"Please confirm by calling again with confirmed=yes."
-            )
 
     restore_target = str(params.get("_confirmed_window_target") or "").strip()
     if action in {"close_app", "close_window"} and not restore_target:

@@ -67,3 +67,11 @@ class VideoVisualTests(unittest.TestCase):
         self.assertEqual(canvas.pixelColor(0, 50), QColor('#070D17'))
         self.assertGreater(canvas.pixelColor(80, 50).lightness(), 240)
         self.assertLess(canvas.pixelColor(31, 50).lightness(), 70)
+
+    def test_only_video_stage_has_a_black_background_in_both_themes(self):
+        import ui
+        from PyQt6.QtGui import QColor
+        for mode in ("dark", "light"):
+            self.assertEqual(QColor(ui._THEME_DEFAULTS[mode]["VIDEO_BG"]), QColor("black"))
+        self.assertNotEqual(ui._THEME_DEFAULTS["light"]["BG"], "#000000")
+
