@@ -35,6 +35,7 @@ except ImportError:
 
 from google import genai
 from google.genai import types as gtypes
+from core.secrets import get_gemini_api_key
 
 def _base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -63,9 +64,9 @@ def _save_config_key(key: str, value) -> None:
 
 
 def _get_api_key() -> str:
-    key = _load_config().get("gemini_api_key", "")
+    key = get_gemini_api_key(_CONFIG_PATH)
     if not key:
-        raise RuntimeError("gemini_api_key not found in config.")
+        raise RuntimeError("Gemini API key is not configured.")
     return key
 
 
@@ -82,7 +83,7 @@ _IMG_MAX_H = 720
 _JPEG_Q    = 82
 
 _SYSTEM_PROMPT = (
-    "You are JARVIS, Tony Stark's AI assistant. "
+    "You are EDITH, a professional desktop AI assistant. "
     "You are given an image from either the user's screen or their webcam. "
     "Analyze what you see with detail and intelligence. "
     "Describe objects, text, people, components, and their context clearly. "
@@ -342,10 +343,10 @@ class _VisionSession:
                     if transcript and self._player:
                         full = re.sub(r"\s+", " ", " ".join(transcript)).strip()
                         if full:
-                            self._player.write_log(f"Jarvis: {full}")
+                            self._player.write_log(f"EDITH: {full}")
                             print(f"[Vision] 💬 {full}")
                     transcript = []
-                    # Auto-close camera ~2s after JARVIS finishes speaking
+                    # Auto-close camera ~2s after EDITH finishes speaking
                     if self._player and hasattr(self._player, "stop_camera_stream"):
                         async def _deferred_close():
                             await asyncio.sleep(2.0)

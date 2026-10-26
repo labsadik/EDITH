@@ -1,7 +1,9 @@
 """
-Local LLM client for MARK XL.
+Local LLM client for EDITH.
 
-Supports two backends — selected via  "llm_provider"  in config/api_keys.json:
+Supports local and cloud backends — selected via ``llm_provider`` plus the
+optional ``provider_profile`` in config/api_keys.json. Existing Ollama and
+OpenAI-compatible local configurations remain backward compatible.
 
   "llm_provider": "ollama"   (default)
         Uses Ollama's native /api/chat endpoint.
@@ -25,6 +27,7 @@ from pathlib import Path
 from typing import Callable, Generator
 
 import requests
+from core.provider_registry import load_provider_settings, provider_api_key
 
 # Matches a sentence boundary: [.!?] followed by whitespace, or a blank line.
 # Avoids splitting on decimals (3.5) because those have no space after the dot.
@@ -47,9 +50,15 @@ _DEFAULTS = {
 
 
 def get_llm_provider() -> str:
-    """Returns 'ollama' or 'openai' (covers LM Studio, LocalAI, Jan, etc.)."""
-    raw = _load_config().get("llm_provider", "ollama").strip().lower()
-    return "openai" if raw in ("openai", "lmstudio", "localai", "jan", "llamacpp") else "ollama"
+    """Return the active protocol, preserving legacy local OpenAI aliases."""
+    cfg = _load_config()
+    profile = str(cfg.get("provider_profile") or "").strip().lower()
+    raw = profile or str(cfg.get("llm_provider") or "ollama").strip().lower()
+    if raw in ("anthropic", "claude"):
+        return "anthropic"
+    if raw in ("xai", "grok"):
+        return "xai"
+    return "openai" if raw in ("openai", "openai_compatible", "lmstudio", "localai", "jan", "llamacpp", "chatgpt") else "ollama"
 
 
 def _load_config() -> dict:
@@ -68,12 +77,13 @@ def ensure_ollama_running(timeout: int = 15) -> bool:
     url, _   = get_llm_settings()
     provider = get_llm_provider()
 
-    if provider == "openai":
-        # OpenAI-compatible servers (LM Studio, LocalAI, etc.) must be started
+    if provider in {"openai", "xai"}:
+        # Local OpenAI-compatible servers must be started manually; cloud
+        # provider reachability is verified by the real inference probe.
         # by the user — we just check if they're reachable.
-        health = f"{url}/v1/models"
+        health = _openai_endpoint(url, "/models")
         try:
-            ok = requests.get(health, timeout=5).status_code == 200
+            ok = requests.get(health, timeout=5, headers=_cloud_headers(provider, url)).status_code == 200
             if ok:
                 print(f"[LLM] OpenAI-compatible server reachable at {url}")
             else:
@@ -85,6 +95,11 @@ def ensure_ollama_running(timeout: int = 15) -> bool:
                 "      Make sure LM Studio / LocalAI / Jan is running and the server is started."
             )
             return False
+
+    if provider == "anthropic":
+        # Anthropic has no unauthenticated model-list endpoint. A real request
+        # is made by warmup/call instead of declaring it available here.
+        return bool(_cloud_headers(provider, url))
 
     # ── Ollama ──────────────────────────────────────────────────────────────
     health = f"{url}/api/tags"
@@ -146,7 +161,7 @@ def warmup_model(system_prompt: str | None = None) -> bool:
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": "hi"})
 
-    if provider == "openai":
+    if provider in {"openai", "xai"}:
         # OpenAI-compatible: just fire a minimal request to ensure the model is loaded.
         # No keep_alive or KV-cache priming available — server manages this internally.
         payload = {
@@ -156,9 +171,25 @@ def warmup_model(system_prompt: str | None = None) -> bool:
             "max_tokens": 1,
         }
         try:
-            resp = requests.post(f"{url}/v1/chat/completions", json=payload, timeout=180)
+            resp = requests.post(_openai_endpoint(url, "/chat/completions"), json=payload,
+                                 headers=_cloud_headers(provider, url), timeout=180)
             resp.raise_for_status()
             print(f"[LLM] '{model}' ready (OpenAI-compatible server).")
+            return True
+        except Exception as e:
+            print(f"[LLM] Warmup failed (non-fatal): {e}")
+            return False
+
+    if provider == "anthropic":
+        system, chat = _anthropic_messages(messages)
+        payload = {"model": model, "max_tokens": 1, "messages": chat}
+        if system:
+            payload["system"] = system
+        try:
+            resp = requests.post(f"{url}/messages", json=payload,
+                                 headers=_cloud_headers(provider, url), timeout=180)
+            resp.raise_for_status()
+            print(f"[LLM] '{model}' ready (Anthropic).")
             return True
         except Exception as e:
             print(f"[LLM] Warmup failed (non-fatal): {e}")
@@ -226,10 +257,45 @@ def get_llm_settings() -> tuple[str, str]:
     return url, model
 
 
+def _openai_endpoint(url: str, suffix: str) -> str:
+    """Accept both legacy host URLs and provider URLs already ending in /v1."""
+    base = str(url).rstrip("/")
+    return base + suffix if base.endswith("/v1") else base + "/v1" + suffix
+
+
+def _cloud_headers(provider: str, url: str) -> dict[str, str]:
+    """Return credentials only for configured cloud profiles, never logs them."""
+    try:
+        profile = load_provider_settings(CONFIG_PATH)["provider"]
+        # A legacy ``llm_provider=openai`` at localhost remains keyless.
+        if provider == "openai" and profile == "openai_compatible":
+            return {}
+        key = provider_api_key(profile, CONFIG_PATH)
+        if provider in {"anthropic", "xai"} or (provider == "openai" and profile == "openai"):
+            if not key:
+                raise RuntimeError(f"{profile} API key is not configured in the OS keychain")
+        if provider == "anthropic":
+            return {"x-api-key": key or "", "anthropic-version": "2023-06-01"}
+        return {"Authorization": f"Bearer {key}"} if key else {}
+    except RuntimeError:
+        raise
+    except Exception:
+        return {}
+
+
+def _anthropic_messages(messages: list) -> tuple[str, list[dict]]:
+    system = "\n".join(str(item.get("content") or "") for item in messages if item.get("role") == "system")
+    chat = [{"role": "assistant" if item.get("role") == "assistant" else "user",
+             "content": str(item.get("content") or "")}
+            for item in messages if item.get("role") != "system"]
+    return system, chat or [{"role": "user", "content": "Hello"}]
+
+
 def call_llm(
     messages: list,
     tools:    list | None = None,
     timeout:  int = 120,
+    max_tokens: int = 150,
 ) -> dict:
     """
     Non-streaming chat request.  Routes to Ollama or OpenAI-compatible backend.
@@ -240,19 +306,19 @@ def call_llm(
     url, model = get_llm_settings()
     provider   = get_llm_provider()
 
-    if provider == "openai":
-        endpoint = f"{url}/v1/chat/completions"
+    if provider in {"openai", "xai"}:
+        endpoint = _openai_endpoint(url, "/chat/completions")
         payload: dict = {
             "model":      model,
             "messages":   messages,
             "stream":     False,
-            "max_tokens": 150,
+            "max_tokens": max_tokens,
         }
         if tools:
             payload["tools"]       = tools
             payload["tool_choice"] = "auto"
         try:
-            resp = requests.post(endpoint, json=payload, timeout=timeout)
+            resp = requests.post(endpoint, json=payload, headers=_cloud_headers(provider, url), timeout=timeout)
             resp.raise_for_status()
             choice = resp.json().get("choices", [{}])[0]
             msg    = choice.get("message", {})
@@ -279,6 +345,22 @@ def call_llm(
         except Exception as e:
             raise RuntimeError(f"OpenAI-compatible LLM call failed: {e}")
 
+    if provider == "anthropic":
+        system, chat = _anthropic_messages(messages)
+        payload: dict = {"model": model, "max_tokens": max_tokens, "messages": chat}
+        if system:
+            payload["system"] = system
+        try:
+            resp = requests.post(f"{url}/messages", json=payload,
+                                 headers=_cloud_headers(provider, url), timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            content = "".join(str(part.get("text") or "") for part in data.get("content", [])
+                              if isinstance(part, dict) and part.get("type") == "text")
+            return {"content": content.strip(), "tool_calls": []}
+        except Exception as e:
+            raise RuntimeError(f"Anthropic LLM call failed: {e}")
+
     # ── Ollama ──────────────────────────────────────────────────────────────
     endpoint = f"{url}/api/chat"
     payload = {
@@ -286,7 +368,7 @@ def call_llm(
         "messages":   messages,
         "stream":     False,
         "keep_alive": -1,
-        "options":    {"num_predict": 150, "num_gpu": 99},
+        "options":    {"num_predict": max_tokens, "num_gpu": 99},
     }
     if tools:
         payload["tools"] = tools
@@ -319,7 +401,7 @@ def call_llm(
             "Make sure Ollama is installed and run: ollama serve"
         )
     except requests.exceptions.Timeout:
-        raise RuntimeError("Ollama request timed out after 120 s.")
+        raise RuntimeError(f"Ollama request timed out after {timeout} s.")
     except requests.exceptions.HTTPError as e:
         print(f"[LLM] HTTPError: {e.response.status_code} — {e.response.text[:200]}")
         raise RuntimeError(f"Ollama HTTP error: {e.response.status_code}")
@@ -334,39 +416,64 @@ def call_llm_text(
     model:   str | None = None,
     timeout: int = 120,
 ) -> str:
-    """
-    Simple text-only generation (no tools).
-    Used by planner, executor, error_handler, code_helper, dev_agent.
-    """
-    url, default_model = get_llm_settings()
-    endpoint = f"{url}/api/chat"
-    m        = model or default_model
+    """Text-only generation using the configured local provider.
 
+    Explicit model overrides are supported for both Ollama and OpenAI-compatible
+    servers. The shared call_llm path handles default-model requests.
+    """
     messages: list[dict] = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
 
-    payload = {"model": m, "messages": messages, "stream": False, "keep_alive": -1, "options": {"num_predict": 600}}
+    if model is None:
+        # Preserve the original 600-token budget for planning and coding tasks.
+        # Short conversational requests retain call_llm's 150-token default.
+        return call_llm(messages, timeout=timeout, max_tokens=600)["content"]
 
+    url, _ = get_llm_settings()
+    provider = get_llm_provider()
+    if provider in {"openai", "xai"}:
+        endpoint = _openai_endpoint(url, "/chat/completions")
+        payload = {"model": model, "messages": messages, "stream": False, "max_tokens": 600}
+    elif provider == "anthropic":
+        system, chat = _anthropic_messages(messages)
+        payload = {"model": model, "messages": chat, "max_tokens": 600}
+        if system:
+            payload["system"] = system
+        try:
+            resp = requests.post(f"{url}/messages", json=payload,
+                                 headers=_cloud_headers(provider, url), timeout=timeout)
+            resp.raise_for_status()
+            return "".join(str(part.get("text") or "") for part in resp.json().get("content", [])
+                           if isinstance(part, dict) and part.get("type") == "text").strip()
+        except requests.exceptions.RequestException as exc:
+            raise RuntimeError(f"Anthropic text call failed: {exc}") from exc
+    else:
+        endpoint = f"{url}/api/chat"
+        payload = {
+            "model": model, "messages": messages, "stream": False,
+            "keep_alive": -1, "options": {"num_predict": 600},
+        }
     try:
-        resp = requests.post(endpoint, json=payload, timeout=timeout)
+        headers = _cloud_headers(provider, url) if provider in {"openai", "xai"} else None
+        resp = requests.post(endpoint, json=payload, headers=headers, timeout=timeout)
         resp.raise_for_status()
-        return (resp.json().get("message", {}).get("content") or "").strip()
-    except requests.exceptions.ConnectionError:
-        if ensure_ollama_running():
+        data = resp.json()
+        if provider in {"openai", "xai"}:
+            return (data["choices"][0]["message"].get("content") or "").strip()
+        return (data.get("message", {}).get("content") or "").strip()
+    except requests.exceptions.ConnectionError as exc:
+        if provider == "ollama" and ensure_ollama_running():
             try:
                 resp = requests.post(endpoint, json=payload, timeout=timeout)
                 resp.raise_for_status()
                 return (resp.json().get("message", {}).get("content") or "").strip()
-            except Exception:
-                pass
-        raise RuntimeError(
-            f"Cannot connect to Ollama at {url}. "
-            "Make sure Ollama is installed and run: ollama serve"
-        )
-    except Exception as e:
-        raise RuntimeError(f"LLM text call failed: {e}")
+            except requests.exceptions.RequestException as retry_exc:
+                raise RuntimeError(f"LLM text call failed after Ollama restart: {retry_exc}") from retry_exc
+        raise RuntimeError(f"Cannot connect to configured {provider} LLM at {url}") from exc
+    except requests.exceptions.RequestException as exc:
+        raise RuntimeError(f"LLM text call failed: {exc}") from exc
 
 
 def _stream_openai(
@@ -381,7 +488,7 @@ def _stream_openai(
     so the output format is identical to the Ollama backend.
     """
     url, model = get_llm_settings()
-    endpoint   = f"{url}/v1/chat/completions"
+    endpoint   = _openai_endpoint(url, "/chat/completions")
 
     payload: dict = {
         "model":      model,
@@ -394,7 +501,8 @@ def _stream_openai(
         payload["tool_choice"] = "auto"
 
     try:
-        with requests.post(endpoint, json=payload, timeout=timeout, stream=True) as resp:
+        with requests.post(endpoint, json=payload, headers=_cloud_headers(get_llm_provider(), url),
+                           timeout=timeout, stream=True) as resp:
             resp.raise_for_status()
             full_content = ""
             buf          = ""
@@ -501,8 +609,18 @@ def call_llm_stream(
     Tool calls always appear in the final "done" event.
     """
     provider = get_llm_provider()
-    if provider == "openai":
+    if provider in {"openai", "xai"}:
         yield from _stream_openai(messages, tools, timeout)
+        return
+
+    if provider == "anthropic":
+        # Text providers without a streaming transport still expose the same
+        # public generator contract. Narration receives the complete response
+        # as one sentence rather than pretending it streamed token-by-token.
+        response = call_llm(messages, tools=tools, timeout=timeout)
+        if response["content"]:
+            yield {"type": "sentence", "text": response["content"]}
+        yield {"type": "done", **response}
         return
 
     url, model = get_llm_settings()

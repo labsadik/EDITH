@@ -1,5 +1,6 @@
-
 from __future__ import annotations
+
+from core.branding import prepare_agent_profiles_dir, migrate_named_directory
 
 import asyncio
 import concurrent.futures
@@ -107,7 +108,7 @@ def _real_profile_dir(browser: str) -> str:
             print(f"[Browser] ✅ Real profile found for {browser}: {p}")
             return str(p)
 
-    fallback = home / ".jarvis_profiles" / browser
+    fallback = prepare_agent_profiles_dir(home) / browser
     fallback.mkdir(parents=True, exist_ok=True)
     print(f"[Browser] ⚠️  Real profile not found for {browser}, using: {fallback}")
     return str(fallback)
@@ -503,6 +504,16 @@ class _BrowserSession:
                 pass
         self._context = self._page = None
 
+    async def _discard_context(self):
+        """Forget a browser context closed outside EDITH but keep Playwright alive."""
+        context = self._context
+        self._context = self._page = None
+        if context:
+            try:
+                await context.close()
+            except Exception:
+                pass
+
     async def _adopt_page(self) -> Page:
         """
         launch_persistent_context zaten bir başlangıç sekmesi açar.
@@ -533,7 +544,7 @@ class _BrowserSession:
 
         if engine_name == "firefox":
             profile = _firefox_profile_dir() or str(
-                Path.home() / ".jarvis_profiles" / "firefox"
+                prepare_agent_profiles_dir() / "firefox"
             )
             kwargs: dict = {
                 "headless":    False,
@@ -547,17 +558,17 @@ class _BrowserSession:
             try:
                 self._context = await engine_obj.launch_persistent_context(profile, **kwargs)
             except Exception as e:
-                print(f"[Browser] Firefox real profile failed ({e}), using JARVIS profile")
-                jarvis = str(Path.home() / ".jarvis_profiles" / "firefox_jarvis")
-                Path(jarvis).mkdir(parents=True, exist_ok=True)
-                self._context = await engine_obj.launch_persistent_context(jarvis, **kwargs)
+                print(f"[Browser] Firefox real profile failed ({e}), using EDITH profile")
+                edith = str(migrate_named_directory(prepare_agent_profiles_dir(), "firefox_jarvis", "firefox_edith"))
+                Path(edith).mkdir(parents=True, exist_ok=True)
+                self._context = await engine_obj.launch_persistent_context(edith, **kwargs)
 
             self._page = await self._adopt_page()
             print(f"[Browser] ✅ Firefox launched")
             return
 
         if engine_name == "webkit":
-            safari_profile = str(Path.home() / ".jarvis_profiles" / "safari")
+            safari_profile = str(prepare_agent_profiles_dir() / "safari")
             Path(safari_profile).mkdir(parents=True, exist_ok=True)
             kwargs = {
                 "headless":    False,
@@ -609,16 +620,16 @@ class _BrowserSession:
 
         # Gerçek profil açılamadı (tarayıcı zaten açık / kilitli profil / yeni
         # Chrome sürümleri otomasyonla gerçek profili engelliyor). Kalıcı
-        # JARVIS otomasyon profiline geçilir — buraya bir kez giriş yapılan
+        # EDITH otomasyon profiline geçilir — buraya bir kez giriş yapılan
         # hesaplar sonraki oturumlarda da açık kalır.
-        jarvis_profile = str(Path.home() / ".jarvis_profiles" / self.browser_name)
-        Path(jarvis_profile).mkdir(parents=True, exist_ok=True)
-        print(f"[Browser] Retrying with JARVIS profile: {jarvis_profile}")
+        edith_profile = str(prepare_agent_profiles_dir() / self.browser_name)
+        Path(edith_profile).mkdir(parents=True, exist_ok=True)
+        print(f"[Browser] Retrying with EDITH profile: {edith_profile}")
 
         try:
-            self._context = await engine_obj.launch_persistent_context(jarvis_profile, **kwargs)
+            self._context = await engine_obj.launch_persistent_context(edith_profile, **kwargs)
             self._page = await self._adopt_page()
-            print(f"[Browser] ✅ Launched [{label}] with JARVIS profile "
+            print(f"[Browser] ✅ Launched [{label}] with EDITH profile "
                   f"(sign-ins persist across sessions)")
         except Exception as e2:
             raise RuntimeError(f"Could not launch {self.browser_name}: {e2}") from e2
@@ -626,8 +637,17 @@ class _BrowserSession:
 
     async def _get_page(self) -> Page:
         await self._launch()
-        # If somehow page got closed, open a fresh one
-        if self._page is None or self._page.is_closed():
+        # A user can close the automation window at any time.  Playwright then
+        # raises "Target page, context or browser has been closed" on every
+        # later action unless the stale context is explicitly discarded.
+        try:
+            closed = self._page is None or self._page.is_closed()
+            if closed:
+                self._page = await self._context.new_page()
+                await asyncio.sleep(0.2)
+        except Exception:
+            await self._discard_context()
+            await self._launch()
             self._page = await self._context.new_page()
             await asyncio.sleep(0.2)
         return self._page
@@ -646,8 +666,13 @@ class _BrowserSession:
             except PlaywrightTimeout:
                 pass   # page may have partially loaded — check URL below
             except Exception as e:
-                print(f"[Browser] goto exception (non-fatal): {e}")
-            return p.url
+                print(f"[Browser] goto failed: {e}")
+                return ""
+            try:
+                return p.url
+            except Exception as e:
+                print(f"[Browser] navigation context closed: {e}")
+                return ""
 
         result_url = await _do_goto(page)
 
@@ -805,7 +830,7 @@ class _BrowserSession:
     async def screenshot(self, path: str = None) -> str:
         page = await self._get_page()
         try:
-            save_path = path or str(Path.home() / "Desktop" / "jarvis_screenshot.png")
+            save_path = path or str(Path.home() / "Desktop" / "edith_screenshot.png")
             await page.screenshot(path=save_path, full_page=False)
             return f"Screenshot saved: {save_path}"
         except Exception as e:

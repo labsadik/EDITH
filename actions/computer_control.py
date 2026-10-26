@@ -4,6 +4,7 @@ import json
 import platform
 import re
 import string
+import shutil
 import subprocess
 import sys
 
@@ -14,6 +15,7 @@ else:
 import time
 import random
 from pathlib import Path
+from core.secrets import get_gemini_api_key
 
 try:
     import pyautogui
@@ -55,14 +57,14 @@ def _get_os() -> str:
 
 
 def _get_api_key() -> str:
-    return _load_config().get("gemini_api_key", "")
+    return get_gemini_api_key(_CONFIG_PATH) or ""
 
 _SAFE_SCREENSHOT_ROOTS = (
     Path.home(),
 )
 
 def _safe_screenshot_path(requested: str | None) -> Path:
-    fallback = Path.home() / "Desktop" / "jarvis_screenshot.png"
+    fallback = Path.home() / "Desktop" / "edith_screenshot.png"
     if not requested:
         return fallback
     try:
@@ -256,57 +258,125 @@ def _clear_field() -> str:
     return "Field cleared"
 
 def _focus_window(title: str) -> str:
+    """Focus a window matching the target using native APIs and argument arrays only."""
+    target = str(title or "").strip()
+    if not target:
+        return "No target window was provided."
     os_name = _get_os()
+    needle = target.casefold()
 
     if os_name == "windows":
         try:
-            script = f'(New-Object -ComObject WScript.Shell).AppActivate("{title}")'
-            subprocess.run(
-                ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                capture_output=True, timeout=5, **_WIN_HIDE,
-            )
+            import ctypes
+            user32 = ctypes.windll.user32
+            matches = []
+
+            def _read_title(hwnd):
+                length = user32.GetWindowTextLengthW(hwnd)
+                if length <= 0:
+                    return ""
+                buffer = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(hwnd, buffer, len(buffer))
+                return buffer.value.strip()
+
+            callback_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+            def _enum_callback(hwnd, _lparam):
+                if not user32.IsWindowVisible(hwnd):
+                    return True
+                window_title = _read_title(hwnd)
+                if window_title and needle in window_title.casefold():
+                    score = 0 if window_title.casefold() == needle else 1
+                    matches.append((score, len(window_title), hwnd, window_title))
+                return True
+
+            user32.EnumWindows(callback_type(_enum_callback), 0)
+            if not matches:
+                return f"No visible window matched: {target[:100]}."
+            matches.sort(key=lambda item: (item[0], item[1]))
+            _score, _length, hwnd, matched_title = matches[0]
+            if user32.IsIconic(hwnd):
+                user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+            user32.SetForegroundWindow(hwnd)
             time.sleep(0.3)
-            return f"Focused window: {title}"
+            active_title = _read_title(user32.GetForegroundWindow())
+            if needle in active_title.casefold():
+                return f"Focused window: {active_title}"
+            return f"Could not verify the target window became active: {matched_title[:100]}"
         except Exception as e:
-            return f"focus_window (Windows) failed: {e}"
+            return f"focus_window (Windows) failed: {type(e).__name__}"
 
     if os_name == "mac":
+        # Static AppleScript; the target is passed through argv, never interpolated into source.
         script = (
-            f'tell application "System Events" to '
-            f'set frontmost of (first process whose name contains "{title}") to true'
+            "on run argv\n"
+            "set wantedName to item 1 of argv\n"
+            "tell application \"System Events\"\n"
+            "set matchingProcesses to every application process whose name contains wantedName\n"
+            "if (count of matchingProcesses) is 0 then return \"\"\n"
+            "set targetProcess to item 1 of matchingProcesses\n"
+            "set frontmost of targetProcess to true\n"
+            "return name of targetProcess\n"
+            "end tell\n"
+            "end run"
         )
         try:
-            subprocess.run(
-                ["osascript", "-e", script],
-                capture_output=True, timeout=5,
+            result = subprocess.run(
+                ["osascript", "-e", script, target],
+                capture_output=True, text=True, timeout=5,
             )
-            time.sleep(0.3)
-            return f"Focused window: {title}"
+            matched = result.stdout.strip()
+            if result.returncode == 0 and matched and needle in matched.casefold():
+                time.sleep(0.3)
+                return f"Focused window: {matched}"
+            return f"No visible application matched: {target[:100]}."
         except Exception as e:
-            return f"focus_window (macOS) failed: {e}"
+            return f"focus_window (macOS) failed: {type(e).__name__}"
 
     if os_name == "linux":
-        try:
-            result = subprocess.run(
-                ["wmctrl", "-a", title],
-                capture_output=True, timeout=5,
-            )
-            if result.returncode == 0:
-                time.sleep(0.3)
-                return f"Focused window: {title}"
-        except FileNotFoundError:
-            pass
-        try:
-            result = subprocess.run(
-                ["xdotool", "search", "--name", title, "windowactivate"],
-                capture_output=True, timeout=5,
-            )
-            time.sleep(0.3)
-            return f"Focused window: {title}"
-        except FileNotFoundError:
-            return "focus_window (Linux) requires wmctrl or xdotool"
-        except Exception as e:
-            return f"focus_window (Linux) failed: {e}"
+        # Titles are arguments, not shell fragments.
+        if shutil.which("wmctrl"):
+            try:
+                result = subprocess.run(
+                    ["wmctrl", "-a", target],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if result.returncode == 0:
+                    time.sleep(0.3)
+                    if shutil.which("xdotool"):
+                        active = subprocess.run(
+                            ["xdotool", "getactivewindow", "getwindowname"],
+                            capture_output=True, text=True, timeout=3,
+                        ).stdout.strip()
+                        if active and needle in active.casefold():
+                            return f"Focused window: {active}"
+                    else:
+                        return f"Focused window: {target}"
+            except Exception:
+                pass
+        if shutil.which("xdotool"):
+            try:
+                result = subprocess.run(
+                    ["xdotool", "search", "--name", target],
+                    capture_output=True, text=True, timeout=5,
+                )
+                window_ids = [v.strip() for v in result.stdout.splitlines() if v.strip()]
+                if window_ids:
+                    activated = subprocess.run(
+                        ["xdotool", "windowactivate", "--sync", window_ids[0]],
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    if activated.returncode == 0:
+                        time.sleep(0.3)
+                        active = subprocess.run(
+                            ["xdotool", "getactivewindow", "getwindowname"],
+                            capture_output=True, text=True, timeout=3,
+                        ).stdout.strip()
+                        if active and needle in active.casefold():
+                            return f"Focused window: {active}"
+            except Exception as e:
+                return f"focus_window (Linux) failed: {type(e).__name__}"
+        return f"Could not find/focus a matching window: {target[:100]}."
 
     return f"focus_window: unknown OS '{os_name}'"
 
@@ -410,10 +480,25 @@ def computer_control(
     if not action:
         return "No action specified for computer_control."
 
+    # After the local confirmation dialog closes, restore and verify the same
+    # foreground target captured by the dispatcher before any key/mouse input.
+    restore_target = str(params.get("_confirmed_window_target") or "").strip()
+    if restore_target:
+        focus_result = _focus_window(restore_target)
+        if not focus_result.startswith("Focused window: "):
+            return f"Target window not focused; no computer action executed. {focus_result}"
+        try:
+            from actions.open_app import _active_window_description
+            current_title = _active_window_description()
+        except Exception:
+            current_title = ""
+        if not current_title or restore_target.casefold() not in current_title.casefold():
+            return "Target window could not be verified after confirmation; no computer action executed."
+
     if player:
         player.write_log(f"[Computer] {action}")
 
-    print(f"[ComputerControl] ▶ {action}  {params}")
+    print(f"[ComputerControl] ▶ {action}")
 
     try:
 
@@ -495,7 +580,7 @@ def computer_control(
         if action == "random_data":
             dt     = params.get("type", "name")
             result = _random_data(dt)
-            print(f"[ComputerControl] 🎲 random {dt} → {result}")
+            print(f"[ComputerControl] random data generated for type={dt}")
             return result
 
         if action == "user_data":
@@ -504,7 +589,7 @@ def computer_control(
             value   = profile.get(field, "")
             if not value:
                 value = _random_data(field)
-                print(f"[ComputerControl] ⚠️ No '{field}' in memory, using random: {value}")
+                print(f"[ComputerControl] No saved profile value for field={field}; generated fallback data (value omitted)")
             return value
 
         return f"Unknown action: '{action}'"

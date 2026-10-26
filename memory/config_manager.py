@@ -1,6 +1,7 @@
 import json
 import sys
 from pathlib import Path
+from core.secrets import get_gemini_api_key, save_gemini_api_key
 
 def get_base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -17,34 +18,66 @@ def ensure_config_dir() -> None:
 def config_exists() -> bool:
     return CONFIG_FILE.exists()
 
-def save_api_keys(gemini_api_key: str) -> None:
+def save_api_keys(gemini_api_key: str):
+    """Store Gemini credentials in the OS keychain when available."""
     ensure_config_dir()
+    return save_gemini_api_key(gemini_api_key, CONFIG_FILE)
 
-    data: dict = {}
+
+def save_initial_setup(gemini_api_key: str, os_system: str) -> None:
+    """Persist first-run setup without erasing existing cloud/local settings.
+
+    Reject unreadable or non-object config instead of replacing a file that may
+    contain credentials, model choices, voice options, and plugin preferences.
+    """
+    import tempfile
+
+    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
     if CONFIG_FILE.exists():
-        try:
-            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            data = {}
+        data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("Existing EDITH config must be a JSON object")
+    else:
+        data = {}
 
-    data["gemini_api_key"] = gemini_api_key.strip()
+    data["os_system"] = os_system
+    data["assistant_name"] = "EDITH"
 
-    CONFIG_FILE.write_text(
-        json.dumps(data, indent=2),
-        encoding="utf-8"
-    )
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=CONFIG_FILE.parent,
+            prefix=".edith-setup-", suffix=".tmp", delete=False,
+        ) as stream:
+            temp_path = Path(stream.name)
+            json.dump(data, stream, indent=4)
+            stream.write("\n")
+        temp_path.replace(CONFIG_FILE)
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+    save_gemini_api_key(gemini_api_key, CONFIG_FILE)
+
 
 def load_api_keys() -> dict:
     if not CONFIG_FILE.exists():
         return {}
     try:
-        return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return {}
+        # Compatibility view for old callers. The value is read from keychain
+        # when possible and is never written back by this function.
+        key = get_gemini_api_key(CONFIG_FILE)
+        if key:
+            data["gemini_api_key"] = key
+        return data
     except Exception as e:
         print(f"❌ Failed to load api_keys.json: {e}")
         return {}
 
 def get_gemini_key() -> str | None:
-    return load_api_keys().get("gemini_api_key")
+    return get_gemini_api_key(CONFIG_FILE)
 
 def is_configured() -> bool:
     key = get_gemini_key()
@@ -52,8 +85,8 @@ def is_configured() -> bool:
 
 
 def get_assistant_name() -> str:
-    """Return the configured assistant name, or 'JARVIS' if not set."""
-    return load_api_keys().get("assistant_name", "JARVIS") or "JARVIS"
+    """EDITH is the fixed product name, including for old configurations."""
+    return "EDITH"
 
 
 def get_user_name() -> str:
@@ -70,7 +103,7 @@ def save_assistant_config(assistant_name: str, user_name: str) -> None:
             data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
         except Exception:
             data = {}
-    data["assistant_name"] = assistant_name.strip() or "JARVIS"
+    data["assistant_name"] = "EDITH"
     data["user_name"] = user_name.strip()
     CONFIG_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
 

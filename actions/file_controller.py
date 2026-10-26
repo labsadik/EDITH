@@ -131,10 +131,10 @@ def list_files(path: str = "desktop", show_hidden: bool = False) -> str:
             if not show_hidden and item.name.startswith("."):
                 continue
             if item.is_dir():
-                items.append(f"📁 {item.name}/")
+                items.append(f"[DIR]  {item.name}/")
             else:
                 size = _format_size(item.stat().st_size)
-                items.append(f"📄 {item.name} ({size})")
+                items.append(f"[FILE] {item.name} ({size})")
 
         if not items:
             return f"Directory is empty: {target.name}/"
@@ -172,6 +172,67 @@ def create_folder(path: str, name: str = "") -> str:
         return f"Could not create folder: {e}"
 
 
+def create_folders(path: str, names: list[str] | None = None) -> str:
+    """Create multiple immediate child folders safely under one user-approved directory."""
+    if not isinstance(names, list) or not names:
+        return "No folder names provided."
+
+    try:
+        base = _resolve_path(path)
+        if not _is_safe_path(base):
+            return f"Access denied: {base}"
+        if base.exists() and not base.is_dir():
+            return f"Not a directory: {base}"
+        base.mkdir(parents=True, exist_ok=True)
+
+        created: list[str] = []
+        existing: list[str] = []
+        errors: list[str] = []
+        for raw_name in names:
+            if not isinstance(raw_name, str):
+                errors.append("Rejected a folder name that was not text.")
+                continue
+            folder_name = raw_name.strip()
+            # Batch mode creates children only; reject traversal and nested paths.
+            if (
+                not folder_name
+                or folder_name in {".", ".."}
+                or "/" in folder_name
+                or "\\" in folder_name
+                or any(ord(char) == 0 for char in folder_name)
+                or Path(folder_name).is_absolute()
+            ):
+                errors.append(f"Rejected invalid folder name: {folder_name!r}")
+                continue
+
+            target = base / folder_name
+            if not _is_safe_path(target):
+                errors.append(f"Access denied: {folder_name}")
+                continue
+            try:
+                if target.exists():
+                    if target.is_dir():
+                        existing.append(folder_name)
+                    else:
+                        errors.append(f"A file already exists with this name: {folder_name}")
+                    continue
+                target.mkdir(exist_ok=False)
+                created.append(folder_name)
+            except Exception as exc:
+                errors.append(f"{folder_name}: {type(exc).__name__}: {exc}")
+
+        lines = [
+            f"Folder batch completed in {base}: "
+            f"{len(created)} created, {len(existing)} already existed, {len(errors)} failed."
+        ]
+        lines.extend(f"Created: {name}" for name in created)
+        lines.extend(f"Already existed: {name}" for name in existing)
+        lines.extend(f"Failed: {error}" for error in errors)
+        return "\n".join(lines)
+    except Exception as exc:
+        return f"Could not create folders: {type(exc).__name__}: {exc}"
+
+
 def delete_file(path: str, name: str = "") -> str:
     try:
         base   = _resolve_path(path)
@@ -195,6 +256,36 @@ def delete_file(path: str, name: str = "") -> str:
         return f"Permission denied: {path}"
     except Exception as e:
         return f"Could not delete: {e}"
+
+
+def delete_file_permanently(path: str, name: str = "") -> str:
+    """Irreversibly remove one explicitly named file/folder after dispatcher confirmation."""
+    try:
+        base = _resolve_path(path)
+        target = (base / name) if name else base
+        if not _is_safe_path(target):
+            return f"Access denied: {target}"
+        if not target.exists() and not target.is_symlink():
+            return f"Not found: {target.name}"
+
+        # Keep the profile root protected; user-selected folders such as Desktop
+        # or Downloads may be removed only after the dispatcher obtains confirmation.
+        protected = {Path.home()}
+        if target.resolve() in {p.resolve() for p in protected}:
+            return f"Protected directory, cannot permanently delete: {target.name}"
+
+        if target.is_symlink():
+            target.unlink()
+        elif target.is_dir():
+            shutil.rmtree(target)
+        else:
+            target.unlink()
+        return f"Permanently deleted: {target.name}"
+
+    except PermissionError:
+        return f"Permission denied: {path}"
+    except Exception as e:
+        return f"Could not permanently delete: {type(e).__name__}"
 
 
 def move_file(path: str, name: str = "", destination: str = "") -> str:
@@ -339,7 +430,7 @@ def find_files(name: str = "", extension: str = "",
             if name and name.lower() not in item.name.lower():
                 continue
             size = _format_size(item.stat().st_size)
-            results.append(f"📄 {item.name} ({size}) — {item.parent}")
+            results.append(f"[FILE] {item.name} ({size}) — {item.parent}")
             if len(results) >= max_results:
                 break
 
@@ -503,8 +594,14 @@ def file_controller(
         elif action == "create_folder":
             return create_folder(path, name=name)
 
+        elif action == "create_folders":
+            return create_folders(path, names=params.get("names", []))
+
         elif action == "delete":
             return delete_file(path, name=name)
+
+        elif action in {"delete_permanent", "permanent_delete"}:
+            return delete_file_permanently(path, name=name)
 
         elif action == "move":
             return move_file(path, name=name, destination=params.get("destination", ""))

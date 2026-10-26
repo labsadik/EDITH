@@ -1,5 +1,5 @@
 """
-file_processor.py — JARVIS Universal File Processor
+file_processor.py — EDITH Universal File Processor
 
 Supported types:
   image   → describe, ocr, resize, convert, compress, crop
@@ -24,11 +24,14 @@ import subprocess
 import tempfile
 from pathlib import Path
 from datetime import datetime
+from core.secrets import get_gemini_api_key
 
 def _get_api_key() -> str:
     config_path = Path(__file__).resolve().parent.parent / "config" / "api_keys.json"
-    with open(config_path, "r", encoding="utf-8") as f:
-        return json.load(f)["gemini_api_key"]
+    key = get_gemini_api_key(config_path)
+    if not key:
+        raise RuntimeError("Gemini API key is not configured.")
+    return key
 
 
 def _gemini_client():
@@ -459,17 +462,8 @@ def _process_code(path: Path, action: str, params: dict, speak=None) -> str:
 
     if action == "run":
         if ext == "py":
-            try:
-                result = subprocess.run(
-                    ["python", str(path)],
-                    capture_output=True, text=True, timeout=30
-                )
-                out = result.stdout or result.stderr
-                return f"Output:\n{out[:2000]}" if out else "No output."
-            except subprocess.TimeoutExpired:
-                return "Execution timed out (30s)."
-            except Exception as e:
-                return f"Run failed: {e}"
+            from actions.code_helper import _run_file
+            return _run_file(path,[],30)
         return f"Direct execution not supported for .{ext} files."
 
     if action == "info":

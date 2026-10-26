@@ -20,6 +20,7 @@ python-pptx
 fastapi
 uvicorn[standard]
 cryptography
+keyring
 python-multipart
 comtypes; sys_platform == "win32"
 pycaw; sys_platform == "win32"
@@ -27,3 +28,5 @@ win10toast; sys_platform == "win32"
 pywinauto; sys_platform == "win32"
 pywin32; sys_platform == "win32"
 qrcode[pil]
+nvidia-ml-py>=12
+WMI; sys_platform == "win32"

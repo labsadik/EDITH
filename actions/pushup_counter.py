@@ -1,8 +1,8 @@
 """
-JARVIS plugin — Pushup Counter (webcam vision).
+EDITH plugin — Pushup Counter (webcam vision).
 
-Say "Jarvis, count my pushups" (any language) — the HUD switches to the
-live camera, a 5-second countdown lets you get into position, then JARVIS
+Say "EDITH, count my pushups" (any language) — the HUD switches to the
+live camera, a 5-second countdown lets you get into position, then EDITH
 counts your reps live on screen and finally delivers the result with
 playful, teasing motivational commentary in your language.
 
@@ -65,7 +65,7 @@ _MAX_SESSION_SECONDS = 180
 _IDLE_END_SECONDS    = 20    # end after this long without a rep (once started)
 _IDLE_ABORT_SECONDS  = 40    # abort if NO rep ever happens
 _FPS                 = 20
-_CYAN   = (255, 190, 40)     # JARVIS cyan-blue (BGR)
+_CYAN   = (255, 190, 40)     # EDITH cyan-blue (BGR)
 _BRIGHT = (255, 235, 130)
 
 
@@ -228,21 +228,15 @@ def _draw_overlay(frame, reps, target, state, flash_until, countdown=None):
 def _record_session(reps: int, seconds: float) -> int:
     """Append session, return today's total reps. Never raises."""
     try:
-        path = BASE_DIR / "memory" / "long_term.json"
-        data = {}
-        if path.exists():
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-            except Exception:
-                data = {}
+        from memory.memory_manager import load_memory, save_memory
+        data = load_memory()
         sessions = data.get("pushup_sessions")
         if not isinstance(sessions, list):
             sessions = []
         today = date.today().isoformat()
         sessions.append({"date": today, "reps": reps, "seconds": round(seconds)})
         data["pushup_sessions"] = sessions[-100:]
-        path.write_text(json.dumps(data, indent=2, ensure_ascii=False),
-                        encoding="utf-8")
+        save_memory(data)
         return sum(s.get("reps", 0) for s in sessions if s.get("date") == today)
     except Exception:
         return reps
@@ -288,7 +282,7 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
         if stream_sig:
             stream_sig.emit(True)
             view_open = True
-        _log(f"JARVIS: Pushup session started — {mode}.")
+        _log(f"EDITH: Pushup session started — {mode}.")
 
         # Phase 1 — countdown so the user can get into position
         t0 = time.time()
@@ -329,7 +323,7 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
                 last_rep_time = time.time()
                 flash_until = last_rep_time + 0.6
                 if counter.reps % 10 == 0 or (target and counter.reps == target):
-                    _log(f"JARVIS: Pushup {counter.reps} 💪")
+                    _log(f"EDITH: Pushup {counter.reps} 💪")
             if frame_sig:
                 _emit_frame(frame_sig,
                             _draw_overlay(frm, counter.reps, target,
@@ -375,3 +369,4 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
             f" Today's total: {today_total}. Deliver this to the user in "
             "their language with playful, lightly teasing motivational "
             "commentary about the number.")
+

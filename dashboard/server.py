@@ -1,5 +1,5 @@
 """
-dashboard/server.py — JARVIS Local HTTP Dashboard
+dashboard/server.py — EDITH Local HTTP Dashboard
 
 Plain HTTP on port 8000 (no SSL warnings, no firewall issues).
 Security at the application layer: AES-256-CBC with session-key-derived key.
@@ -42,29 +42,14 @@ MAX_UPLOAD_MB = 500
 
 
 def _make_uploads_dir() -> Path:
-    """Return (and create) the cross-platform uploads folder."""
-    for candidate in [
-        Path.home() / "Downloads" / "JARVIS Uploads",
-        Path.home() / "Documents" / "JARVIS Uploads",
-        BASE_DIR / "uploads",
-    ]:
-        try:
-            candidate.mkdir(parents=True, exist_ok=True)
-            return candidate
-        except Exception:
-            pass
-    return BASE_DIR / "uploads"
+    """Create or safely migrate the EDITH uploads directory when needed."""
+    from core.branding import prepare_uploads_dir
+    return prepare_uploads_dir(base_dir=BASE_DIR)
 
-
-UPLOADS_DIR = _make_uploads_dir()
 
 def _get_gemini_key() -> str | None:
-    try:
-        import json as _json
-        with open(BASE_DIR / "config" / "api_keys.json", "r", encoding="utf-8") as f:
-            return _json.load(f).get("gemini_api_key")
-    except Exception:
-        return None
+    from core.secrets import get_gemini_api_key
+    return get_gemini_api_key(BASE_DIR / "config" / "api_keys.json")
 
 _KEY_CHARS = [c for c in (string.ascii_uppercase + string.digits)
               if c not in ('O', 'I', 'L', '0', '1')]
@@ -112,8 +97,8 @@ def _ensure_network_access(port: int) -> None:
     if sys.platform == "win32":
         import ctypes, time
 
-        port_rule = f"JARVIS Dashboard Port {port}"
-        prog_rule  = "JARVIS Dashboard Python"
+        port_rule = f"EDITH Dashboard Port {port}"
+        prog_rule  = "EDITH Dashboard Python"
         py_exe     = sys.executable
 
         def _netsh_rule_exists(name: str) -> bool:
@@ -169,7 +154,7 @@ def _ensure_network_access(port: int) -> None:
             )
 
         bat_body = "\r\n".join(bat_lines) + "\r\n"
-        fd, bat_path = tempfile.mkstemp(suffix=".bat", prefix="jarvis_fw_")
+        fd, bat_path = tempfile.mkstemp(suffix=".bat", prefix="edith_fw_")
         try:
             os.write(fd, bat_body.encode("mbcs"))   # Windows cmd.exe expects ANSI
             os.close(fd)
@@ -217,7 +202,7 @@ def _ensure_network_access(port: int) -> None:
                 print("[Dashboard] Refresh your phone browser to connect.")
             else:
                 print("[Dashboard] Setup was not allowed.")
-                print("[Dashboard] Phone connections may fail until JARVIS is run as Administrator.")
+                print("[Dashboard] Phone connections may fail until EDITH is run as Administrator.")
         except Exception as e:
             print(f"[Dashboard] Firewall setup error: {e}")
         finally:
@@ -360,6 +345,29 @@ def _local_ip() -> str:
     return "127.0.0.1"
 
 
+def _certificate_paths() -> tuple[Path, Path]:
+    """Use EDITH certificate names, preserving an existing paired identity."""
+    certs = BASE_DIR / "config" / "certs"
+    key_p, crt_p = certs / "edith.key", certs / "edith.crt"
+    if key_p.exists() and crt_p.exists():
+        return key_p, crt_p
+    old_key, old_crt = certs / "jarvis.key", certs / "jarvis.crt"
+    if old_key.exists() and old_crt.exists():
+        if not key_p.exists() and not crt_p.exists():
+            try:
+                old_key.rename(key_p)
+                try:
+                    old_crt.rename(crt_p)
+                except OSError:
+                    key_p.rename(old_key)  # Restore a complete legacy pair
+                    raise
+                return key_p, crt_p
+            except OSError as exc:
+                print(f"[EDITH] Could not rename legacy TLS files: {type(exc).__name__}")
+        return old_key, old_crt  # Keep remote access functioning
+    return key_p, crt_p
+
+
 def _ensure_certs() -> bool:
     """
     Make sure config/certs holds a TLS key pair, generating a self-signed one the
@@ -374,8 +382,7 @@ def _ensure_certs() -> bool:
     plain HTTP, which still works — the QR code simply encodes http:// instead.
     """
     certs = BASE_DIR / "config" / "certs"
-    key_p = certs / "jarvis.key"
-    crt_p = certs / "jarvis.crt"
+    key_p, crt_p = _certificate_paths()
     if key_p.exists() and crt_p.exists():
         return True
 
@@ -396,8 +403,8 @@ def _ensure_certs() -> bool:
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
         who = x509.Name([
-            x509.NameAttribute(NameOID.COMMON_NAME, "JARVIS Dashboard"),
-            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "JARVIS"),
+            x509.NameAttribute(NameOID.COMMON_NAME, "EDITH Dashboard"),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "EDITH"),
         ])
 
         # The SAN has to cover every address the phone might use: the LAN IP the
@@ -462,13 +469,17 @@ class DashboardServer:
         self._aes_cache:  dict[str, bytes]= {}   # session_key → AES bytes
         self._clients: set[WebSocket]     = set()
         self._history: list[dict]         = []
+        self._event_sequence              = 0
+        self._event_namespace             = secrets.token_hex(8)
         self._command_queue               = asyncio.Queue()
         self._wake_callback               = None
         self._connect_callback            = None
+        self._live_ready_callback         = None
         self._pending_keys: dict[str, float] = {}
         self._device_sessions: dict[str, dict] = {}  # device_token → {session_key}
-        self._phone_audio_queue: asyncio.Queue    = asyncio.Queue(maxsize=200)
-        self._uploads_dir                 = UPLOADS_DIR
+        # Bound queued phone audio; stale speech should not lag seconds behind.
+        self._phone_audio_queue: asyncio.Queue    = asyncio.Queue(maxsize=24)
+        self._uploads_dir                 = _make_uploads_dir()
         self._login_html                  = _read("login.html")
         self._app_html                    = _read("app.html")
         self.app                          = self._build_app()
@@ -485,7 +496,7 @@ class DashboardServer:
     @staticmethod
     def _ssl_enabled() -> bool:
         certs = BASE_DIR / "config" / "certs"
-        return (certs / "jarvis.key").exists() and (certs / "jarvis.crt").exists()
+        return all(p.exists() for p in _certificate_paths())
 
     def get_url(self) -> str:
         proto = "https" if self._ssl_enabled() else "http"
@@ -519,16 +530,28 @@ class DashboardServer:
     def set_connect_callback(self, fn) -> None:
         self._connect_callback = fn
 
+    def set_live_ready_callback(self, fn) -> None:
+        """Optional lightweight readiness check for remote command delivery."""
+        self._live_ready_callback = fn
+
     # ── broadcast ────────────────────────────────────────────────────────
 
     async def broadcast(self, msg: dict) -> None:
-        self._history.append(msg)
+        """Assign stable per-process IDs so reconnecting phones can skip replayed events.
+
+        Retain the existing message shape and encrypted command protocol.
+        A slow/stalled phone must not block the dashboard indefinitely.
+        """
+        self._event_sequence += 1
+        entry = dict(msg)
+        entry["event_id"] = f"{self._event_namespace}:{self._event_sequence}"
+        self._history.append(entry)
         if len(self._history) > 300:
             self._history = self._history[-300:]
         dead: set[WebSocket] = set()
         for ws in list(self._clients):
             try:
-                await ws.send_json(msg)
+                await asyncio.wait_for(ws.send_json(entry), timeout=2.0)
             except Exception:
                 dead.add(ws)
         self._clients -= dead
@@ -599,7 +622,7 @@ class DashboardServer:
   h2{color:#f87171;margin-bottom:12px}p{color:#5e6a7e;font-size:14px}
 </style></head>
 <body><div><h2>Link Expired</h2>
-<p>Press <strong style="color:#dde3ed">Remote Control</strong> in JARVIS to get a new QR code.</p>
+<p>Press <strong style="color:#dde3ed">Remote Control</strong> in EDITH to get a new QR code.</p>
 </div></body></html>""")
 
             del self._pending_keys[key]
@@ -630,7 +653,7 @@ class DashboardServer:
   localStorage.setItem('jarvis_device_token','{dev_tok}');
   setTimeout(function(){{location.replace('/')}},400);
 </script>
-<p>Connecting to JARVIS…</p>
+<p>Connecting to EDITH…</p>
 </body></html>""")
 
         @app.post("/api/device-login")
@@ -664,10 +687,24 @@ class DashboardServer:
             self._device_sessions.clear()
             return JSONResponse({"ok": True, "revoked": count})
 
+        @app.get("/api/session")
+        async def session_status(req: Request):
+            """Minimal authorized session probe for remote reconnect diagnostics."""
+            if not _auth(req):
+                return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
+            return JSONResponse({"ok": True})
+
         @app.post("/api/command")
         async def command(req: Request):
             if not _auth(req):
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            # Never acknowledge a new command when there is no Live consumer.
+            # Retaining the draft on the phone is safer than silently dropping it.
+            if self._live_ready_callback and not self._live_ready_callback():
+                return JSONResponse(
+                    {"ok": False, "error": "EDITH Live is reconnecting; command not queued"},
+                    status_code=503,
+                )
             body  = await req.json()
             token = req.headers.get("authorization", "").removeprefix("Bearer ").strip()
             enc   = body.get("enc", "")
@@ -706,12 +743,24 @@ class DashboardServer:
             try:
                 while True:
                     data = await websocket.receive_bytes()
+                    # PCM16 frames only. Reject malformed or oversized packets
+                    # without disturbing microphone input from other devices.
+                    if not data or len(data) % 2 or len(data) > 65536:
+                        continue
+                    chunk = {"data": data, "mime_type": "audio/pcm"}
                     try:
-                        self._phone_audio_queue.put_nowait(
-                            {"data": data, "mime_type": "audio/pcm"}
-                        )
+                        self._phone_audio_queue.put_nowait(chunk)
                     except asyncio.QueueFull:
-                        pass  # drop frame rather than block
+                        # Prefer the newest audio; never deliver seconds-old
+                        # speech after a slow network recovers.
+                        try:
+                            self._phone_audio_queue.get_nowait()
+                        except asyncio.QueueEmpty:
+                            pass
+                        try:
+                            self._phone_audio_queue.put_nowait(chunk)
+                        except asyncio.QueueFull:
+                            pass
             except WebSocketDisconnect:
                 pass
             finally:
@@ -823,6 +872,11 @@ class DashboardServer:
             try:
                 while True:
                     data = await websocket.receive_json()
+                    if not isinstance(data, dict):
+                        continue
+                    if data.get("type") == "ping":
+                        await websocket.send_json({"type": "pong"})
+                        continue
                     if data.get("type") == "command":
                         enc = data.get("enc", "")
                         t   = self._decrypt(tok, enc) if enc else (data.get("text") or "").strip()
@@ -843,8 +897,7 @@ class DashboardServer:
         """Second HTTPS server on PORT+1 sharing the same app and in-memory state.
         Chrome HTTPS-upgrades any bare IP:PORT the user types, so this port also needs TLS.
         User types IP:8001 → Chrome tries https → self-signed cert warning → accept once → done."""
-        ssl_key  = BASE_DIR / "config" / "certs" / "jarvis.key"
-        ssl_cert = BASE_DIR / "config" / "certs" / "jarvis.crt"
+        ssl_key, ssl_cert = _certificate_paths()
         asyncio.get_event_loop().run_in_executor(None, _ensure_network_access, PORT + 1)
         cfg = uvicorn.Config(
             self.app, host="0.0.0.0", port=PORT + 1, log_level="warning",
@@ -867,8 +920,7 @@ class DashboardServer:
         _ensure_certs()
 
         use_ssl  = self._ssl_enabled()
-        ssl_key  = BASE_DIR / "config" / "certs" / "jarvis.key"
-        ssl_cert = BASE_DIR / "config" / "certs" / "jarvis.crt"
+        ssl_key, ssl_cert = _certificate_paths()
 
         if use_ssl:
             asyncio.create_task(self._serve_alias())
@@ -880,5 +932,5 @@ class DashboardServer:
 
         proto = "https" if use_ssl else "http"
         print(f"[Dashboard] {proto}://{self._ip}:{PORT}")
-        print("[Dashboard] Press 'Remote Control' in JARVIS UI to get the QR code.")
+        print("[Dashboard] Press 'Remote Control' in EDITH UI to get the QR code.")
         await uvicorn.Server(cfg).serve()

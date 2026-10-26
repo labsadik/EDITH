@@ -248,8 +248,7 @@ def send_message(
     if not _PYAUTOGUI:
         return "PyAutoGUI is not installed — cannot control the desktop."
 
-    preview = message_text[:50] + ("…" if len(message_text) > 50 else "")
-    print(f"[SendMessage] 📨 {platform} → {receiver}: {preview}")
+    print(f"[SendMessage] Prepared outbound message: platform={platform}, recipient={receiver}; body omitted from logs")
     if player:
         player.write_log(f"[msg] {platform} → {receiver}")
 
@@ -259,8 +258,11 @@ def send_message(
     except Exception as e:
         result = f"Could not send message: {e}"
 
-    print(f"[SendMessage] {'✅' if 'sent' in result.lower() else '❌'} {result}")
+    delivered = "sent" in result.lower() and not any(flag in result.lower() for flag in ("could not", "failed", "error"))
+    print(f"[SendMessage] Delivery result: {'reported success' if delivered else 'not confirmed'}; message body omitted")
     if player:
-        player.write_log(f"[msg] {result}")
+        player.write_log(
+            f"[msg] {'Delivery reported for' if delivered else 'Delivery not confirmed for'} {platform} → {receiver}; body omitted"
+        )
 
     return result

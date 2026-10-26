@@ -1,5 +1,5 @@
 """
-Text-to-Speech engines for MARK XL.
+Text-to-Speech engines for EDITH.
 
 EdgeTTS     – free Microsoft TTS (internet required, no API key)
 Kokoro      – fully offline neural TTS (~330 MB model)
@@ -433,10 +433,20 @@ def create_tts_player(config: dict) -> TTSPlayer:
         speed  = float(config.get("tts_speed", 1.0))
         engine = KokoroTTSEngine(voice=voice, speed=speed)
     elif engine_name == "elevenlabs":
-        api_key  = config.get("elevenlabs_api_key", "")
+        # New credentials use the OS keychain.  Keep the supplied config
+        # fallback for callers that construct a transient, non-persisted dict.
+        try:
+            from core.secrets import get_config_secret
+            from pathlib import Path
+            api_key = get_config_secret(
+                "elevenlabs_api_key", Path(__file__).resolve().parent.parent / "config" / "api_keys.json"
+            ).value or config.get("elevenlabs_api_key", "")
+        except Exception:
+            api_key = config.get("elevenlabs_api_key", "")
         voice_id = config.get("tts_voice", "pNInz6obpgDQGcFmaJgB")
         engine   = ElevenLabsTTSEngine(api_key=api_key, voice_id=voice_id)
     else:   # edgetts (default)
         voice  = config.get("tts_voice", "en-US-GuyNeural")
         engine = EdgeTTSEngine(voice=voice)
     return TTSPlayer(engine)
+

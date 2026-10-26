@@ -1,5 +1,5 @@
 """
-MARK XL — Dependency auto-installer.
+EDITH — Dependency auto-installer.
 
 Called automatically on first launch and after engine reconfiguration.
 Installs only the packages that are actually missing, then exits cleanly.
@@ -16,6 +16,8 @@ from typing import Callable
 # Each entry: (import_name, pip_package_name)
 
 _CORE: list[tuple[str, str]] = [
+    ("PyQt6",              "PyQt6"),
+    ("google.genai",       "google-genai>=2.8.0"),
     ("psutil",             "psutil"),
     ("PIL",                "pillow"),
     ("sounddevice",        "sounddevice"),
@@ -62,7 +64,10 @@ _TTS: dict[str, list[tuple[str, str]]] = {
 
 def _available(module: str) -> bool:
     """Return True if the module can be imported (no actual import)."""
-    return importlib.util.find_spec(module) is not None
+    try:
+        return importlib.util.find_spec(module) is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
 
 
 def _pip(package: str, log: Callable | None = None) -> bool:
@@ -119,20 +124,33 @@ def install_for_config(config: dict, log: Callable | None = None) -> None:
     if log:
         log(f"SYS: Installing {len(missing)} package(s): {pkg_names}")
 
+    failures = []
     for _mod, pkg in missing:
-        _pip(pkg, log)
+        if not _pip(pkg, log):
+            failures.append(pkg)
 
-    # Playwright: install the package + download Chromium browser
+    # Playwright needs its own browser download after successful installation.
     if not _available("playwright"):
-        _pip("playwright", log)
+        if not _pip("playwright", log):
+            failures.append("playwright")
+        else:
+            if log:
+                log("SYS: Downloading Playwright Chromium browser (one-time)…")
+            result = subprocess.run(
+                [sys.executable, "-m", "playwright", "install", "chromium"],
+                capture_output=True,
+            )
+            if result.returncode != 0:
+                failures.append("playwright Chromium")
+
+    if failures:
+        unique = ", ".join(dict.fromkeys(failures))
         if log:
-            log("SYS: Downloading Playwright browser (Chromium, ~150 MB — one-time)…")
-        subprocess.run(
-            [sys.executable, "-m", "playwright", "install", "chromium"],
-            capture_output=True,
+            log(f"ERR: Dependencies not ready: {unique}")
+        raise RuntimeError(
+            f"EDITH dependencies failed: {unique}. "
+            "Run python -m pip install -r requirements.txt in your active environment."
         )
-        if log:
-            log("SYS: Playwright browser ready.")
 
     if log:
         log("SYS: All dependencies ready ✓")

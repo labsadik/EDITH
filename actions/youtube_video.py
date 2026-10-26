@@ -34,6 +34,7 @@ except ImportError:
     _TRANSCRIPT_OK = False
 
 from config import get_os, is_windows, is_mac, is_linux
+from core.secrets import get_gemini_api_key
 
 
 def _get_base_dir() -> Path:
@@ -58,8 +59,10 @@ _YT_VIDEO_FILTER = "EgIQAQ%3D%3D"
 
 
 def _get_api_key() -> str:
-    with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)["gemini_api_key"]
+    key = get_gemini_api_key(API_CONFIG_PATH)
+    if not key:
+        raise RuntimeError("Gemini API key is not configured.")
+    return key
 
 
 def _open_url(url: str) -> None:
@@ -117,19 +120,24 @@ def _is_valid_youtube_url(url: str) -> bool:
 
 
 def _ask_for_url(prompt_text: str = "YouTube video URL:") -> str | None:
+    """Request a native EDITH dialog on the Qt thread, including from tool workers."""
     try:
-        import tkinter as tk
-        from tkinter import simpledialog
-
-        root = tk._default_root
-        if root is None:
-            root = tk.Tk()
-            root.withdraw()
-
-        url = simpledialog.askstring("J.A.R.V.I.S", prompt_text, parent=root)
-        return url.strip() if url else None
-    except Exception as e:
-        print(f"[YouTube] ⚠️ URL dialog failed: {e}")
+        import threading
+        from PyQt6.QtCore import QThread
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance()
+        window = getattr(app, "edith_window", None)
+        if window is None:
+            return None
+        request = {"prompt": prompt_text, "value": None, "event": threading.Event()}
+        if QThread.currentThread() == app.thread():
+            window._show_url_prompt(request)
+        else:
+            window._url_prompt_sig.emit(request)
+            request["event"].wait(181)
+        value = request["value"]
+        return value if value and _is_valid_youtube_url(value) else None
+    except (ImportError, RuntimeError):
         return None
 
 
@@ -178,7 +186,7 @@ def _summarize_with_gemini(transcript: str, video_url: str) -> str:
         contents=f"Please summarize this YouTube video transcript:\n\n{truncated}",
         config=types.GenerateContentConfig(
             system_instruction=(
-                "You are JARVIS, an AI assistant. "
+                "You are EDITH, an AI assistant. "
                 "Summarize YouTube video transcripts clearly and concisely. "
                 "Structure: 1-sentence overview, then 3-5 key points. "
                 "Be direct. Address the user as 'sir'. "
@@ -197,7 +205,7 @@ def _save_summary(content: str, video_url: str) -> str:
     filepath = desktop / filename
 
     header = (
-        f"JARVIS — YouTube Summary\n"
+        f"EDITH — YouTube Summary\n"
         f"{'─' * 50}\n"
         f"URL    : {video_url}\n"
         f"Date   : {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
@@ -304,6 +312,27 @@ def _handle_play(parameters: dict, player) -> str:
     return f"Opened YouTube search for: {query} (manual selection required)"
 
 
+def _handle_channel_search(parameters: dict, player, speak=None) -> str:
+    """Open YouTube's channel-filtered search results; never play a video for a channel request."""
+    query = str(parameters.get("query") or "").strip()
+    if not query:
+        return "Please tell me the channel name you'd like to search for."
+
+    if player:
+        player.write_log(f"[YouTube] Channel search: {query[:80]}")
+
+    channel_url = (
+        "https://www.youtube.com/results"
+        f"?search_query={quote_plus(query)}"
+        "&sp=EgIQAg%3D%3D"
+    )
+    _open_url(channel_url)
+    return (
+        f"Opened YouTube channel-only search results for: {query}. "
+        "No video was auto-played; choose the intended channel from the visible results."
+    )
+
+
 def _handle_summarize(parameters: dict, player, speak) -> str:
     if not _TRANSCRIPT_OK:
         return "youtube-transcript-api is not installed. Run: pip install youtube-transcript-api"
@@ -401,6 +430,7 @@ def _handle_trending(parameters: dict, player, speak) -> str:
 
 _ACTION_MAP = {
     "play":      _handle_play,
+    "channel":   _handle_channel_search,
     "summarize": _handle_summarize,
     "get_info":  _handle_get_info,
     "trending":  _handle_trending,
@@ -425,7 +455,7 @@ def youtube_video(
     if handler is None:
         return (
             f"Unknown YouTube action: '{action}'. "
-            "Available: play, summarize, get_info, trending."
+            "Available: play, channel, summarize, get_info, trending."
         )
 
     try:

@@ -1,4 +1,8 @@
+from core.branding import prepare_projects_dir
 import subprocess
+import shutil
+from core.execution import SERVICE, format_execution, stopped
+from core.secrets import get_gemini_api_key
 import sys
 import json
 import re
@@ -14,14 +18,16 @@ def get_base_dir():
 
 BASE_DIR         = get_base_dir()
 API_CONFIG_PATH  = BASE_DIR / "config" / "api_keys.json"
-PROJECTS_DIR     = Path.home() / "Desktop" / "JarvisProjects"
+PROJECTS_DIR     = Path.home() / "Desktop" / "EDITH Projects"
 MAX_FIX_ATTEMPTS = 5
 MODEL_PLANNER    = "gemini-flash-latest"
 MODEL_WRITER     = "gemini-flash-latest"
 
 def _get_api_key() -> str:
-    with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)["gemini_api_key"]
+    key = get_gemini_api_key(API_CONFIG_PATH)
+    if not key:
+        raise RuntimeError("Gemini API key is not configured.")
+    return key
 
 
 def _get_model(model_name: str):
@@ -88,8 +94,8 @@ def _has_error(output: str, run_command: str) -> bool:
     
     low = output.lower()
 
-    if "timed out" in low:
-        return False
+    if stopped(output) or low.startswith("execution failed"):
+        return True
 
     if not output.strip():
         return False
@@ -235,115 +241,40 @@ Code for {file_path}:"""
         raise
 
 def _install_dependencies(dependencies: list[str], project_dir: Path) -> str:
-    if not dependencies:
-        return "No external dependencies."
-
-    to_install = []
-    for dep in dependencies:
-        pkg_name = re.split(r"[>=<!]", dep)[0].strip()
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "show", pkg_name],
-            capture_output=True, text=True
-        )
-        if result.returncode != 0:
-            to_install.append(dep)
-        else:
-            print(f"[DevAgent] ✓ Already installed: {pkg_name}")
-
-    if not to_install:
-        return f"All dependencies already installed: {', '.join(dependencies)}"
-
-    print(f"[DevAgent] 📦 Installing: {to_install}")
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "install"] + to_install,
-            capture_output=True, text=True,
-            encoding="utf-8", errors="replace",
-            timeout=120, cwd=str(project_dir)
-        )
-        if result.returncode == 0:
-            return f"Installed: {', '.join(to_install)}"
-        return f"Install warning (non-fatal): {result.stderr[:200]}"
-    except subprocess.TimeoutExpired:
-        return "Dependency install timed out (non-fatal)."
-    except Exception as e:
-        return f"Install error (non-fatal): {e}"
+    if not dependencies:return "No external dependencies."
+    # pip receives exact arguments; options cannot be smuggled in as package names.
+    if any(not isinstance(d,str) or d.startswith('-') for d in dependencies):
+        return "Execution failed: invalid dependency specification"
+    receipt=SERVICE.run_argv([sys.executable,"-m","pip","install",*dependencies],cwd=project_dir,timeout=120)
+    return format_execution(receipt)
 
 def _open_vscode(project_dir: Path) -> bool:
-    vscode_candidates = [
-        "code",
-        rf"C:\Users\{Path.home().name}\AppData\Local\Programs\Microsoft VS Code\bin\code.cmd",
-        r"C:\Program Files\Microsoft VS Code\bin\code.cmd",
-    ]
-    for cmd in vscode_candidates:
-        try:
-            subprocess.Popen(
-                [cmd, str(project_dir)],
-                shell=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-            time.sleep(1.5)
-            print(f"[DevAgent] 💻 VSCode opened: {project_dir}")
-            return True
-        except Exception:
-            continue
-    return False
+    executable=shutil.which('code')
+    if not executable:return False
+    receipt=SERVICE.run_argv([executable,str(project_dir)],cwd=project_dir,timeout=10)
+    return receipt['ok']
 
 def _run_project(run_command: str, project_dir: Path, timeout: int = 30) -> str:
-    print(f"[DevAgent] 🚀 Running: {run_command}")
-    try:
-        parts = run_command.split()
-        if parts[0].lower() == "python":
-            parts[0] = sys.executable
+    # Use the actual OS shell. Quoted paths, pipelines and && retain their meaning.
+    return format_execution(SERVICE.shell(run_command,cwd=str(project_dir),timeout=timeout))
 
-        result = subprocess.run(
-            parts,
-            capture_output=True, text=True,
-            encoding="utf-8", errors="replace",
-            timeout=timeout,
-            cwd=str(project_dir)
-        )
+def _try_auto_install(error_output: str, project_dir: Path) -> bool | None:
+    match=re.search(r"No module named ['\"]([a-zA-Z0-9_\-\.]+)['\"]",error_output)
+    if not match:return False
+    pkg=match.group(1).replace('_','-').split('.')[0]
+    receipt=SERVICE.run_argv([sys.executable,'-m','pip','install',pkg],cwd=project_dir,timeout=60)
+    # A declined/expired approval is a terminal result for this build.  It must
+    # not fall through to generated repairs or another install attempt.
+    _try_auto_install.last_result = format_execution(receipt)
+    if not receipt.get('ok') and ((receipt.get('data') or {}).get('cancelled') or
+                                  'cancel' in str(receipt.get('error') or '').lower() or
+                                  'expired' in str(receipt.get('error') or '').lower()):
+        return None
+    return bool(receipt.get('ok'))
 
-        stdout = result.stdout.strip()
-        stderr = result.stderr.strip()
 
-        combined_parts = []
-        if stdout:
-            combined_parts.append(f"STDOUT:\n{stdout}")
-        if stderr:
-            combined_parts.append(f"STDERR:\n{stderr}")
+_try_auto_install.last_result = ""
 
-        return "\n\n".join(combined_parts) if combined_parts else "Ran with no output."
-
-    except subprocess.TimeoutExpired:
-        return f"Timed out after {timeout}s — long-running app (server/GUI) is likely working."
-    except FileNotFoundError as e:
-        return f"Command not found: {e}"
-    except Exception as e:
-        return f"Run error: {e}"
-
-def _try_auto_install(error_output: str, project_dir: Path) -> bool:
-    """ModuleNotFoundError varsa eksik paketi otomatik kurmaya çalışır."""
-    pattern = re.compile(
-        r"No module named ['\"]([a-zA-Z0-9_\-\.]+)['\"]", re.IGNORECASE
-    )
-    match = pattern.search(error_output)
-    if not match:
-        return False
-
-    pkg = match.group(1).replace("_", "-").split(".")[0]
-    print(f"[DevAgent] 🔧 Auto-installing missing package: {pkg}")
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", pkg],
-            capture_output=True, text=True,
-            encoding="utf-8", errors="replace",
-            timeout=60, cwd=str(project_dir)
-        )
-        return result.returncode == 0
-    except Exception:
-        return False
 
 def _fix_files(
     error_output: str,
@@ -460,9 +391,9 @@ def _build_project(
         if speak: speak(msg)
         return msg
 
-    proj_name    = project_name or plan.get("project_name", "jarvis_project")
+    proj_name    = project_name or plan.get("project_name", "edith_project")
     proj_name    = re.sub(r"[^\w\-]", "_", proj_name)
-    project_dir  = PROJECTS_DIR / proj_name
+    project_dir  = prepare_projects_dir() / proj_name
     project_dir.mkdir(parents=True, exist_ok=True)
 
     files        = plan.get("files", [])
@@ -516,6 +447,8 @@ def _build_project(
     if dependencies:
         install_result = _install_dependencies(dependencies, project_dir)
         log(install_result)
+        if stopped(install_result) or install_result.startswith("Execution failed"):
+            return install_result
 
     _open_vscode(project_dir)
 
@@ -526,6 +459,9 @@ def _build_project(
         log(f"Running project (attempt {attempt}/{MAX_FIX_ATTEMPTS})...")
         last_output = _run_project(run_command, project_dir, timeout)
         log(f"Output preview: {last_output[:150]}")
+
+        if stopped(last_output):
+            return last_output
 
         if not _has_error(last_output, run_command):
             msg = (
@@ -542,6 +478,8 @@ def _build_project(
         error_type = _classify_error(last_output)
         if error_type == "dependency_error" and auto_installs < 3:
             installed = _try_auto_install(last_output, project_dir)
+            if installed is None:
+                return _try_auto_install.last_result or "Execution cancelled: dependency installation was not approved"
             if installed:
                 auto_installs += 1
                 log("Missing dependency installed, retrying...")

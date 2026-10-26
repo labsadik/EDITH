@@ -3,6 +3,7 @@ import json
 import sys
 import threading
 import time
+from core.secrets import get_gemini_api_key
 from pathlib import Path
 
 # ── Gemini grounding quota circuit breaker ────────────────────────────────────
@@ -74,8 +75,10 @@ API_CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
 
 
 def _get_api_key() -> str:
-    with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)["gemini_api_key"]
+    key = get_gemini_api_key(API_CONFIG_PATH)
+    if not key:
+        raise RuntimeError("Gemini API key is not configured.")
+    return key
 
 
 def _gemini_search(query: str) -> str:

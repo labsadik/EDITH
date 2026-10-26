@@ -3,34 +3,36 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JARVIS Dashboard</title>
+  <title>EDITH • Remote</title>
   <script src="/static/crypto.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg:      #07090f;
-      --surface: rgba(255,255,255,0.04);
-      --border:  rgba(255,255,255,0.07);
-      --accent:  #6366f1;
-      --adim:    rgba(99,102,241,0.14);
-      --text:    #dde3ed;
-      --muted:   #5e6a7e;
-      --green:   #22c55e;
-      --gdim:    rgba(34,197,94,0.14);
+      --bg:      #0B0D12;
+      --surface: rgba(165,180,252,0.055);
+      --border:  rgba(165,180,252,0.14);
+      --accent:  #A5B4FC;
+      --adim:    rgba(165,180,252,0.13);
+      --text:    #F1F3F9;
+      --muted:   #7F899B;
+      --green:   #76D7B0;
+      --gdim:    rgba(118,215,176,0.13);
     }
     html, body {
-      height: 100%; background: var(--bg); color: var(--text);
+      height: 100%; background: radial-gradient(1100px 650px at 50% -18%, rgba(79,91,160,0.16), transparent 62%), var(--bg);
+      color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       display: flex; flex-direction: column; overflow: hidden;
     }
 
     /* ── HEADER ── */
     header {
-      flex-shrink: 0; display: flex; align-items: center; gap: 10px;
-      padding: 12px 16px; border-bottom: 1px solid var(--border);
-      background: rgba(7,9,15,0.95);
+      flex-shrink: 0; display: flex; align-items: center; gap: 12px;
+      padding: 14px 20px; border-bottom: 1px solid var(--border);
+      background: rgba(5,9,20,0.88); backdrop-filter: blur(18px);
+      box-shadow: 0 10px 32px rgba(0,0,0,0.16);
     }
-    .logo { font-size: 15px; font-weight: 700; letter-spacing: 6px; }
+    .logo { font-size: 15px; font-weight: 750; letter-spacing: 3px; }
     .logo em { color: var(--accent); font-style: normal; }
     .pill {
       display: flex; align-items: center; gap: 6px; padding: 4px 11px;
@@ -38,7 +40,7 @@
       font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
       color: var(--muted); transition: all 0.3s;
     }
-    .pill.on { background: var(--gdim); border-color: rgba(34,197,94,0.3); color: var(--green); }
+    .pill.on { background: var(--gdim); border-color: rgba(118,215,176,0.3); color: var(--green); }
     .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); transition: background 0.3s; }
     .pill.on .dot { background: var(--green); animation: blink 2s infinite; }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
@@ -47,17 +49,17 @@
       font-size: 9px; font-weight: 700; letter-spacing: 1.5px; padding: 3px 8px;
       border-radius: 4px; display: none;
     }
-    .enc-badge.on  { display: block; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.25); color: var(--green); }
+    .enc-badge.on  { display: block; background: rgba(118,215,176,0.1); border: 1px solid rgba(118,215,176,0.25); color: var(--green); }
     .enc-badge.off { display: block; background: rgba(255,100,100,0.08); border: 1px solid rgba(255,100,100,0.2); color: #f87171; }
     .url { font-size: 10px; font-family: monospace; color: var(--muted); padding: 4px 9px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
 
     /* ── FEED ── */
-    main { flex: 1; overflow-y: auto; padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 10px; }
+    main { flex: 1; width: 100%; max-width: 1120px; align-self: center; overflow-y: auto; padding: 22px 22px 14px; display: flex; flex-direction: column; gap: 12px; }
     main::-webkit-scrollbar { width: 3px; }
     main::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-    .msg { max-width: 82%; padding: 10px 14px; border-radius: 14px; font-size: 14px; line-height: 1.55; animation: pop 0.18s ease; }
+    .msg { max-width: min(82%, 760px); padding: 12px 16px; border-radius: 16px; font-size: 14px; line-height: 1.6; animation: pop 0.18s ease; box-shadow: 0 8px 26px rgba(0,0,0,0.10); }
     @keyframes pop { from { opacity:0; transform:translateY(4px); } }
-    .msg-j   { align-self:flex-start; background:var(--adim);   border:1px solid rgba(99,102,241,0.18); border-bottom-left-radius:4px; }
+    .msg-j   { align-self:flex-start; background:linear-gradient(135deg, rgba(165,180,252,0.12), rgba(70,78,132,0.07)); border:1px solid rgba(165,180,252,0.20); border-bottom-left-radius:5px; }
     .msg-u   { align-self:flex-end;   background:var(--surface); border:1px solid var(--border);        border-bottom-right-radius:4px; }
     .msg-sys { align-self:center; font-size:11px; color:var(--muted); padding:2px 0; background:transparent; border:none; letter-spacing:0.3px; }
     .lbl { font-size:9px; font-weight:700; letter-spacing:2px; text-transform:uppercase; opacity:0.45; margin-bottom:4px; }
@@ -86,16 +88,16 @@
     .fc-dl:hover { opacity: 0.8; }
 
     /* ── FOOTER ── */
-    footer { flex-shrink:0; padding:10px 14px; border-top:1px solid var(--border); background:rgba(7,9,15,0.95); display:flex; gap:8px; align-items:center; }
-    #inp { flex:1; padding:11px 14px; background:var(--surface); border:1.5px solid var(--border); border-radius:12px; color:var(--text); font-size:14px; outline:none; transition:border-color 0.15s; }
-    #inp:focus { border-color: var(--accent); }
+    footer { flex-shrink:0; padding:13px 18px; border-top:1px solid var(--border); background:rgba(5,9,20,0.90); backdrop-filter:blur(18px); display:flex; gap:9px; align-items:center; }
+    #inp { flex:1; min-width:0; padding:12px 15px; background:rgba(18,23,34,0.94); border:1px solid var(--border); border-radius:14px; color:var(--text); font-size:14px; outline:none; transition:border-color 0.15s, box-shadow 0.15s; }
+    #inp:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(165,180,252,0.08), 0 0 24px rgba(165,180,252,0.05); }
     #inp::placeholder { color: var(--muted); }
     .btn { padding:11px 15px; border:none; border-radius:12px; font-size:11px; font-weight:700; letter-spacing:1.5px; cursor:pointer; transition:opacity 0.15s,transform 0.1s; }
     .btn:active { transform: scale(0.96); }
     .btn:hover  { opacity: 0.82; }
-    .btn-send { background: var(--accent); color: #fff; }
+    .btn-send { background: linear-gradient(135deg, #A5B4FC, #7889D8); color: #03101A; box-shadow: 0 5px 18px rgba(120,137,216,0.14); }
     .btn-wake { background:var(--surface); border:1px solid var(--border); color:var(--muted); display:none; }
-    .btn-wake.show { display:block; color:var(--green); border-color:rgba(34,197,94,0.35); }
+    .btn-wake.show { display:block; color:var(--green); border-color:rgba(118,215,176,0.35); }
     .btn-attach {
       background: var(--surface); border: 1px solid var(--border); color: var(--muted);
       padding: 11px 13px; font-size: 16px; line-height: 1; border-radius: 12px;
@@ -123,20 +125,30 @@
 
     /* ── TOAST ── */
     #toast {
-      position:fixed; top:66px; left:50%; transform:translateX(-50%) translateY(-8px);
-      background:rgba(34,197,94,0.16); border:1px solid rgba(34,197,94,0.4);
+      position:fixed; top:72px; left:50%; transform:translateX(-50%) translateY(-8px);
+      background:rgba(118,215,176,0.16); border:1px solid rgba(118,215,176,0.4);
       color:var(--green); font-size:12px; font-weight:700; letter-spacing:1px;
       padding:7px 18px; border-radius:99px;
       opacity:0; transition:opacity 0.22s,transform 0.22s;
       pointer-events:none; white-space:nowrap;
     }
     #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+    @media (max-width: 600px) {
+      header { padding: 12px 14px; gap: 8px; }
+      .logo { font-size: 13px; letter-spacing: 5px; }
+      .url { display: none; }
+      main { padding: 16px 12px 10px; gap: 10px; }
+      .msg { max-width: 94%; padding: 11px 13px; }
+      footer { padding: 10px; gap: 6px; flex-wrap: wrap; }
+      #inp { flex-basis: 100%; order: 0; }
+      .btn-attach, #mic-btn, .btn-wake, .btn-send { flex: 1; justify-content: center; }
+    }
   </style>
 </head>
 <body>
   <div id="toast"></div>
   <header>
-    <div class="logo"><em>J</em>ARVIS</div>
+    <div class="logo">EDITH</div>
     <div class="pill" id="pill"><span class="dot"></span><span id="st">Connecting</span></div>
     <div class="enc-badge" id="enc">AES-256</div>
     <div class="spacer"></div>
@@ -144,12 +156,12 @@
   </header>
   <main id="feed"></main>
   <footer>
-    <input id="inp" placeholder="Send a command to JARVIS…" autocomplete="off">
+    <input id="inp" placeholder="Send a command…" autocomplete="off">
     <label class="btn-attach" for="file-inp" title="Send file">📎</label>
     <input type="file" id="file-inp" multiple accept="*/*" style="display:none">
     <button id="mic-btn" onclick="doMic()" title="Voice command">🎤</button>
     <button class="btn btn-wake" id="wake" onclick="doWake()">WAKE</button>
-    <button class="btn btn-send" onclick="doSend()">SEND</button>
+    <button class="btn btn-send" id="send-btn" onclick="doSend()">SEND</button>
   </footer>
 
   <script>
@@ -206,23 +218,139 @@
     const stTxt = document.getElementById('st');
     const wake  = document.getElementById('wake');
 
+    // Reconnect without reloading the page. Never replay commands automatically:
+    // a lost HTTP acknowledgement does NOT prove that a command was not executed.
     const _wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const _wsUrl   = `${_wsProto}://${location.host}/ws?token=${encodeURIComponent(_authToken)}`;
-    const ws       = new WebSocket(_wsUrl);
+    const _wsUrl = _wsProto + '://' + location.host + '/ws?token=' + encodeURIComponent(_authToken);
+    let ws = null;
+    let _wsRetryTimer = null;
+    let _heartbeatTimer = null;
+    let _wsRetryMs = 1000;
+    let _awaitingPong = false;
+    const _seenEventIds = new Set();
+    const _eventOrder = [];
 
-    ws.onopen    = () => { sys('Remote session active.'); toast('Connected to JARVIS'); };
-    ws.onclose   = () => sys('Connection lost — refresh to reconnect.');
-    ws.onerror   = () => sys('Connection error.');
-    ws.onmessage = (e) => {
-      const m = JSON.parse(e.data);
-      if (m.type === 'log')           append(m.speaker, m.text);
-      if (m.type === 'status')        setStatus(m.state);
-      if (m.type === 'wake')          sys('Wake word detected — connecting…');
-      if (m.type === 'sys')           sys(m.text);
-      if (m.type === 'file_received') _onFileReceived(m);
-    };
+    function _setLinkStatus(text) {
+      pill.className = 'pill';
+      stTxt.textContent = text;
+      wake.classList.add('show');
+    }
+
+    function _clearRemoteAuth() {
+      sessionStorage.removeItem('jarvis_token');
+      sessionStorage.removeItem('jarvis_key');
+      location.replace('/login');
+    }
+
+    async function _verifyRemoteSession() {
+      try {
+        const response = await _authFetch('/api/session', { cache: 'no-store' });
+        if (response.status === 401) _clearRemoteAuth();
+      } catch (_) {
+        // Offline or unreachable: retain pairing and retry, don't erase it.
+      }
+    }
+
+    function _stopHeartbeat() {
+      if (_heartbeatTimer !== null) clearInterval(_heartbeatTimer);
+      _heartbeatTimer = null;
+      _awaitingPong = false;
+    }
+
+    function _scheduleReconnect(immediate = false) {
+      // navigator.onLine may report false on an otherwise working private LAN.
+      if (_wsRetryTimer !== null) return;
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      const delay = immediate ? 0 : _wsRetryMs;
+      _wsRetryMs = Math.min(_wsRetryMs * 2, 30000);
+      _setLinkStatus('Reconnecting…');
+      _wsRetryTimer = setTimeout(() => {
+        _wsRetryTimer = null;
+        _connectRemote();
+      }, delay);
+    }
+
+    function _connectRemote() {
+      if (!_authToken) {
+        _setLinkStatus('Pairing required');
+        return;
+      }
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      let socket;
+      try { socket = new WebSocket(_wsUrl); }
+      catch (_) { _scheduleReconnect(); return; }
+      ws = socket;
+      _setLinkStatus('Connecting…');
+
+      socket.onopen = () => {
+        if (ws !== socket) return;
+        _wsRetryMs = 1000;
+        _setLinkStatus('Connected');
+        sys('Remote session active.');
+        toast('Connected');
+        _stopHeartbeat();
+        _heartbeatTimer = setInterval(() => {
+          if (socket.readyState !== WebSocket.OPEN || document.hidden) return;
+          if (_awaitingPong) { socket.close(); return; }
+          _awaitingPong = true;
+          try { socket.send(JSON.stringify({ type: 'ping' })); }
+          catch (_) { socket.close(); }
+        }, 30000);
+      };
+
+      socket.onclose = e => {
+        if (ws !== socket) return;
+        _stopHeartbeat();
+        ws = null;
+        if (e.code === 4001 || e.code === 4401) {
+          _clearRemoteAuth();
+          return;
+        }
+        _setLinkStatus(navigator.onLine === false ? 'Offline' : 'Reconnecting…');
+        // Some browsers report unauthorized handshakes as code 1006.
+        void _verifyRemoteSession();
+        _scheduleReconnect();
+      };
+      socket.onerror = () => { /* onclose owns retries and visible status */ };
+      socket.onmessage = e => {
+        if (ws !== socket) return;
+        let m;
+        try { m = JSON.parse(e.data); } catch (_) { return; }
+        if (m.type === 'pong') { _awaitingPong = false; return; }
+        _awaitingPong = false;
+        if (m.event_id) {
+          if (_seenEventIds.has(m.event_id)) return;
+          _seenEventIds.add(m.event_id);
+          _eventOrder.push(m.event_id);
+          if (_eventOrder.length > 400) _seenEventIds.delete(_eventOrder.shift());
+        }
+        if (m.type === 'log')           append(m.speaker, m.text);
+        if (m.type === 'status')        setStatus(m.state);
+        if (m.type === 'wake')          sys('Wake word detected — connecting…');
+        if (m.type === 'sys')           sys(m.text);
+        if (m.type === 'file_received') _onFileReceived(m);
+      };
+    }
+
+    window.addEventListener('offline', () => {
+      _setLinkStatus('Offline');
+      if (ws) ws.close();
+    });
+    window.addEventListener('online', () => {
+      _wsRetryMs = 1000;
+      if (_wsRetryTimer !== null) {
+        clearTimeout(_wsRetryTimer);
+        _wsRetryTimer = null;
+      }
+      _scheduleReconnect(true);
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) _scheduleReconnect(true);
+    });
+    _connectRemote();
 
     function setStatus(s) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
       if (s === 'active') {
         pill.className = 'pill on'; stTxt.textContent = 'Active'; wake.classList.remove('show');
       } else {
@@ -230,23 +358,35 @@
       }
     }
 
+    // Keep long-running phone sessions responsive on low-memory devices.
+    // Only the oldest rendered rows are discarded; server-side logs remain.
+    const _MAX_FEED_ROWS = 300;
+    function _appendFeed(row) {
+      document.getElementById('welcome')?.remove?.();
+      const pinned = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
+      feed.appendChild(row);
+      while (feed.children.length > _MAX_FEED_ROWS) {
+        feed.removeChild(feed.firstElementChild);
+      }
+      if (pinned) feed.scrollTop = feed.scrollHeight;
+    }
+
     function append(speaker, text) {
       const d = document.createElement('div');
       if (speaker === 'jarvis') {
         d.className = 'msg msg-j';
-        d.innerHTML = `<div class="lbl">Jarvis</div>${esc(text)}`;
+        d.innerHTML = `<div class="lbl">Assistant</div>${esc(text)}`;
       } else {
         d.className = 'msg msg-u';
         d.innerHTML = `<div class="lbl">You</div>${esc(text)}`;
       }
-      feed.appendChild(d);
-      feed.scrollTop = feed.scrollHeight;
+      _appendFeed(d);
     }
 
     function sys(text) {
       const d = document.createElement('div');
       d.className = 'msg msg-sys'; d.textContent = text;
-      feed.appendChild(d); feed.scrollTop = feed.scrollHeight;
+      _appendFeed(d);
     }
 
     function esc(s) {
@@ -277,6 +417,7 @@
 
     // ── File upload (phone → computer) ────────────────────────────────────────
     function _uploadFile(file) {
+      if (file.size > 500 * 1024 * 1024) { sys('File too large: ' + file.name + '. Maximum size is 500 MB.'); return; }
       const id = 'fc_' + Date.now() + '_' + Math.random().toString(36).slice(2);
 
       // Create file card in feed
@@ -293,8 +434,7 @@
         </div>
         <div class="fc-status" id="${id}_st">0%</div>
       `;
-      feed.appendChild(card);
-      feed.scrollTop = feed.scrollHeight;
+      _appendFeed(card);
 
       const xhr = new XMLHttpRequest();
       xhr.open('POST', '/api/upload');
@@ -360,8 +500,7 @@
         </div>
         <div class="fc-status done">✓</div>
       `;
-      feed.appendChild(card);
-      feed.scrollTop = feed.scrollHeight;
+      _appendFeed(card);
       toast('File received on computer!');
     }
 
@@ -372,24 +511,54 @@
     });
 
     // ── Commands ──────────────────────────────────────────────────────────────
-    function doSend() {
+    let _commandInFlight = false;
+
+    async function doSend() {
       const inp = document.getElementById('inp');
       const txt = inp.value.trim();
-      if (!txt) return;
-      inp.value = '';
-      append('user', txt);
-      const enc  = _encrypt(txt);
-      const body = enc ? { enc } : { text: txt };
-      _authFetch('/api/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
+      if (!txt || _commandInFlight) return;
+      _commandInFlight = true;
+      const sendButton = document.getElementById('send-btn');
+      sendButton.disabled = true;
+      sendButton.textContent = 'Sending…';
+      try {
+        const enc = _encrypt(txt);
+        const body = enc ? { enc } : { text: txt };
+        const response = await _authFetch('/api/command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        if (response.status === 401) { _clearRemoteAuth(); return; }
+        if (response.status === 503) {
+          sys('EDITH Live is reconnecting — command was not queued. Your draft is kept.');
+          return;
+        }
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const result = await response.json();
+        if (!result.ok) throw new Error('Command not accepted');
+        if (inp.value.trim() === txt) inp.value = '';
+        append('user', txt);
+      } catch (_) {
+        // Never auto-retry actions: the server may have received the command
+        // even if the acknowledgement was lost.
+        sys('Command delivery unconfirmed. Check the desktop before retrying; your draft is preserved.');
+      } finally {
+        _commandInFlight = false;
+        sendButton.disabled = false;
+        sendButton.textContent = 'Send';
+      }
     }
 
-    function doWake() {
-      sys('Sending wake signal…');
-      _authFetch('/api/wake', { method: 'POST' });
+    async function doWake() {
+      try {
+        const response = await _authFetch('/api/wake', { method: 'POST' });
+        if (response.status === 401) { _clearRemoteAuth(); return; }
+        if (!response.ok) throw new Error('Wake not accepted');
+        sys('Wake signal accepted.');
+      } catch (_) {
+        sys('Wake signal not confirmed — check the connection.');
+      }
     }
 
     document.getElementById('inp').addEventListener('keydown', e => {
@@ -412,8 +581,29 @@
     let _micStm   = null;
     let _audioNd  = null;
 
+    // Phone audio must stay live instead of buffering seconds of stale speech
+    // when Wi-Fi/mobile network throughput drops. Keep PCM16/16 kHz unchanged.
+    let _voiceDroppedFrames = 0;
+    const _VOICE_MAX_BUFFERED_BYTES = 64 * 1024;
+
+    function _sendVoicePacket(socket, packet) {
+      if (socket.readyState !== WebSocket.OPEN) return;
+      if (socket.bufferedAmount > _VOICE_MAX_BUFFERED_BYTES) {
+        _voiceDroppedFrames++;
+        if (_voiceDroppedFrames === 1) {
+          sys('Network is slow — skipping stale microphone audio.');
+        }
+        return;
+      }
+      _voiceDroppedFrames = 0;
+      socket.send(packet);
+    }
+
     function _micIdle() {
-      micBtn.innerHTML = '🎤';
+      micBtn.textContent = 'Voice';
+      micBtn.setAttribute('aria-label', 'Start voice input');
+      micBtn.setAttribute('aria-pressed', 'false');
+      micBtn.disabled = false;
       micBtn.title     = 'Voice — tap to speak';
       micBtn.classList.remove('recording');
     }
@@ -435,56 +625,46 @@
     }
 
     function _showVoiceSetup() {
-      if (document.getElementById('voice-setup')) return; // show once
-      const origin = location.origin;
-      const card = document.createElement('div');
+      if (document.getElementById('voice-setup')) return;
+      const card = document.createElement('section');
       card.id = 'voice-setup';
-      card.style.cssText = [
-        'align-self:stretch', 'background:rgba(99,102,241,0.07)',
-        'border:1px solid rgba(99,102,241,0.22)', 'border-radius:14px',
-        'padding:16px 18px', 'font-size:13px', 'line-height:1.8',
-        'animation:pop 0.18s ease'
-      ].join(';');
-      card.innerHTML =
-        '<div style="font-weight:700;color:#818cf8;letter-spacing:.5px;margin-bottom:10px">🎤 One-time voice setup</div>' +
-        '<ol style="padding-left:18px;color:#8899aa;margin:0;display:flex;flex-direction:column;gap:4px">' +
-        '<li>Open a new tab → go to <span style="background:rgba(255,255,255,0.07);padding:1px 6px;border-radius:4px;font-family:monospace;font-size:12px">chrome://flags</span></li>' +
-        '<li>Search: <strong style="color:#dde3ed">Insecure origins treated as secure</strong></li>' +
-        '<li>Paste this URL into the box:<br><span id="flags-url" style="background:rgba(255,255,255,0.07);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:11px;user-select:all;cursor:pointer">' + esc(origin) + '</span></li>' +
-        '<li>Set to <strong style="color:#22c55e">Enabled</strong> → tap <strong style="color:#dde3ed">Relaunch</strong></li>' +
-        '<li>Return here and tap 🎤</li>' +
-        '</ol>';
-      feed.appendChild(card);
-      feed.scrollTop = feed.scrollHeight;
-      // tap to copy
-      card.querySelector('#flags-url').addEventListener('click', () => {
-        navigator.clipboard?.writeText(origin).then(() => toast('URL copied!')).catch(() => {});
-      });
+      card.innerHTML = '<h3>Voice input needs a secure connection</h3><p>Open the HTTPS address from the desktop Remote Control panel and allow microphone access in your browser. If your browser does not support audio capture, you can continue using text and files.</p>';
+      _appendFeed(card);
     }
 
+    let _voiceStarting = false;
     async function doMic() {
+      if (_voiceStarting) return;
       if (_voiceWs) { _stopVoice(); return; }
 
       if (!navigator.mediaDevices?.getUserMedia) {
         _showVoiceSetup();
         return;
       }
+      _voiceStarting = true;
+      micBtn.disabled = true;
+      micBtn.textContent = "Connecting…";
       let stream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
         });
       } catch (e) {
+        _voiceStarting = false;
+        _micIdle();
         sys(e.name === 'NotAllowedError'
           ? 'Microphone denied — tap the address bar lock and allow microphone.'
           : 'Mic error: ' + e.message);
         return;
       }
 
+      _micStm = stream;
+      try {
       // 16 kHz context (fall back to native rate — _f32toPcm16 resamples)
       let ctx;
       try { ctx = new AudioContext({ sampleRate: 16000 }); }
       catch (_) { ctx = new AudioContext(); }
+      _audioCtx = ctx;
       if (ctx.state === 'suspended') await ctx.resume();
 
       const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -494,6 +674,9 @@
       ws.binaryType = 'arraybuffer';
 
       ws.onopen = async () => {
+        _voiceStarting = false;
+        if (_voiceWs !== ws) return;
+        try {
         const rate = ctx.sampleRate;
         const src  = ctx.createMediaStreamSource(stream);
 
@@ -513,7 +696,7 @@
             if (_plen >= 1024) {
               const out = new Int16Array(_plen); let off = 0;
               for (const c of _pbuf) { out.set(c, off); off += c.length; }
-              if (ws.readyState === 1) ws.send(out.buffer);
+              _sendVoicePacket(ws, out.buffer);
               _pbuf = []; _plen = 0;
             }
           };
@@ -523,17 +706,21 @@
           // ScriptProcessor fallback (deprecated, still works everywhere)
           const sp = ctx.createScriptProcessor(4096, 1, 1);
           sp.onaudioprocess = e => {
-            if (ws.readyState === 1) ws.send(_f32toPcm16(e.inputBuffer.getChannelData(0), rate));
+            _sendVoicePacket(ws, _f32toPcm16(e.inputBuffer.getChannelData(0), rate));
           };
           src.connect(sp); sp.connect(ctx.destination);
           _audioNd = sp;
         }
 
-        micBtn.innerHTML = '⏹';
+        micBtn.textContent = 'Stop';
+        micBtn.setAttribute('aria-label', 'Stop voice input');
+        micBtn.setAttribute('aria-pressed', 'true');
+        micBtn.disabled = false;
         micBtn.title     = 'Tap to stop';
         micBtn.classList.add('recording');
         sys('Voice live — speak now');
-        toast('🎤 Live');
+        toast('Voice input is live');
+        } catch (_) { sys('Audio processing could not start.'); _stopVoice(); }
       };
 
       ws.onclose = () => { _stopVoice(); };
@@ -542,9 +729,15 @@
       _voiceWs  = ws;
       _audioCtx = ctx;
       _micStm   = stream;
+      } catch (_) {
+        sys('Voice could not start. Check browser permissions and try again.');
+        _stopVoice();
+      }
     }
 
     function _stopVoice() {
+      _voiceStarting = false;
+      _voiceDroppedFrames = 0;
       if (_audioNd)  { try { _audioNd.disconnect(); }  catch (_) {}; _audioNd  = null; }
       if (_audioCtx) { try { _audioCtx.close(); }      catch (_) {}; _audioCtx = null; }
       if (_micStm)   { _micStm.getTracks().forEach(t => t.stop()); _micStm = null; }
@@ -557,3 +750,4 @@
   </script>
 </body>
 </html>
+

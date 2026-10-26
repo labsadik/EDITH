@@ -8,6 +8,7 @@ import tempfile
 import platform
 from pathlib import Path
 from datetime import datetime
+from core.secrets import get_gemini_api_key
 
 try:
     import pyautogui
@@ -25,8 +26,10 @@ def _get_base_dir() -> Path:
 
 def _get_api_key() -> str:
     path = _get_base_dir() / "config" / "api_keys.json"
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)["gemini_api_key"]
+    key = get_gemini_api_key(path)
+    if not key:
+        raise RuntimeError("Gemini API key is not configured.")
+    return key
     
 def _get_desktop() -> Path:
     if _OS == "Linux":
@@ -89,16 +92,11 @@ def _execute_generated_code(code: str, player=None) -> str:
         lines = code.split("\n")
         code  = "\n".join(lines[1:-1]).strip()
 
-    sandbox      = _build_sandbox()
-    output_lines = []
-    sandbox["__builtins__"]["print"] = lambda *a: output_lines.append(" ".join(str(x) for x in a))
-
-    try:
-        exec(compile(code, "<jarvis_desktop>", "exec"), sandbox)
-        return "\n".join(output_lines) if output_lines else "Done."
-    except Exception as e:
-        print(f"[Desktop] Exec error: {e}\nCode:\n{code[:300]}")
-        return f"Execution error: {e}"
+    from core.execution import SERVICE,format_execution
+    worker=Path(__file__).resolve().parent.parent/'core'/'desktop_worker.py'
+    receipt=SERVICE.run_argv([sys.executable,str(worker)],cwd=str(Path.home()),timeout=60,
+        source=code,input_data=json.dumps({'source':code}).encode('utf-8'))
+    return format_execution(receipt)
 
 
 def _ask_gemini_for_desktop_action(task: str) -> str:
