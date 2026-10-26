@@ -14,6 +14,7 @@ SAMPLE_RATE = 24000
 BYTES_PER_SECOND = SAMPLE_RATE * 2  # mono PCM16
 WRITE_BYTES = BYTES_PER_SECOND // 20  # 50 ms, never a whole narration in one write
 PREFILL_BYTES = BYTES_PER_SECOND * 150 // 1000
+MAX_PREFILL_BYTES = BYTES_PER_SECOND * 500 // 1000
 
 
 class PlaybackReset(Exception):
@@ -83,8 +84,16 @@ class SpeechBuffer:
             self._closed = True
             self.clear()
 
-    def read(self, epoch, *, prefill=False, timeout=.1):
-        threshold = PREFILL_BYTES if prefill else WRITE_BYTES
+    def read(self, epoch, *, prefill=False, prefill_bytes=None, timeout=.1):
+        """Read one PCM chunk without losing packet order.
+
+        ``prefill_bytes`` lets the writer temporarily absorb more network
+        jitter after a real output underrun.  Finished short responses still
+        drain immediately so the final words are never held back.
+        """
+        threshold = (max(WRITE_BYTES, int(prefill_bytes))
+                     if prefill and prefill_bytes is not None else
+                     PREFILL_BYTES if prefill else WRITE_BYTES)
         deadline = time.monotonic() + timeout
         with self._condition:
             while True:
@@ -121,7 +130,10 @@ class SpeechPlayer:
         self.stopped = threading.Event()
         self.events = queue.Queue(maxsize=32)
         self._lock = threading.Lock()
-        self._state = {'ready': False, 'playing': False, 'level': 0., 'underflows': 0}
+        self._state = {
+            'ready': False, 'playing': False, 'level': 0., 'underflows': 0,
+            'prefill_bytes': PREFILL_BYTES,
+        }
         self._thread = threading.Thread(target=self._run, daemon=True, name='edith-speech-output')
 
     def snapshot(self):
@@ -161,10 +173,14 @@ class SpeechPlayer:
                     self._update(ready=True)
                     epoch = self.buffer.epoch
                     prefill = True
+                    prefill_bytes = PREFILL_BYTES
+                    self._update(prefill_bytes=prefill_bytes)
                     buffering = False
                     while not self.stopping.is_set():
                         try:
-                            chunk = self.buffer.read(epoch, prefill=prefill)
+                            chunk = self.buffer.read(
+                                epoch, prefill=prefill, prefill_bytes=prefill_bytes
+                            )
                         except PlaybackReset:
                             epoch = self.buffer.epoch
                             if started:
@@ -202,9 +218,14 @@ class SpeechPlayer:
                         prefill = bool(underflow)
                         if underflow:
                             count = self.snapshot()['underflows'] + 1
-                            self._update(underflows=count)
+                            prefill_bytes = min(MAX_PREFILL_BYTES, prefill_bytes + WRITE_BYTES)
+                            self._update(underflows=count, prefill_bytes=prefill_bytes)
                             if count == 1 or count % 20 == 0:
-                                self._event(f'AUDIO: Output underrun detected ({count}); increasing prebuffer, no chunk replay.')
+                                self._event(
+                                    f'AUDIO: Output underrun detected ({count}); '
+                                    f'increasing prebuffer to {round(prefill_bytes / BYTES_PER_SECOND * 1000)} ms, '
+                                    'no chunk replay.'
+                                )
                 except EOFError:
                     break
                 except Exception as exc:

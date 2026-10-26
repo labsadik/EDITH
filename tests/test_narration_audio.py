@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 from core.narration_audio import (
     SpeechBuffer, SpeechPlayer, PlaybackReset, WRITE_BYTES, PREFILL_BYTES,
+    MAX_PREFILL_BYTES,
 )
 from test_response_status import method
 
@@ -32,6 +33,19 @@ class SpeechBufferTests(unittest.TestCase):
         self.assertEqual(buffer.read(0, prefill=True, timeout=0), b'12' * 100)
         buffer.put_nowait(b'34' * (PREFILL_BYTES // 2))
         self.assertEqual(len(buffer.read(0, prefill=True, timeout=0)), WRITE_BYTES)
+
+    def test_custom_prefill_only_delays_an_unfinished_jittery_turn(self):
+        buffer = SpeechBuffer()
+        tail = b'12' * 100
+        buffer.put_nowait(tail)
+        self.assertEqual(
+            buffer.read(0, prefill=True, prefill_bytes=PREFILL_BYTES * 2, timeout=.001), b''
+        )
+        buffer.finish_turn()
+        self.assertEqual(
+            buffer.read(0, prefill=True, prefill_bytes=MAX_PREFILL_BYTES, timeout=0),
+            tail,
+        )
 
     def test_overflow_is_explicit_and_does_not_replace_earlier_words(self):
         buffer = SpeechBuffer(max_bytes=8)
@@ -108,6 +122,7 @@ class SpeechPlayerTests(unittest.TestCase):
         self.assertTrue(stream.drained.wait(1))
         self.assertEqual(b''.join(stream.written), data)
         self.assertEqual(player.snapshot()['underflows'], 1)
+        self.assertGreater(player.snapshot()['prefill_bytes'], PREFILL_BYTES)
         self.assertEqual(self.kwargs['samplerate'], 24000)
         self.assertEqual(self.kwargs['blocksize'], 0)
         self.assertEqual(self.kwargs['latency'], 'high')
