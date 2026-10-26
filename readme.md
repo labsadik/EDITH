@@ -63,8 +63,8 @@ Only connect MCP endpoints you trust. Each connector has its own authentication,
 ## Run locally
 
 ```powershell
-git clone https://github.com/WorkRCS/Upgrade_Autonomous.git
-cd Upgrade_Autonomous
+git clone https://github.com/labsadik/EDITH.git
+cd EDITH
 git switch main
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
