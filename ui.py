@@ -2149,10 +2149,139 @@ class CustomizeOverlay(QWidget):
             self.on_theme_preview(self._sel_theme)
 
 
+class MCPConnectionDialog(QDialog):
+    """Local setup surface for a configured MCP server.
+
+    It deliberately stores only an owner-pasted bearer token through the
+    keychain callback. OAuth client creation/consent remains at the provider;
+    this dialog never asks for, prints, or logs a password.
+    """
+
+    def __init__(self, record: dict, parent=None):
+        super().__init__(parent)
+        self.record = record
+        self.setWindowTitle(f"Connect {record.get('name', 'MCP')}")
+        self.setModal(True)
+        self.setMinimumWidth(480)
+        self.setStyleSheet(f"""
+            QDialog {{ background: {C.SHEET}; color: {C.TEXT}; }}
+            QLineEdit {{ background: {C.INPUT}; color: {C.TEXT}; border: 1px solid {C.BORDER}; border-radius: 7px; padding: 7px; }}
+            QLabel {{ background: transparent; }}
+        """)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(9)
+        title = QLabel(f"{record.get('icon') or 'MCP'}  {record.get('name', 'MCP')}")
+        title.setFont(QFont(FONT_MAIN, 12, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {C.PRI};")
+        layout.addWidget(title)
+        note = QLabel(
+            "Open the provider setup page, finish its OAuth/API consent, then paste only the issued access token. "
+            "The token is stored in your OS keychain when available."
+        )
+        note.setFont(QFont(FONT_MAIN, 8))
+        note.setStyleSheet(f"color: {C.TEXT_MED};")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        layout.addWidget(QLabel("STREAMABLE-HTTP MCP ENDPOINT"))
+        self.endpoint = QLineEdit()
+        self.endpoint.setPlaceholderText("https://your-trusted-mcp-server.example/mcp")
+        try:
+            info = record.get("connection", lambda: {})() or {}
+        except Exception:
+            info = {}
+        self.endpoint.setText(str(info.get("endpoint") or ""))
+        layout.addWidget(self.endpoint)
+        layout.addWidget(QLabel("ACCESS TOKEN  (optional for unauthenticated/local servers)"))
+        self.token = QLineEdit()
+        self.token.setEchoMode(QLineEdit.EchoMode.Password)
+        self.token.setPlaceholderText("Paste a provider-issued bearer token")
+        layout.addWidget(self.token)
+        self.status = QLabel(self._status_text(info))
+        self.status.setWordWrap(True)
+        self.status.setFont(QFont(FONT_MAIN, 8))
+        self.status.setStyleSheet(f"color: {C.TEXT_DIM};")
+        layout.addWidget(self.status)
+        buttons = QHBoxLayout(); buttons.setSpacing(7)
+        setup = QPushButton("OPEN SETUP")
+        setup.clicked.connect(self._open_setup)
+        save = QPushButton("SAVE")
+        save.clicked.connect(self._save)
+        test = QPushButton("SAVE & TEST")
+        test.clicked.connect(self._test)
+        cancel = QPushButton("CANCEL")
+        cancel.clicked.connect(self.reject)
+        for button in (setup, save, test, cancel):
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setFixedHeight(31)
+            button.setStyleSheet(f"""
+                QPushButton {{ background: {C.GLASS_CARD}; color: {C.PRI}; border: 1px solid {C.BORDER}; border-radius: 7px; padding: 0 9px; }}
+                QPushButton:hover {{ border-color: {C.PRI}; background: {C.HOVER}; }}
+            """)
+            buttons.addWidget(button)
+        layout.addLayout(buttons)
+
+    @staticmethod
+    def _status_text(info: dict) -> str:
+        configured = str(info.get("configured") or "false") == "true"
+        token = str(info.get("token_storage") or "missing")
+        return f"Endpoint: {'configured' if configured else 'not configured'} · Token: {token}."
+
+    def _open_setup(self):
+        callback = self.record.get("begin_login")
+        if not callable(callback):
+            self.status.setText("No provider setup URL is configured for this connector.")
+            return
+        try:
+            result = callback() or {}
+            self.status.setText("Provider setup opened. Complete it, then return here to save/test the connection.")
+        except Exception as exc:
+            self.status.setText(f"Could not open provider setup: {type(exc).__name__}: {exc}")
+
+    def _save_values(self) -> bool:
+        endpoint = self.endpoint.text().strip()
+        token = self.token.text().strip()
+        try:
+            configure = self.record.get("configure_remote")
+            if endpoint and callable(configure):
+                configure(endpoint)
+            elif endpoint and not callable(configure):
+                raise RuntimeError("This connector cannot accept an HTTP endpoint.")
+            save_token = self.record.get("save_access_token")
+            if token and callable(save_token):
+                save_token(token)
+            toggle = self.record.get("toggle")
+            if callable(toggle):
+                toggle(True)
+            self.record["enabled"] = True
+            self.token.clear()
+            return True
+        except Exception as exc:
+            self.status.setText(f"Connection was not saved: {type(exc).__name__}: {exc}")
+            return False
+
+    def _save(self):
+        if self._save_values():
+            self.status.setText("Saved. The connector is ON; use Save & Test to verify its provider response.")
+
+    def _test(self):
+        if not self._save_values():
+            return
+        callback = self.record.get("test_connection")
+        if not callable(callback):
+            self.status.setText("Saved, but this connector has no test action.")
+            return
+        try:
+            tools = callback() or []
+            self.status.setText(f"Connected. Provider reported {len(tools)} tool(s).")
+        except Exception as exc:
+            self.status.setText(f"Test failed: {type(exc).__name__}: {exc}")
+
+
 class PluginManagerOverlay(QWidget):
     """Floating overlay — lists discovered plugins with per-plugin ON/OFF toggles."""
 
-    _OW = 420
+    _OW = 510
 
     def __init__(self, plugins: list[dict], parent=None):
         super().__init__(parent)
@@ -2207,6 +2336,13 @@ class PluginManagerOverlay(QWidget):
     def _build_row(self, p: dict) -> QHBoxLayout:
         row = QHBoxLayout(); row.setSpacing(8)
 
+        if p.get("kind") == "mcp":
+            badge = QLabel(p.get("icon") or "MCP")
+            badge.setFixedWidth(27)
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            badge.setFont(QFont(FONT_MONO, 7, QFont.Weight.Bold))
+            badge.setStyleSheet(f"color: {C.PRI}; background: {C.PRI_GHO}; border-radius: 6px; padding: 4px 2px;")
+            row.addWidget(badge)
         label_text = p["name"] if p["valid"] else f"{p['name']}  (INVALID: {p['file']})"
         lbl = QLabel(label_text)
         lbl.setFont(QFont(FONT_MAIN, 9))
@@ -2232,7 +2368,24 @@ class PluginManagerOverlay(QWidget):
             self._style_toggle(btn, p["enabled"])
             btn.clicked.connect(lambda _, record=p, b=btn: self._toggle(record, b))
         row.addWidget(btn)
+        if p.get("kind") == "mcp" and p["valid"]:
+            connect_btn = QPushButton("CONNECT")
+            connect_btn.setFixedSize(82, 26)
+            connect_btn.setFont(QFont(FONT_MAIN, 7, QFont.Weight.Bold))
+            connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            connect_btn.setStyleSheet(f"""
+                QPushButton {{ background: {C.GLASS_CARD}; color: {C.PRI}; border: 1px solid {C.PRI_DIM}; border-radius: 7px; }}
+                QPushButton:hover {{ background: {C.HOVER}; border-color: {C.PRI}; }}
+            """)
+            connect_btn.clicked.connect(lambda _, record=p: self._connect(record))
+            row.addWidget(connect_btn)
         return row
+
+    def _connect(self, record: dict):
+        dialog = MCPConnectionDialog(record, self)
+        dialog.exec()
+        # A dialog may have enabled the provider; ensure the visible toggle
+        # reflects that change when the manager is reopened.
 
     def _style_toggle(self, btn: QPushButton, enabled: bool):
         if enabled:

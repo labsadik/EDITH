@@ -18,9 +18,12 @@ import urllib.error
 import urllib.request
 import webbrowser
 
+from core.secrets import get_config_secret, save_config_secret
+
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_PATH = ROOT / "config" / "mcp_servers.json"
+DEFAULT_SECRETS_PATH = ROOT / "config" / "api_keys.json"
 PROTOCOL_VERSION = "2024-11-05"
 
 DEFAULT_SERVERS = (
@@ -34,6 +37,7 @@ DEFAULT_SERVERS = (
         "enabled": False,
         "token_env": "EDITH_GMAIL_MCP_ACCESS_TOKEN",
         "login_url": "https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server",
+        "icon": "G",
     },
     {
         "id": "github",
@@ -42,6 +46,7 @@ DEFAULT_SERVERS = (
         "command": [],
         "enabled": False,
         "login_url": "https://github.com/login",
+        "icon": "GH",
     },
     {
         "id": "filesystem",
@@ -50,7 +55,15 @@ DEFAULT_SERVERS = (
         "command": [],
         "enabled": False,
         "login_url": "",
+        "icon": "FS",
     },
+    # Connection templates only: an owner pastes a trusted compatible endpoint
+    # in the Plugin Manager. These entries never claim a public endpoint exists.
+    {"id": "google_drive", "name": "Google Drive MCP", "description": "Connect a trusted Google Drive-compatible MCP endpoint.", "transport": "streamable_http", "url": "", "command": [], "enabled": False, "login_url": "https://developers.google.com/workspace/drive/api/guides/about-sdk", "icon": "DR"},
+    {"id": "google_calendar", "name": "Google Calendar MCP", "description": "Connect a trusted Google Calendar-compatible MCP endpoint.", "transport": "streamable_http", "url": "", "command": [], "enabled": False, "login_url": "https://developers.google.com/workspace/calendar/api/guides/overview", "icon": "CA"},
+    {"id": "notion", "name": "Notion MCP", "description": "Connect a trusted Notion-compatible MCP endpoint.", "transport": "streamable_http", "url": "", "command": [], "enabled": False, "login_url": "https://developers.notion.com/", "icon": "NO"},
+    {"id": "slack", "name": "Slack MCP", "description": "Connect a trusted Slack-compatible MCP endpoint.", "transport": "streamable_http", "url": "", "command": [], "enabled": False, "login_url": "https://api.slack.com/", "icon": "SL"},
+    {"id": "linear", "name": "Linear MCP", "description": "Connect a trusted Linear-compatible MCP endpoint.", "transport": "streamable_http", "url": "", "command": [], "enabled": False, "login_url": "https://linear.app/developers", "icon": "LI"},
 )
 
 
@@ -65,11 +78,16 @@ class MCPServerSpec:
     url: str = ""
     token_env: str = ""
     login_url: str = ""
+    icon: str = "MCP"
     timeout_seconds: float = 25.0
 
     @property
     def plugin_name(self) -> str:
         return "mcp_" + self.id
+
+    @property
+    def token_secret_name(self) -> str:
+        return f"mcp_{self.id}_access_token"
 
     @property
     def configured(self) -> bool:
@@ -190,9 +208,11 @@ class MCPHttpClient:
     bearer token from model text.
     """
 
-    def __init__(self, spec: MCPServerSpec, *, opener=urllib.request.urlopen):
+    def __init__(self, spec: MCPServerSpec, *, opener=urllib.request.urlopen,
+                 token_provider: Callable[[], str | None] | None = None):
         self.spec = spec
         self._opener = opener
+        self._token_provider = token_provider
         self._next_id = 0
         self._session_id = ""
 
@@ -235,11 +255,17 @@ class MCPHttpClient:
         }
         if self._session_id:
             headers["Mcp-Session-Id"] = self._session_id
+        token = ""
         if self.spec.token_env:
             import os
             token = os.environ.get(self.spec.token_env, "").strip()
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
+        if not token and self._token_provider is not None:
+            try:
+                token = str(self._token_provider() or "").strip()
+            except Exception:
+                token = ""
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         return headers
 
     def _post(self, payload: dict) -> Any:
@@ -295,8 +321,10 @@ class MCPHttpClient:
 
 
 class MCPRegistry:
-    def __init__(self, config_path: Path = DEFAULT_CONFIG_PATH, logger: Callable[[str], None] = print):
+    def __init__(self, config_path: Path = DEFAULT_CONFIG_PATH, logger: Callable[[str], None] = print,
+                 secrets_path: Path = DEFAULT_SECRETS_PATH):
         self.config_path = Path(config_path)
+        self.secrets_path = Path(secrets_path)
         self.logger = logger
         self._pending: dict[str, tuple[str, dict]] = {}
 
@@ -308,7 +336,17 @@ class MCPRegistry:
             data = json.loads(self.config_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return {"servers": []}
-        return data if isinstance(data, dict) else {"servers": []}
+        if not isinstance(data, dict):
+            return {"servers": []}
+        servers = data.get("servers")
+        if not isinstance(servers, list):
+            data["servers"] = servers = []
+        existing = {str(item.get("id") or "").strip().lower() for item in servers if isinstance(item, dict)}
+        additions = [dict(item) for item in DEFAULT_SERVERS if item["id"] not in existing]
+        if additions:
+            servers.extend(additions)
+            self.config_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        return data
 
     def specs(self) -> list[MCPServerSpec]:
         data = self._read_config()
@@ -345,6 +383,7 @@ class MCPRegistry:
                 url=str(item.get("url") or "").strip(),
                 token_env=str(item.get("token_env") or "").strip(),
                 login_url=str(item.get("login_url") or ""),
+                icon=str(item.get("icon") or "MCP")[:4],
                 timeout_seconds=timeout_seconds,
             ))
         return result
@@ -361,6 +400,57 @@ class MCPRegistry:
                 self.config_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
                 return True
         return False
+
+    def configure_remote(self, server_id: str, url: str) -> bool:
+        """Persist an owner-provided HTTPS Streamable-HTTP endpoint.
+
+        This path is only called by the local settings UI; model text cannot
+        add endpoints or cause EDITH to connect to an arbitrary server.
+        """
+        from urllib.parse import urlsplit
+        clean = str(url or "").strip()
+        parsed = urlsplit(clean)
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise MCPProtocolError("MCP endpoint must be a complete HTTPS URL.")
+        data = self._read_config()
+        for item in data.get("servers", []):
+            if isinstance(item, dict) and str(item.get("id") or "").strip().lower().replace("-", "_") == server_id:
+                item["transport"] = "streamable_http"
+                item["url"] = clean
+                self.config_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+                return True
+        return False
+
+    def token_status(self, server_id: str) -> str:
+        spec = self.spec(server_id)
+        if spec is None:
+            return "missing"
+        if spec.token_env:
+            import os
+            if os.environ.get(spec.token_env, "").strip():
+                return "environment"
+        return get_config_secret(spec.token_secret_name, self.secrets_path).storage
+
+    def save_access_token(self, server_id: str, token: str) -> str:
+        spec = self.spec(server_id)
+        if spec is None:
+            raise MCPProtocolError(f"Unknown MCP server '{server_id}'.")
+        status = save_config_secret(spec.token_secret_name, token, self.secrets_path)
+        if not status.value:
+            raise MCPProtocolError(status.warning or "An access token is required.")
+        return status.storage
+
+    def connection_info(self, server_id: str) -> dict[str, str]:
+        spec = self.spec(server_id)
+        if spec is None:
+            raise MCPProtocolError(f"Unknown MCP server '{server_id}'.")
+        return {
+            "server": spec.id,
+            "endpoint": spec.url,
+            "configured": str(spec.configured).lower(),
+            "token_storage": self.token_status(spec.id),
+            "setup_url": spec.login_url,
+        }
 
     def _require_enabled(self, server_id: str) -> MCPServerSpec:
         spec = self.spec(server_id)
@@ -392,9 +482,11 @@ class MCPRegistry:
                 data={"login_url": spec.login_url},
             ) from exc
 
-    @staticmethod
-    def _client(spec: MCPServerSpec):
-        return MCPHttpClient(spec) if spec.transport == "streamable_http" else MCPStdioClient(spec)
+    def _client(self, spec: MCPServerSpec):
+        return (MCPHttpClient(
+            spec,
+            token_provider=lambda: get_config_secret(spec.token_secret_name, self.secrets_path).value,
+        ) if spec.transport == "streamable_http" else MCPStdioClient(spec))
 
     def begin_login(self, server_id: str) -> dict[str, str]:
         """Open the owner's configured authorization/setup URL, never a browser session."""
@@ -406,7 +498,7 @@ class MCPRegistry:
             "server": spec.id,
             "url": spec.login_url,
             "opened": str(opened).lower(),
-            "next": "Finish the provider's OAuth setup, then use action=resume for a pending task.",
+            "next": "Complete provider setup, paste the issued access token in Plugin Manager, then test the connection.",
         }
 
     def resume(self, server_id: str) -> Any:

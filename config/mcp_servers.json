@@ -9,7 +9,8 @@
       "command": [],
       "enabled": false,
       "token_env": "EDITH_GMAIL_MCP_ACCESS_TOKEN",
-      "login_url": "https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server"
+      "login_url": "https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server",
+      "icon": "G"
     },
     {
       "id": "github",
@@ -17,7 +18,8 @@
       "description": "Use the owner's configured GitHub MCP server for repository work.",
       "command": [],
       "enabled": false,
-      "login_url": "https://github.com/login"
+      "login_url": "https://github.com/login",
+      "icon": "GH"
     },
     {
       "id": "filesystem",
@@ -25,7 +27,63 @@
       "description": "Use the owner's configured filesystem MCP server for its explicitly configured workspace.",
       "command": [],
       "enabled": false,
-      "login_url": ""
+      "login_url": "",
+      "icon": "FS"
+    },
+    {
+      "id": "google_drive",
+      "name": "Google Drive MCP",
+      "description": "Connect a trusted Google Drive-compatible MCP endpoint.",
+      "transport": "streamable_http",
+      "url": "",
+      "command": [],
+      "enabled": false,
+      "login_url": "https://developers.google.com/workspace/drive/api/guides/about-sdk",
+      "icon": "DR"
+    },
+    {
+      "id": "google_calendar",
+      "name": "Google Calendar MCP",
+      "description": "Connect a trusted Google Calendar-compatible MCP endpoint.",
+      "transport": "streamable_http",
+      "url": "",
+      "command": [],
+      "enabled": false,
+      "login_url": "https://developers.google.com/workspace/calendar/api/guides/overview",
+      "icon": "CA"
+    },
+    {
+      "id": "notion",
+      "name": "Notion MCP",
+      "description": "Connect a trusted Notion-compatible MCP endpoint.",
+      "transport": "streamable_http",
+      "url": "",
+      "command": [],
+      "enabled": false,
+      "login_url": "https://developers.notion.com/",
+      "icon": "NO"
+    },
+    {
+      "id": "slack",
+      "name": "Slack MCP",
+      "description": "Connect a trusted Slack-compatible MCP endpoint.",
+      "transport": "streamable_http",
+      "url": "",
+      "command": [],
+      "enabled": false,
+      "login_url": "https://api.slack.com/",
+      "icon": "SL"
+    },
+    {
+      "id": "linear",
+      "name": "Linear MCP",
+      "description": "Connect a trusted Linear-compatible MCP endpoint.",
+      "transport": "streamable_http",
+      "url": "",
+      "command": [],
+      "enabled": false,
+      "login_url": "https://linear.app/developers",
+      "icon": "LI"
     }
   ]
 }

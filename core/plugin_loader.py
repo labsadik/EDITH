@@ -90,6 +90,12 @@ class PluginRegistry:
                 "enabled": self._enabled(rec) if rec.valid else False,
                 "kind": rec.kind,
                 "toggle": rec.set_enabled,
+                "connection": getattr(rec, "connection", None),
+                "begin_login": getattr(rec, "begin_login", None),
+                "configure_remote": getattr(rec, "configure_remote", None),
+                "save_access_token": getattr(rec, "save_access_token", None),
+                "test_connection": getattr(rec, "test_connection", None),
+                "icon": getattr(rec, "icon", ""),
             })
         return out
 
@@ -209,6 +215,21 @@ def discover_plugins(plugins_dir: Path, core_tool_names: set[str],
                 def _set_enabled(value, server_id=spec.id, registry=mcp_registry):
                     return registry.set_enabled(server_id, value)
 
+                def _connection(server_id=spec.id, registry=mcp_registry):
+                    return registry.connection_info(server_id)
+
+                def _begin_login(server_id=spec.id, registry=mcp_registry):
+                    return registry.begin_login(server_id)
+
+                def _configure_remote(url, server_id=spec.id, registry=mcp_registry):
+                    return registry.configure_remote(server_id, url)
+
+                def _save_access_token(token, server_id=spec.id, registry=mcp_registry):
+                    return registry.save_access_token(server_id, token)
+
+                def _test_connection(server_id=spec.id, registry=mcp_registry):
+                    return registry.list_tools(server_id)
+
                 def _run(parameters, player=None, session_memory=None, server_id=spec.id, registry=mcp_registry):
                     action = str((parameters or {}).get("action") or "list_tools").strip().lower()
                     try:
@@ -241,6 +262,14 @@ def discover_plugins(plugins_dir: Path, core_tool_names: set[str],
                     run=_run, file="config/mcp_servers.json", valid=True, kind="mcp",
                     enabled_check=_enabled, set_enabled=_set_enabled,
                 )
+                # These callbacks are local Plugin Manager controls only;
+                # they are intentionally absent from the model tool schema.
+                rec.connection = _connection
+                rec.begin_login = _begin_login
+                rec.configure_remote = _configure_remote
+                rec.save_access_token = _save_access_token
+                rec.test_connection = _test_connection
+                rec.icon = spec.icon
             all_records.append(rec)
             if rec.valid:
                 valid[rec.name] = rec

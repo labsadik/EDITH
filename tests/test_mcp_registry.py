@@ -19,7 +19,10 @@ class MCPRegistryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             registry = MCPRegistry(Path(folder) / "servers.json", logger=lambda _msg: None)
             specs = registry.specs()
-            self.assertEqual({item.id for item in specs}, {"gmail", "github", "filesystem"})
+            self.assertEqual(
+                {item.id for item in specs},
+                {"gmail", "github", "filesystem", "google_drive", "google_calendar", "notion", "slack", "linear"},
+            )
             self.assertFalse(registry.spec("gmail").enabled)
             self.assertTrue(registry.set_enabled("gmail", True))
             self.assertTrue(registry.spec("gmail").enabled)
@@ -79,6 +82,38 @@ class MCPRegistryTests(unittest.TestCase):
             self.assertEqual(client.list_tools(), [])
         self.assertEqual(seen[0][0], "https://mcp.example.test/mcp")
         self.assertEqual(seen[0][1], "POST")
+
+    def test_keychain_token_provider_is_used_without_an_environment_variable(self):
+        class _Response:
+            headers = {}
+            def __init__(self, request_id): self.request_id = request_id
+            def read(self):
+                return json.dumps({"jsonrpc": "2.0", "id": self.request_id, "result": {"tools": []}}).encode("utf-8")
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+        headers = []
+        def opener(request, timeout):
+            headers.append(dict(request.header_items()))
+            return _Response(json.loads(request.data.decode("utf-8")).get("id"))
+        spec = MCPServerSpec(
+            id="remote", name="Remote", description="test", command=(), enabled=True,
+            transport="streamable_http", url="https://mcp.example.test/mcp",
+        )
+        with MCPHttpClient(spec, opener=opener, token_provider=lambda: "secret-token") as client:
+            client.list_tools()
+        self.assertIn("Bearer secret-token", headers[0].get("Authorization", ""))
+
+    def test_remote_template_only_accepts_https_and_never_marks_it_connected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config = Path(folder) / "servers.json"
+            secrets = Path(folder) / "secrets.json"
+            registry = MCPRegistry(config, logger=lambda _msg: None, secrets_path=secrets)
+            with self.assertRaisesRegex(Exception, "HTTPS"):
+                registry.configure_remote("notion", "http://not-secure.example/mcp")
+            self.assertTrue(registry.configure_remote("notion", "https://trusted.example/mcp"))
+            info = registry.connection_info("notion")
+            self.assertEqual(info["configured"], "true")
+            self.assertEqual(info["token_storage"], "missing")
 
 
 if __name__ == "__main__":
