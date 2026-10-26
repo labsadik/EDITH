@@ -39,6 +39,7 @@ import sys
 import traceback
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 from core.startup_check import check_startup_dependencies
 check_startup_dependencies()
@@ -97,6 +98,7 @@ from core.secrets import get_gemini_api_key
 from core.audio_meter          import pcm16_level
 from core.product_identity import PRODUCT_IDENTITY
 from core.task_scheduler      import TaskScheduler, TaskSpec, TaskReportedFailure, parallel_read_only
+from core.tool_registry       import ToolRegistry
 from core.task_view           import compact_task_view
 from core.voice_approval      import is_interrupt_phrase
 from core.agent_reliability import (
@@ -802,6 +804,9 @@ class EdithLive:
             core_tool_names=_core_names,
             logger=lambda msg: (print(f"[Plugins] {msg}"), self.ui.write_log(f"SYS: {msg}")),
         )
+        self._tool_registry = ToolRegistry(
+            TOOL_DECLARATIONS, self._plugin_registry.get_tool_declarations
+        )
         self.ui.get_plugins = self._plugin_registry.list_for_ui
         self.ui.request_say = self.plugin_say   # plugins: mid-task speech channel
 
@@ -944,10 +949,54 @@ class EdithLive:
                 )
                 raise TaskReportedFailure(response)
 
-        response = await self._execute_tool(fc)
-        evidence = assess_action_evidence(
-            fc.name, arguments, response.response.get("result", "")
-        )
+        # Only registry-classified read-only tools may be retried.  This is
+        # deliberately local to the checked execution path so a tool-reported
+        # failure has an honest final response rather than being discarded by
+        # the generic scheduler.
+        retry_safe, retry_limit = self._tool_registry.policy(fc.name)
+        attempt = 0
+        while True:
+            response = await self._execute_tool(fc)
+            evidence = assess_action_evidence(
+                fc.name, arguments, response.response.get("result", "")
+            )
+            if not (evidence.blocks_dependents and evidence.status == "failed"
+                    and retry_safe and attempt < retry_limit):
+                break
+            attempt += 1
+            self.ui.write_log(
+                f"TASKS: Read-only {fc.name} did not succeed; retrying "
+                f"({attempt}/{retry_limit})."
+            )
+            await asyncio.sleep(min(0.20 * attempt, 0.50))
+
+        # A fallback is an explicit, fixed read-only alternative from the
+        # registry.  It never carries user/model arguments across tools and it
+        # never retries a mutating operation.  Preserve the original call ID
+        # and name in the final model response so Gemini can match the reply.
+        fallback = self._tool_registry.fallback_for(fc.name) if evidence.blocks_dependents else None
+        if fallback is not None:
+            self.ui.write_log(
+                f"TASKS: {fc.name} failed; trying read-only fallback {fallback.name}."
+            )
+            fallback_call = SimpleNamespace(
+                id=fc.id, name=fallback.name, args=fallback.arguments
+            )
+            fallback_response = await self._execute_tool(fallback_call)
+            fallback_result = fallback_response.response.get("result", "")
+            fallback_evidence = assess_action_evidence(
+                fallback.name, fallback.arguments, fallback_result
+            )
+            result = (
+                f"Primary read-only tool '{fc.name}' failed. "
+                f"Fallback '{fallback.name}' result:\n{fallback_result}"
+            )
+            response = types.FunctionResponse(
+                id=fc.id,
+                name=fc.name,
+                response={"result": result, "fallback": fallback.name},
+            )
+            evidence = fallback_evidence
         elapsed = int((time.perf_counter() - started) * 1000)
         self._task_evidence[task_id] = (evidence, elapsed)
         annotated = types.FunctionResponse(
@@ -993,6 +1042,8 @@ class EdithLive:
                 priority=0 if fc.name == "system_status" else 10,
                 depends_on=dependencies,
                 exclusive=not safe,
+                retry_safe=self._tool_registry.policy(fc.name)[0],
+                retry_limit=self._tool_registry.policy(fc.name)[1],
             ))
 
         self.ui.write_log(
@@ -1215,7 +1266,7 @@ class EdithLive:
             output_audio_transcription={},
             input_audio_transcription={},
             system_instruction="\n".join(parts),
-            tools=[{"function_declarations": TOOL_DECLARATIONS + self._plugin_registry.get_tool_declarations()}],
+            tools=[{"function_declarations": self._tool_registry.declarations()}],
             session_resumption=types.SessionResumptionConfig(),
             # Sliding-window compression: session never dies from a full context
             # window — EDITH can stay in one conversation for hours
