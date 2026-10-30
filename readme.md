@@ -299,6 +299,10 @@ Smart Network also routes its declared `mqtt_*` operations to `agents/mqtt_bridg
 
 ## Desktop, browser and remote dashboard
 
+### Cross-app desktop control
+
+EDITH can list installed desktop apps, launch an app selected by the user and verify that the foreground-window label matches the requested target where the OS exposes that evidence. The activity log distinguishes a launch request from a verified foreground-window handoff. These host desktop actions remain separate from generated-code execution inside the Rust sandbox.
+
 ### Browser and computer workflows
 - Embedded browser is powered by PyQt6-WebEngine.
 - Opening the browser without a URL displays an EDITH start page; navigation failures display a readable diagnostic page.
