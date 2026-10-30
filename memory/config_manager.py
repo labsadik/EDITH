@@ -2,6 +2,7 @@ import json
 import sys
 from pathlib import Path
 from core.secrets import get_gemini_api_key, save_gemini_api_key
+from core.app_paths import config_path
 
 def get_base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -9,8 +10,8 @@ def get_base_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
 BASE_DIR    = get_base_dir()
-CONFIG_DIR  = BASE_DIR / "config"
-CONFIG_FILE = CONFIG_DIR / "api_keys.json"
+CONFIG_FILE = config_path()
+CONFIG_DIR  = CONFIG_FILE.parent
 
 def ensure_config_dir() -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
