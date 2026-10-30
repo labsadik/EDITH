@@ -17,6 +17,7 @@ _BUILD_LOCK = threading.Lock()
 _TOOL_NAMES = (
     "python", "python3", "node", "npm", "npx", "git", "cargo", "rustc",
     "dotnet", "java", "go", "gcc", "clang", "cmake", "make", "ffmpeg",
+    "bash", "powershell", "pwsh", "ruby", "php", "ts-node",
 )
 
 
@@ -84,7 +85,7 @@ def ensure_project_venv(project_dir: str | Path) -> Path:
 
 def _runtime_read_paths(workspace: Path) -> list[Path]:
     """Expose only the Python runtime roots required to start the project venv."""
-    candidates = [Path(sys.base_prefix), Path(sys.executable).resolve().parent]
+    candidates = [Path(sys.base_prefix), Path(sys.prefix), Path(sys.executable).resolve().parent]
     result: list[Path] = []
     seen: set[str] = set()
     for candidate in candidates:
@@ -128,6 +129,7 @@ def run_sandboxed(
     timeout: int = 60, network: bool = False,
     read_only_paths: Sequence[str | Path] = (),
     prepend_paths: Sequence[str | Path] = (),
+    input_data: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run exact argv with workspace-only writes, clean child env and bounded time."""
     if not argv:
@@ -170,7 +172,7 @@ def run_sandboxed(
     # constructs a filtered environment for the child process.
     try:
         result = subprocess.run(
-            command, cwd=str(root), capture_output=True, text=True,
+            command, cwd=str(root), input=input_data, capture_output=True, text=True,
             timeout=limit + 20, shell=False, check=False,
             creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
         )
