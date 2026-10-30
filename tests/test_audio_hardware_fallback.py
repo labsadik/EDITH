@@ -170,7 +170,9 @@ class AudioHardwareRecoveryTests(unittest.IsolatedAsyncioTestCase):
             task.cancel()
             with self.assertRaises(asyncio.CancelledError):
                 await task
-        self.assertEqual(written, [chunk])
+        self.assertEqual(b"".join(written), chunk)
+        self.assertGreater(len(written), 1)
+        self.assertTrue(all(0 < len(part) <= WRITE_BYTES and len(part) % 2 == 0 for part in written))
         self.assertIn(pcm16_level(chunk), levels)
         self.assertEqual(levels[-1], 0)
         self.assertEqual(speaking[:2], [True, False])
