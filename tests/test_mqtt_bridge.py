@@ -47,7 +47,7 @@ class MQTTBridgeTests(unittest.TestCase):
             fake_publish = Mock()
             fake_api = (Mock(), SimpleNamespace(single=fake_publish), Mock())
             with patch.object(mqtt_bridge, "_pairing", return_value=(
-                {"mqtt_username": ""}, "broker.example", 8883, True, ""
+                {"mqtt_username": "", "mqtt_topics": ["home/living/light"]}, "broker.example", 8883, True, ""
             )), patch.object(mqtt_bridge, "_mqtt_api", return_value=fake_api):
                 result = mqtt_bridge.run_mqtt_action(
                     "mqtt_publish", topic="home/living/light", payload="ON", config_path=path

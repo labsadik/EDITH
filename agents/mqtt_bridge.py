@@ -191,8 +191,8 @@ def run_mqtt_action(
                 "tls": tls, "host": host, "port": port}
     allowed = _normalise_topics(data.get("mqtt_topics") or [])
     target_topic = _require_topic(topic, allowed)
-    _client, publish_api, subscribe_api = _mqtt_api()
     if mode == "mqtt_read":
+        _client, _publish_api, subscribe_api = _mqtt_api()
         message = subscribe_api.simple(
             target_topic, qos=1, timeout=max(1.0, min(float(timeout), 15.0)), **options
         )
@@ -206,6 +206,7 @@ def run_mqtt_action(
             raise ValueError("MQTT publish payload cannot be empty")
         if len(text.encode("utf-8")) > _MAX_PAYLOAD:
             raise ValueError("MQTT publish payload exceeds 4 KB")
+        _client, publish_api, _subscribe_api = _mqtt_api()
         # QoS 1 waits for broker acknowledgement; retained messages are never written.
         publish_api.single(
             target_topic, payload=text, qos=1, retain=False, **options

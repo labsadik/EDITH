@@ -29,8 +29,14 @@ class AgentSupervisorWorkflowTests(unittest.TestCase):
         retrieve.assert_called_once_with("Review the local project", limit=5)
         self.assertEqual(brain.call_count, 4)
         self.assertIn("Trusted local note", brain.call_args_list[0].args[0])
-        self.assertIn("researcher", brain.call_args_list[1].kwargs["system"].lower())
-        self.assertIn("security", brain.call_args_list[2].kwargs["system"].lower())
+        self.assertEqual(
+            brain.call_args_list[1].kwargs["system"],
+            agent_supervisor._SPECIALISTS["researcher"],
+        )
+        self.assertEqual(
+            brain.call_args_list[2].kwargs["system"],
+            agent_supervisor._SPECIALISTS["security"],
+        )
 
     def test_invalid_plan_falls_back_to_a_bounded_planner_task(self):
         with (
