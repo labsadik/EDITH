@@ -38,13 +38,7 @@ jobs:
         run: choco install innosetup --yes --no-progress
       - name: Build setup executable
         shell: pwsh
-        run: |
-          $version = (Get-Content VERSION -Raw).Trim()
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (!(Test-Path $iscc)) { throw "Inno Setup compiler not found: $iscc" }
-          $sourceDir = (Resolve-Path "dist\EDITH").Path
-          & $iscc "installer/windows/EDITH.iss" "/DAppVersion=$version" "/DSourceDir=$sourceDir"
-          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
+        run: ./scripts/build_windows_installer.ps1 -SkipAppBuild -NoInstall
       - uses: actions/upload-artifact@v4
         with:
           name: EDITH-Windows-x64-Setup
