@@ -62,51 +62,51 @@ def _read_full_config() -> dict:
     except Exception:
         return {}
 
-_DEFAULT_W, _DEFAULT_H = 1000, 680
+_DEFAULT_W, _DEFAULT_H = 1360, 860
 _MIN_W,     _MIN_H     = 840, 560
-_LEFT_W  = 160
-_RIGHT_W = 340
+_LEFT_W  = 208
+_RIGHT_W = 372
 
 _OS = platform.system()  # "Windows" | "Darwin" | "Linux"
 
 class C:
     # Opaque text/palette values and layered native glass surfaces. All
     # widget styles consume these tokens so OS appearance changes repaint live.
-    BG        = "#0A1625"
-    PANEL     = "#17283B"
-    PANEL2    = "#20364C"
-    BORDER    = "#38536B"
-    BORDER_B  = "#58768F"
-    BORDER_A  = "#7296AA"
-    PRI       = "#7FE1F4"
-    PRI_DIM   = "#69C8DD"
-    PRI_GHO   = "#21495C"
-    ACC       = "#C5B4FF"
-    ACC2      = "#F0CE97"
-    GREEN     = "#80E7C4"
-    GREEN_D   = "#3CAD8C"
-    RED       = "#FFA3AF"
-    MUTED_C   = "#FFA3AF"
-    TEXT      = "#F4F8FD"
-    TEXT_DIM  = "#A8BDCD"
-    TEXT_MED  = "#D4E1EA"
+    BG        = "#0A0F18"
+    PANEL     = "#141C29"
+    PANEL2    = "#1D2939"
+    BORDER    = "#2C3A4D"
+    BORDER_B  = "#43566F"
+    BORDER_A  = "#657C97"
+    PRI       = "#B39AFB"
+    PRI_DIM   = "#987FE4"
+    PRI_GHO   = "#392C5B"
+    ACC       = "#83C8EC"
+    ACC2      = "#F5C879"
+    GREEN     = "#70D9B6"
+    GREEN_D   = "#318B70"
+    RED       = "#FF8798"
+    MUTED_C   = "#FF8798"
+    TEXT      = "#F1F3F8"
+    TEXT_DIM  = "#96A4B7"
+    TEXT_MED  = "#CBD3E0"
     WHITE     = "#FFFFFF"
-    DARK      = "#0C1928"
-    BAR_BG    = "#2A4054"
-    HEADER    = "#F0142537"
-    SIDEBAR   = "#D6132233"
-    GLASS     = "#C721364B"
-    GLASS_CARD = "#B32D4358"
-    GLASS_RIM = "#38DAF1FF"
-    INPUT     = "#C70C1A2A"
-    SHEET     = "#F71B2C3E"
-    HOVER     = "#B8446A87"
-    DANGER_BG = "#576F2638"
-    DANGER_HOVER = "#808B3245"
-    SUCCESS_BG = "#4D216551"
-    SUCCESS_HOVER = "#7529775E"
+    DARK      = "#0E1622"
+    BAR_BG    = "#26364A"
+    HEADER    = "#F0111724"
+    SIDEBAR   = "#ED121B2A"
+    GLASS     = "#D8172230"
+    GLASS_CARD = "#DF1A2636"
+    GLASS_RIM = "#28B39AFB"
+    INPUT     = "#F00D1420"
+    SHEET     = "#FC141D2B"
+    HOVER     = "#B82F3C54"
+    DANGER_BG = "#55A33A4A"
+    DANGER_HOVER = "#80C44758"
+    SUCCESS_BG = "#50205C4B"
+    SUCCESS_HOVER = "#80307862"
     VIDEO_BG  = "#000000"
-    SHADOW    = "#90000000"
+    SHADOW    = "#A0000000"
 
 
 # Complete palettes are centralised. Widgets retain the original native layout
@@ -123,27 +123,27 @@ _THEME_COLOR_KEYS = (
 _THEME_DEFAULTS = {
     "dark": {key: getattr(C, key) for key in _THEME_COLOR_KEYS},
     "light": {
-        "BG": "#E9F1F7", "PANEL": "#F8FBFE", "PANEL2": "#E7F1F7",
-        "BORDER": "#B7CBD8", "BORDER_B": "#8CAAB9", "BORDER_A": "#5D869A",
-        "PRI": "#007C9D", "PRI_DIM": "#176B86", "PRI_GHO": "#CDEDF5",
-        "ACC": "#6348AF", "ACC2": "#8A5512", "GREEN": "#147A58",
-        "GREEN_D": "#216A55", "RED": "#B62D45", "MUTED_C": "#B62D45",
-        "TEXT": "#152A39", "TEXT_DIM": "#4F6879", "TEXT_MED": "#29495C",
-        "WHITE": "#FFFFFF", "DARK": "#E2ECF3", "BAR_BG": "#D2E3ED",
-        "HEADER": "#F5FAFDFF",
-        "SIDEBAR": "#E0FAFDFF",
-        "GLASS": "#D1FFFFFF",
-        "GLASS_CARD": "#B3FFFFFF",
-        "GLASS_RIM": "#FAFFFFFF",
-        "INPUT": "#E6FFFFFF",
-        "SHEET": "#FAF8FCFF",
-        "HOVER": "#EBDAEDF7",
-        "DANGER_BG": "#D1FFE4E9",
-        "DANGER_HOVER": "#FAFFD3DC",
-        "SUCCESS_BG": "#DBD7F5E8",
-        "SUCCESS_HOVER": "#FABFEAD5",
+        "BG": "#EEF1F7", "PANEL": "#F8F9FC", "PANEL2": "#EEF0F7",
+        "BORDER": "#D7DCE7", "BORDER_B": "#B8C1D1", "BORDER_A": "#8D9BB0",
+        "PRI": "#7156C8", "PRI_DIM": "#806BD0", "PRI_GHO": "#E9E2FB",
+        "ACC": "#26769F", "ACC2": "#946018", "GREEN": "#187A60",
+        "GREEN_D": "#246D58", "RED": "#BD4057", "MUTED_C": "#BD4057",
+        "TEXT": "#20283A", "TEXT_DIM": "#68748A", "TEXT_MED": "#3D4960",
+        "WHITE": "#FFFFFF", "DARK": "#F0F2F8", "BAR_BG": "#E1E5EF",
+        "HEADER": "#F4F8FBFF",
+        "SIDEBAR": "#E8EDF6F5",
+        "GLASS": "#E4FFFFFF",
+        "GLASS_CARD": "#D8FFFFFF",
+        "GLASS_RIM": "#EEFFFFFF",
+        "INPUT": "#F5FFFFFF",
+        "SHEET": "#FCF9FDFF",
+        "HOVER": "#EFE7F5F7",
+        "DANGER_BG": "#DDFCE7EB",
+        "DANGER_HOVER": "#FADAE0E8",
+        "SUCCESS_BG": "#DCE0F5EC",
+        "SUCCESS_HOVER": "#F8CBEBDD",
         "VIDEO_BG": "#000000",
-        "SHADOW": "#42234257",
+        "SHADOW": "#38212D48",
     },
 }
 
@@ -1053,7 +1053,7 @@ class ApiKeyOverlay(QWidget):
     _local_connection_result = pyqtSignal(bool, str, str, str, str)
     _local_test_result = pyqtSignal(bool, str, str, int)
 
-    _OW, _OH = 560, 580
+    _OW, _OH = 620, 660
 
     def __init__(self, current_key: str = "", parent=None):
         super().__init__(parent)
@@ -1074,15 +1074,20 @@ class ApiKeyOverlay(QWidget):
         self._local_model = "llama3.2"
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 16, 20, 16)
-        layout.setSpacing(7)
+        layout.setContentsMargins(26, 22, 26, 22)
+        layout.setSpacing(10)
 
-        title = QLabel("LLM & API CONNECTION")
-        title.setFont(QFont(FONT_MAIN, 13, QFont.Weight.Bold))
+        eyebrow = QLabel("LLM & API CONNECTION")
+        eyebrow.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+        eyebrow.setStyleSheet(f"color: {C.PRI}; background: transparent; letter-spacing: 1px;")
+        layout.addWidget(eyebrow)
+
+        title = QLabel("CONNECTIONS & API ACCESS")
+        title.setFont(QFont(FONT_MAIN, 16, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
         layout.addWidget(title)
 
-        desc = QLabel("Check the configured provider, model, and a real model response before saving the key.")
+        desc = QLabel("Manage EDITH voice access and your text-model connection. Test a real response before saving credentials.")
         desc.setWordWrap(True)
         desc.setFont(QFont(FONT_MAIN, 9))
         desc.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
@@ -1090,11 +1095,11 @@ class ApiKeyOverlay(QWidget):
 
         status_card = QFrame(self)
         status_card.setStyleSheet(
-            f"QFrame {{ background: {C.GLASS_CARD}; border: 1px solid {C.BORDER}; border-radius: 12px; }}"
+            f"QFrame {{ background: {C.GLASS_CARD}; border: 1px solid {C.BORDER}; border-radius: 16px; }}"
         )
         status_layout = QVBoxLayout(status_card)
-        status_layout.setContentsMargins(8, 6, 8, 6)
-        status_layout.setSpacing(2)
+        status_layout.setContentsMargins(14, 12, 14, 12)
+        status_layout.setSpacing(5)
 
         self._provider_info = QLabel("PROVIDER  Google Gemini Live API · cloud-hosted")
         self._model_info = QLabel("MODEL  models/gemini-2.5-flash-native-audio-preview-12-2025")
@@ -1109,7 +1114,7 @@ class ApiKeyOverlay(QWidget):
                      self._local_model_info, self._local_url_info, self._local_info,
                      self._connection_status, self._latency_status, self._local_latency_status):
             info.setWordWrap(True)
-            info.setFont(QFont(FONT_MAIN, 8, QFont.Weight.DemiBold))
+            info.setFont(QFont(FONT_MAIN, 9, QFont.Weight.DemiBold))
             info.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent; border: none;")
             status_layout.addWidget(info)
         self._connection_status.setStyleSheet(
@@ -1143,11 +1148,11 @@ class ApiKeyOverlay(QWidget):
         self._key_input.setEchoMode(QLineEdit.EchoMode.Password)
         self._key_input.setPlaceholderText("Paste Gemini API key")
         self._key_input.setFont(QFont(FONT_MONO, 10))
-        self._key_input.setFixedHeight(38)
+        self._key_input.setFixedHeight(42)
         self._key_input.setStyleSheet(f"""
             QLineEdit {{
                 background: {C.INPUT}; color: {C.TEXT};
-                border: 1px solid {C.BORDER}; border-radius: 10px; padding: 7px 10px;
+                border: 1px solid {C.BORDER}; border-radius: 12px; padding: 9px 12px;
                 selection-background-color: {C.PRI_GHO};
             }}
             QLineEdit:focus {{ border: 1px solid {C.PRI}; }}
@@ -1173,19 +1178,19 @@ class ApiKeyOverlay(QWidget):
         row.setSpacing(8)
 
         self._reveal_btn = QPushButton("SHOW")
-        self._reveal_btn.setFixedHeight(34)
+        self._reveal_btn.setFixedHeight(40)
         self._reveal_btn.setStyleSheet(self._secondary_style())
         self._reveal_btn.clicked.connect(self._toggle_reveal)
         row.addWidget(self._reveal_btn)
 
         self._test_btn = QPushButton("TEST KEY")
-        self._test_btn.setFixedHeight(34)
+        self._test_btn.setFixedHeight(40)
         self._test_btn.setStyleSheet(self._secondary_style())
         self._test_btn.clicked.connect(self._test_key)
         row.addWidget(self._test_btn)
 
         self._save_btn = QPushButton("SAVE & RECONNECT")
-        self._save_btn.setFixedHeight(34)
+        self._save_btn.setFixedHeight(40)
         self._save_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {C.PRI}; color: {C.DARK}; font-weight: 700;
@@ -1602,25 +1607,25 @@ class ProviderSettingsOverlay(QWidget):
 
     saved = pyqtSignal()
     _test_result = pyqtSignal(object)
-    _OW, _OH = 500, 500
+    _OW, _OH = 620, 620
 
     def __init__(self, parent=None):
         super().__init__(parent)
         _glass_shadow(self)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"""
-            ProviderSettingsOverlay {{ background: {C.SHEET}; border: 1px solid {C.BORDER_B}; border-radius: 18px; }}
+            ProviderSettingsOverlay {{ background: {C.SHEET}; border: 1px solid {C.BORDER_B}; border-radius: 20px; }}
         """)
         self._tested_signature: tuple[str, str, str, str] | None = None
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(22, 18, 22, 18)
-        layout.setSpacing(8)
+        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setSpacing(11)
 
-        title = QLabel("TEXT MODEL PROVIDERS")
-        title.setFont(QFont(FONT_MAIN, 13, QFont.Weight.Bold))
+        title = QLabel("BRAIN  /  TEXT MODEL PROVIDERS")
+        title.setFont(QFont(FONT_MAIN, 16, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
         layout.addWidget(title)
-        hint = QLabel("Gemini Live voice remains configured separately. Test a provider before saving its endpoint, model and optional OS-keychain credential.")
+        hint = QLabel("Choose the reasoning model EDITH uses for text tasks. Voice is configured separately. Credentials use the OS keychain when available.")
         hint.setWordWrap(True); hint.setFont(QFont(FONT_MAIN, 8))
         hint.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
         layout.addWidget(hint)
@@ -1635,18 +1640,19 @@ class ProviderSettingsOverlay(QWidget):
         self._url = QLineEdit(); self._model = QLineEdit(); self._key = QLineEdit()
         self._key.setEchoMode(QLineEdit.EchoMode.Password)
         self._key.setPlaceholderText("Required for cloud providers; never written to activity logs")
-        for title_text, field in (("ENDPOINT", self._url), ("MODEL", self._model), ("API KEY", self._key)):
-            layout.addWidget(self._field_label(title_text)); field.setFixedHeight(32); field.setStyleSheet(self._field_style()); layout.addWidget(field)
+        for title_text, field in (("API ENDPOINT", self._url), ("MODEL ID", self._model), ("API KEY", self._key)):
+            layout.addWidget(self._field_label(title_text)); field.setFixedHeight(40); field.setStyleSheet(self._field_style()); layout.addWidget(field)
         self._status = QLabel("Select a provider, then test a real minimal response.")
         self._status.setWordWrap(True); self._status.setMinimumHeight(36)
         self._status.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
         layout.addWidget(self._status)
         row = QHBoxLayout(); row.setSpacing(8)
         test = QPushButton("TEST CONNECTION"); save = QPushButton("SAVE PROVIDER"); close = QPushButton("CLOSE")
+        test.setMinimumWidth(142); save.setMinimumWidth(142)
         self._test = test; self._save = save
-        for button in (test, close): button.setStyleSheet(ApiKeyOverlay._secondary_style()); button.setFixedHeight(34)
+        for button in (test, close): button.setStyleSheet(ApiKeyOverlay._secondary_style()); button.setFixedHeight(40)
         save.setStyleSheet(f"QPushButton {{ background:{C.PRI}; color:{C.DARK}; border:1px solid {C.PRI}; border-radius:6px; font-weight:700; padding:0 12px; }} QPushButton:disabled {{ background:{C.PANEL2}; color:{C.TEXT_DIM}; border-color:{C.BORDER}; }}")
-        save.setFixedHeight(34); save.setEnabled(False)
+        save.setFixedHeight(40); save.setEnabled(False)
         test.clicked.connect(self._test_connection); save.clicked.connect(self._save_provider); close.clicked.connect(self.hide)
         row.addWidget(test); row.addWidget(save); row.addWidget(close); layout.addLayout(row)
         self._provider.currentIndexChanged.connect(self._provider_changed)
@@ -1656,7 +1662,7 @@ class ProviderSettingsOverlay(QWidget):
 
     @staticmethod
     def _field_style() -> str:
-        return f"QLineEdit, QComboBox {{ background:{C.DARK}; color:{C.TEXT}; border:1px solid {C.BORDER}; border-radius:5px; padding:5px 8px; }} QLineEdit:focus, QComboBox:focus {{ border-color:{C.PRI}; }}"
+        return f"QLineEdit, QComboBox {{ background:{C.DARK}; color:{C.TEXT}; border:1px solid {C.BORDER}; border-radius:10px; padding:8px 11px; }} QLineEdit:focus, QComboBox:focus {{ border-color:{C.PRI}; }}"
 
     @staticmethod
     def _field_label(text: str) -> QLabel:
@@ -2162,17 +2168,20 @@ class MCPConnectionDialog(QDialog):
         self.record = record
         self.setWindowTitle(f"Connect {record.get('name', 'MCP')}")
         self.setModal(True)
-        self.setMinimumWidth(480)
+        self.setMinimumWidth(560)
+        self.resize(640, 430)
         self.setStyleSheet(f"""
             QDialog {{ background: {C.SHEET}; color: {C.TEXT}; }}
-            QLineEdit {{ background: {C.INPUT}; color: {C.TEXT}; border: 1px solid {C.BORDER}; border-radius: 7px; padding: 7px; }}
+            QLabel {{ color: {C.TEXT}; }}
+            QLineEdit {{ background: {C.INPUT}; color: {C.TEXT}; border: 1px solid {C.BORDER}; border-radius: 11px; padding: 10px 12px; }}
+            QLineEdit:focus {{ border: 1px solid {C.PRI}; }}
             QLabel {{ background: transparent; }}
         """)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 18, 20, 18)
-        layout.setSpacing(9)
+        layout.setContentsMargins(26, 22, 26, 22)
+        layout.setSpacing(12)
         title = QLabel(f"{record.get('icon') or 'MCP'}  {record.get('name', 'MCP')}")
-        title.setFont(QFont(FONT_MAIN, 12, QFont.Weight.Bold))
+        title.setFont(QFont(FONT_MAIN, 15, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {C.PRI};")
         layout.addWidget(title)
         note = QLabel(
@@ -2185,6 +2194,7 @@ class MCPConnectionDialog(QDialog):
         layout.addWidget(note)
         layout.addWidget(QLabel("STREAMABLE-HTTP MCP ENDPOINT"))
         self.endpoint = QLineEdit()
+        self.endpoint.setFixedHeight(42)
         self.endpoint.setPlaceholderText("https://your-trusted-mcp-server.example/mcp")
         try:
             info = record.get("connection", lambda: {})() or {}
@@ -2194,6 +2204,7 @@ class MCPConnectionDialog(QDialog):
         layout.addWidget(self.endpoint)
         layout.addWidget(QLabel("ACCESS TOKEN  (optional for unauthenticated/local servers)"))
         self.token = QLineEdit()
+        self.token.setFixedHeight(42)
         self.token.setEchoMode(QLineEdit.EchoMode.Password)
         self.token.setPlaceholderText("Paste a provider-issued bearer token")
         layout.addWidget(self.token)
@@ -2213,9 +2224,9 @@ class MCPConnectionDialog(QDialog):
         cancel.clicked.connect(self.reject)
         for button in (setup, save, test, cancel):
             button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.setFixedHeight(31)
+            button.setFixedHeight(38)
             button.setStyleSheet(f"""
-                QPushButton {{ background: {C.GLASS_CARD}; color: {C.PRI}; border: 1px solid {C.BORDER}; border-radius: 7px; padding: 0 9px; }}
+                QPushButton {{ background: {C.GLASS_CARD}; color: {C.PRI}; border: 1px solid {C.BORDER}; border-radius: 10px; padding: 0 12px; }}
                 QPushButton:hover {{ border-color: {C.PRI}; background: {C.HOVER}; }}
             """)
             buttons.addWidget(button)
@@ -2279,9 +2290,9 @@ class MCPConnectionDialog(QDialog):
 
 
 class PluginManagerOverlay(QWidget):
-    """Floating overlay — lists discovered plugins with per-plugin ON/OFF toggles."""
+    """Scrollable, card-based catalog for Python tools and configured MCP servers."""
 
-    _OW = 510
+    _OW, _OH = 700, 640
 
     def __init__(self, plugins: list[dict], parent=None):
         super().__init__(parent)
@@ -2291,134 +2302,254 @@ class PluginManagerOverlay(QWidget):
             PluginManagerOverlay {{
                 background: {C.SHEET};
                 border: 1px solid {C.BORDER_B};
-                border-radius: 18px;
+                border-radius: 20px;
             }}
         """)
-        self.setFixedWidth(self._OW)
+        self.setMinimumSize(560, 420)
+        self.setMaximumSize(780, 740)
 
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(24, 20, 24, 20)
-        lay.setSpacing(8)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(24, 22, 24, 20)
+        root.setSpacing(12)
 
-        hdr = QLabel("PLUGIN MANAGER")
-        hdr.setFont(QFont(FONT_MAIN, 12, QFont.Weight.Bold))
-        hdr.setStyleSheet(f"color: {C.PRI}; background: transparent;")
-        lay.addWidget(hdr)
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
-        lay.addWidget(sep)
+        head = QHBoxLayout()
+        head.setSpacing(12)
+        mark = QLabel("✣")
+        mark.setFixedSize(42, 42)
+        mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        mark.setFont(QFont(FONT_MAIN, 18, QFont.Weight.Bold))
+        mark.setStyleSheet(
+            f"color: {C.PRI}; background: {C.PRI_GHO}; border: 1px solid {C.BORDER}; "
+            "border-radius: 13px;"
+        )
+        head.addWidget(mark)
+        title_col = QVBoxLayout()
+        title_col.setSpacing(2)
+        hdr = QLabel("PLUGINS & MCP SERVERS")
+        hdr.setFont(QFont(FONT_MAIN, 15, QFont.Weight.Bold))
+        hdr.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
+        title_col.addWidget(hdr)
+        subtitle = QLabel("Manage local tools and trusted external connectors")
+        subtitle.setFont(QFont(FONT_MAIN, 9))
+        subtitle.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        title_col.addWidget(subtitle)
+        head.addLayout(title_col, 1)
+        count = QLabel(f"{len(plugins)}  ITEMS")
+        count.setFont(QFont(FONT_MONO, 8, QFont.Weight.Bold))
+        count.setStyleSheet(
+            f"color: {C.PRI}; background: {C.PRI_GHO}; "
+            f"border: 1px solid {C.BORDER}; border-radius: 9px; padding: 7px 10px;"
+        )
+        head.addWidget(count, 0, Qt.AlignmentFlag.AlignTop)
+        root.addLayout(head)
+
+        divider = QFrame()
+        divider.setFrameShape(QFrame.Shape.HLine)
+        divider.setStyleSheet(f"color: {C.BORDER};")
+        root.addWidget(divider)
+
+        catalog = QScrollArea()
+        catalog.setWidgetResizable(True)
+        catalog.setFrameShape(QFrame.Shape.NoFrame)
+        catalog.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        catalog.setStyleSheet(f"""
+            QScrollArea {{ background: transparent; border: none; }}
+            QScrollBar:vertical {{ background: transparent; width: 8px; margin: 4px 0; }}
+            QScrollBar::handle:vertical {{ background: {C.BORDER_B}; border-radius: 4px; min-height: 28px; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+        """)
+        catalog_body = QWidget()
+        catalog_body.setStyleSheet("background: transparent;")
+        catalog_layout = QVBoxLayout(catalog_body)
+        catalog_layout.setContentsMargins(2, 2, 8, 8)
+        catalog_layout.setSpacing(9)
 
         if not plugins:
-            empty = QLabel("No plugins found in /plugins.")
-            empty.setFont(QFont(FONT_MAIN, 9))
-            empty.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
-            lay.addWidget(empty)
+            empty = QFrame()
+            empty.setStyleSheet(
+                f"background: {C.GLASS_CARD}; border: 1px dashed {C.BORDER_B}; border-radius: 14px;"
+            )
+            empty_layout = QVBoxLayout(empty)
+            empty_layout.setContentsMargins(18, 22, 18, 22)
+            empty_title = QLabel("No tools discovered yet")
+            empty_title.setFont(QFont(FONT_MAIN, 11, QFont.Weight.Bold))
+            empty_title.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
+            empty_layout.addWidget(empty_title)
+            empty_note = QLabel("Add a Python plugin or configure a trusted MCP server to get started.")
+            empty_note.setWordWrap(True)
+            empty_note.setFont(QFont(FONT_MAIN, 9))
+            empty_note.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+            empty_layout.addWidget(empty_note)
+            catalog_layout.addWidget(empty)
+        else:
+            # MCP services are visually grouped before local Python tools.
+            ordered = sorted(
+                plugins,
+                key=lambda item: (0 if item.get("kind") == "mcp" else 1,
+                                  str(item.get("name") or "").casefold()),
+            )
+            for item in ordered:
+                catalog_layout.addWidget(self._build_row(item))
+        catalog_layout.addStretch(1)
+        catalog.setWidget(catalog_body)
+        root.addWidget(catalog, 1)
 
-        for p in plugins:
-            lay.addLayout(self._build_row(p))
-
-        lay.addSpacing(6)
+        footer = QHBoxLayout()
+        footer.setSpacing(8)
+        footer_note = QLabel("Only enabled, tested MCP connectors are exposed to EDITH.")
+        footer_note.setWordWrap(True)
+        footer_note.setFont(QFont(FONT_MAIN, 8))
+        footer_note.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        footer.addWidget(footer_note, 1)
         close_btn = QPushButton("CLOSE")
-        close_btn.setFixedHeight(32)
+        close_btn.setFixedSize(104, 38)
         close_btn.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.setStyleSheet(f"""
             QPushButton {{
-                background: transparent; color: {C.TEXT_MED};
-                border: 1px solid {C.BORDER}; border-radius: 4px;
+                background: {C.PANEL2}; color: {C.TEXT_MED};
+                border: 1px solid {C.BORDER}; border-radius: 10px; padding: 0 14px;
             }}
-            QPushButton:hover {{ color: {C.TEXT}; border-color: {C.BORDER_B}; }}
+            QPushButton:hover {{ color: {C.TEXT}; border-color: {C.PRI_DIM}; }}
         """)
         close_btn.clicked.connect(self.hide)
-        lay.addWidget(close_btn)
+        footer.addWidget(close_btn)
+        root.addLayout(footer)
         self.adjustSize()
 
-    def _build_row(self, p: dict) -> QHBoxLayout:
-        row = QHBoxLayout(); row.setSpacing(8)
+    def _build_row(self, record: dict) -> QWidget:
+        card = QFrame()
+        card.setObjectName("PluginCard")
+        card.setStyleSheet(f"""
+            QFrame#PluginCard {{
+                background: {C.GLASS_CARD};
+                border: 1px solid {C.BORDER};
+                border-radius: 13px;
+            }}
+        """)
+        row = QHBoxLayout(card)
+        row.setContentsMargins(12, 10, 12, 10)
+        row.setSpacing(11)
 
-        if p.get("kind") == "mcp":
-            badge = QLabel(p.get("icon") or "MCP")
-            badge.setFixedWidth(27)
-            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            badge.setFont(QFont(FONT_MONO, 7, QFont.Weight.Bold))
-            badge.setStyleSheet(f"color: {C.PRI}; background: {C.PRI_GHO}; border-radius: 6px; padding: 4px 2px;")
-            row.addWidget(badge)
-        label_text = p["name"] if p["valid"] else f"{p['name']}  (INVALID: {p['file']})"
-        lbl = QLabel(label_text)
-        lbl.setFont(QFont(FONT_MAIN, 9))
-        lbl.setStyleSheet(f"color: {C.TEXT if p['valid'] else C.TEXT_DIM}; background: transparent;")
-        lbl.setToolTip(p["description"] if p["valid"] else p["error"])
-        lbl.setWordWrap(False)
-        row.addWidget(lbl, stretch=1)
+        kind = str(record.get("kind") or "python")
+        icon_text = str(record.get("icon") or ("MCP" if kind == "mcp" else "PY"))[:4]
+        badge = QLabel(icon_text)
+        badge.setFixedSize(40, 40)
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setFont(QFont(FONT_MONO, 8, QFont.Weight.Bold))
+        badge.setStyleSheet(
+            f"color: {C.PRI}; background: {C.PRI_GHO}; "
+            f"border: 1px solid {C.BORDER}; border-radius: 11px;"
+        )
+        row.addWidget(badge)
 
-        btn = QPushButton()
-        btn.setFixedSize(70, 26)
-        btn.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
-        if not p["valid"]:
-            btn.setText("BROKEN")
-            btn.setEnabled(False)
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background: transparent; color: {C.TEXT_DIM};
-                    border: 1px solid {C.BORDER}; border-radius: 4px;
-                }}
-            """)
+        text_col = QVBoxLayout()
+        text_col.setSpacing(3)
+        valid = bool(record.get("valid"))
+        name = str(record.get("name") or "Unnamed plugin")
+        label_text = name if valid else f"{name}  ·  INVALID"
+        label = QLabel(label_text)
+        label.setFont(QFont(FONT_MAIN, 10, QFont.Weight.Bold))
+        label.setStyleSheet(
+            f"color: {C.TEXT if valid else C.RED}; background: transparent;"
+        )
+        label.setToolTip(str(record.get("error") or record.get("description") or ""))
+        text_col.addWidget(label)
+        description = str(record.get("description") or record.get("file") or "")
+        if len(description) > 96:
+            description = description[:93].rstrip() + "…"
+        detail = QLabel(description)
+        detail.setWordWrap(True)
+        detail.setFont(QFont(FONT_MAIN, 8))
+        detail.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        detail.setToolTip(str(record.get("description") or record.get("error") or ""))
+        text_col.addWidget(detail)
+        row.addLayout(text_col, 1)
+
+        state = QLabel("ENABLED" if record.get("enabled") else "DISABLED")
+        state.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        state.setFont(QFont(FONT_MONO, 7, QFont.Weight.Bold))
+        state.setStyleSheet(
+            f"color: {C.GREEN if record.get('enabled') else C.TEXT_DIM}; "
+            f"background: {C.SUCCESS_BG if record.get('enabled') else C.PANEL}; "
+            f"border: 1px solid {C.BORDER}; border-radius: 8px; padding: 5px 7px;"
+        )
+        row.addWidget(state)
+
+        toggle = QPushButton()
+        toggle.setFixedSize(78, 34)
+        toggle.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+        if not valid:
+            toggle.setText("INVALID")
+            toggle.setEnabled(False)
         else:
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            self._style_toggle(btn, p["enabled"])
-            btn.clicked.connect(lambda _, record=p, b=btn: self._toggle(record, b))
-        row.addWidget(btn)
-        if p.get("kind") == "mcp" and p["valid"]:
-            connect_btn = QPushButton("CONNECT")
-            connect_btn.setFixedSize(82, 26)
-            connect_btn.setFont(QFont(FONT_MAIN, 7, QFont.Weight.Bold))
-            connect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            connect_btn.setStyleSheet(f"""
-                QPushButton {{ background: {C.GLASS_CARD}; color: {C.PRI}; border: 1px solid {C.PRI_DIM}; border-radius: 7px; }}
+            self._style_toggle(toggle, bool(record.get("enabled")))
+            toggle.clicked.connect(
+                lambda _checked=False, item=record, button=toggle, status=state:
+                    self._toggle(item, button, status)
+            )
+        row.addWidget(toggle)
+
+        if kind == "mcp" and valid:
+            connect = QPushButton("SET UP")
+            connect.setFixedSize(76, 34)
+            connect.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+            connect.setCursor(Qt.CursorShape.PointingHandCursor)
+            connect.setStyleSheet(f"""
+                QPushButton {{
+                    background: {C.PRI_GHO}; color: {C.PRI};
+                    border: 1px solid {C.PRI_DIM}; border-radius: 9px; padding: 0 10px;
+                }}
                 QPushButton:hover {{ background: {C.HOVER}; border-color: {C.PRI}; }}
             """)
-            connect_btn.clicked.connect(lambda _, record=p: self._connect(record))
-            row.addWidget(connect_btn)
-        return row
+            connect.setToolTip("Configure endpoint, access token and test the MCP connection")
+            connect.clicked.connect(lambda _checked=False, item=record: self._connect(item))
+            row.addWidget(connect)
+        return card
 
     def _connect(self, record: dict):
         dialog = MCPConnectionDialog(record, self)
         dialog.exec()
-        # A dialog may have enabled the provider; ensure the visible toggle
-        # reflects that change when the manager is reopened.
 
     def _style_toggle(self, btn: QPushButton, enabled: bool):
+        btn.setText("ON" if enabled else "OFF")
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
         if enabled:
-            btn.setText("ON")
             btn.setStyleSheet(f"""
                 QPushButton {{
                     background: {C.SUCCESS_BG}; color: {C.GREEN};
-                    border: 1px solid {C.GREEN_D}; border-radius: 8px;
+                    border: 1px solid {C.GREEN_D}; border-radius: 9px;
                 }}
                 QPushButton:hover {{ background: {C.SUCCESS_HOVER}; }}
             """)
         else:
-            btn.setText("OFF")
             btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: transparent; color: {C.TEXT_DIM};
-                    border: 1px solid {C.BORDER}; border-radius: 4px;
+                    background: {C.PANEL}; color: {C.TEXT_DIM};
+                    border: 1px solid {C.BORDER}; border-radius: 9px;
                 }}
                 QPushButton:hover {{ color: {C.TEXT}; border-color: {C.BORDER_B}; }}
             """)
 
-    def _toggle(self, record: dict, btn: QPushButton):
+    def _toggle(self, record: dict, btn: QPushButton, state_label: QLabel | None = None):
         from memory.config_manager import get_plugin_enabled, save_plugin_enabled
         toggle = record.get("toggle")
         if callable(toggle):
             new_val = not bool(record.get("enabled"))
             toggle(new_val)
         else:
-            name = record["name"]
+            name = record.get("name", "")
             new_val = not get_plugin_enabled(name)
             save_plugin_enabled(name, new_val)
         record["enabled"] = new_val
         self._style_toggle(btn, new_val)
+        if state_label is not None:
+            state_label.setText("ENABLED" if new_val else "DISABLED")
+            state_label.setStyleSheet(
+                f"color: {C.GREEN if new_val else C.TEXT_DIM}; "
+                f"background: {C.SUCCESS_BG if new_val else C.PANEL}; "
+                f"border: 1px solid {C.BORDER}; border-radius: 8px; padding: 5px 7px;"
+            )
 
 
 class ClipboardPanel(QWidget):
@@ -2843,13 +2974,13 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         root = QVBoxLayout(central)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(12, 10, 12, 10)
         root.setSpacing(0)
         root.addWidget(self._build_header())
 
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
-        body.setSpacing(0)
+        body.setSpacing(10)
 
         self._left_panel = self._build_left_panel()
         body.addWidget(self._left_panel, stretch=0)
@@ -3515,13 +3646,13 @@ class MainWindow(QMainWindow):
 
     def _build_header(self) -> QWidget:
         w = QWidget()
-        w.setFixedHeight(54)
+        w.setFixedHeight(66)
         w.setStyleSheet(
             f"background: {C.HEADER}; "
             f"border-bottom: 1px solid {C.BORDER};"
         )
         lay = QHBoxLayout(w)
-        lay.setContentsMargins(12, 0, 16, 0)
+        lay.setContentsMargins(20, 0, 22, 0)
 
         def _badge(txt, color=C.TEXT_MED):
             l = QLabel(txt)
@@ -3558,7 +3689,7 @@ class MainWindow(QMainWindow):
         self._title_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent;")
         mid.addWidget(self._title_lbl)
         _sub_text = "PERSONAL ASSISTANT SYSTEM  •  VOICE  •  VISION"
-        self._sub_lbl = QLabel(_sub_text)
+        self._sub_lbl = QLabel("PERSONAL AI WORKSPACE  •  VOICE  •  VISION  •  AUTOMATION")
         self._sub_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._sub_lbl.setFont(QFont(FONT_MAIN, 8))
         self._sub_lbl.setStyleSheet(f"color: {C.PRI_DIM}; background: transparent;")
@@ -3587,12 +3718,12 @@ class MainWindow(QMainWindow):
     def _build_left_panel(self) -> QWidget:
         w = QWidget()
         w.setFixedWidth(_LEFT_W)
-        w.setStyleSheet(f"background: {C.SIDEBAR}; border-right: 1px solid {C.BORDER};")
+        w.setStyleSheet(f"background: {C.SIDEBAR}; border: 1px solid {C.BORDER}; border-radius: 18px;")
         lay = QVBoxLayout(w)
         lay.setContentsMargins(10, 12, 10, 12)
         lay.setSpacing(8)
 
-        hdr = QLabel("◈ SYS MONITOR")
+        hdr = QLabel("◈  SYSTEM OVERVIEW")
         hdr.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
         hdr.setStyleSheet(f"color: {C.PRI}; background: transparent; "
                           f"border-bottom: 1px solid {C.BORDER}; padding-bottom: 6px;")
@@ -3712,7 +3843,7 @@ class MainWindow(QMainWindow):
     def _build_right_panel(self) -> QWidget:
         w = QWidget()
         w.setFixedWidth(_RIGHT_W)
-        w.setStyleSheet(f"background: {C.SIDEBAR}; border-left: 1px solid {C.BORDER};")
+        w.setStyleSheet(f"background: {C.SIDEBAR}; border: 1px solid {C.BORDER}; border-radius: 18px;")
         lay = QVBoxLayout(w)
         lay.setContentsMargins(12, 12, 12, 12)
         lay.setSpacing(10)
@@ -4102,7 +4233,7 @@ class MainWindow(QMainWindow):
         self._input = QLineEdit()
         self._input.setAccessibleName("EDITH command input")
         self._input.setToolTip("Type a command or question. Ctrl+K focuses this field.")
-        self._input.setPlaceholderText("Type a command or question…")
+        self._input.setPlaceholderText("Ask EDITH anything or type a command…")
         self._input.setFont(QFont(FONT_MAIN, 10))
         self._input.setFixedHeight(36)
         self._input.setStyleSheet(f"""

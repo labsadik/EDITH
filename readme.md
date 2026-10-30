@@ -60,11 +60,15 @@ The official Gmail MCP connector requires Google Cloud/OAuth setup. Its currentl
 
 Only connect MCP endpoints you trust. Each connector has its own authentication, tool availability and provider rules; a catalog template is not a promise that a provider supplies a free public MCP endpoint.
 
+## Repository note
+
+The current maintained repository is `WorkRCS/EDITH_v1`. Older setup references may still mention `Upgrade_Autonomous.git`; use the current repository URL below for fresh clones.
+
 ## Run locally
 
 ```powershell
-git clone https://github.com/labsadik/EDITH.git
-cd EDITH
+git clone https://github.com/WorkRCS/EDITH_v1.git
+cd EDITH_v1
 git switch main
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
