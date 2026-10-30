@@ -60,11 +60,27 @@ jobs:
         run: cargo build --release --manifest-path sandbox-rs/Cargo.toml
       - name: Build EDITH app bundle
         run: python scripts/package_edith.py
-      - name: Create distributable DMG
+      - name: Build macOS Installer package with license page
+        run: |
+          version="$(cat VERSION)"
+          cp LICENSE installer/macos/LICENSE
+          pkgbuild --component dist/EDITH.app --install-location /Applications \
+            --identifier com.workrcs.edith --version "$version" \
+            "dist/EDITH-component.pkg"
+          productbuild --distribution installer/macos/distribution.xml \
+            --resources installer/macos --package-path dist --version "$version" \
+            "dist/EDITH-macOS.pkg"
+      - name: Create optional DMG containing the Installer package
         run: |
           mkdir -p dist/dmg
-          cp -R dist/EDITH.app dist/dmg/
+          cp dist/EDITH-macOS.pkg dist/dmg/
           hdiutil create -volname "EDITH — Neuron Intelligence" -srcfolder dist/dmg -ov -format UDZO "dist/EDITH-macOS.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EDITH-macOS-PKG
+          path: dist/EDITH-macOS.pkg
+          if-no-files-found: error
+          retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: EDITH-macOS-DMG
