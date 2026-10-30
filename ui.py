@@ -2746,17 +2746,16 @@ class ApiProviderWorkspace(QWidget):
             QTabBar::tab:hover:!selected {{ color: {C.TEXT}; }}
         """)
         self._voice = _VoiceProviderTab()
-        self._main_brain = _ProviderProfileTab("main")
+        # Powerful Brain is the single canonical text/reasoning provider.
+        # The Main Brain profile remains only as a provider-config migration fallback.
         self._powerful_brain = _ProviderProfileTab("powerful")
         self._search = _RealtimeSearchTab()
         self._tabs.addTab(self._voice, svg_icon("mic", C.PRI), "VOICE")
-        self._tabs.addTab(self._main_brain, svg_icon("brain-circuit", C.PRI), "MAIN BRAIN")
         self._tabs.addTab(self._powerful_brain, svg_icon("cpu", C.PRI), "POWERFUL BRAIN")
         self._tabs.addTab(self._search, svg_icon("search", C.PRI), "REAL-TIME SEARCH")
         root.addWidget(self._tabs, 1)
 
         self._voice.saved.connect(self._on_voice_saved)
-        self._main_brain.saved.connect(self.settings_saved.emit)
         self._powerful_brain.saved.connect(self.settings_saved.emit)
         self._search.saved.connect(self.settings_saved.emit)
 
