@@ -40,6 +40,7 @@ from core.video_visual import LoopingVideo, draw_blended_video
 from core.dark_theme import apply_dark_theme
 from core.secrets import get_gemini_api_key, save_gemini_api_key, get_config_secret, save_config_secret
 from core.theme_service import SystemThemeMonitor, normalise_theme
+from core.app_paths import config_path
 
 def _base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -47,8 +48,8 @@ def _base_dir() -> Path:
     return Path(__file__).resolve().parent
 
 BASE_DIR   = _base_dir()
-CONFIG_DIR = BASE_DIR / "config"
-API_FILE   = CONFIG_DIR / "api_keys.json"
+API_FILE   = config_path()
+CONFIG_DIR = API_FILE.parent
 
 # Modern Font Families
 FONT_MAIN = "Segoe UI" if platform.system() == "Windows" else "Helvetica Neue"
