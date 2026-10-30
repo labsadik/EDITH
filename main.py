@@ -2275,7 +2275,7 @@ class EdithLive:
                 await asyncio.sleep(.025)
         finally:
             player.stop()
-            # Normal PortAudio writes are 50 ms. Bound teardown if a driver hangs.
+            # Low-latency PCM writes are 20 ms. Bound teardown if a driver hangs.
             for _ in range(40):
                 if player.stopped.is_set():
                     break
