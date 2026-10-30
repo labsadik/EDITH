@@ -160,12 +160,22 @@ def _ha_request(method: str, path: str, *, payload: dict | None = None, timeout:
     credentials = _ha_credentials()
     assert credentials is not None
     url, token = credentials
-    response = requests.request(
-        method, f"{url}/api/{path.lstrip('/')}",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        json=payload, timeout=timeout,
-    )
-    response.raise_for_status()
+    try:
+        response = requests.request(
+            method, f"{url}/api/{path.lstrip('/')}",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json=payload, timeout=timeout,
+        )
+        response.raise_for_status()
+    except requests.Timeout as exc:
+        raise RuntimeError("Home Assistant request timed out. Check that the local Home Assistant host is online.") from exc
+    except requests.ConnectionError as exc:
+        raise RuntimeError("Home Assistant is paired but unreachable. Check the URL, network and Home Assistant service.") from exc
+    except requests.HTTPError as exc:
+        status = getattr(exc.response, "status_code", "unknown")
+        if status in {401, 403}:
+            raise RuntimeError("Home Assistant rejected the saved token. Create a new long-lived access token and pair again.") from exc
+        raise RuntimeError(f"Home Assistant API returned HTTP {status}. Check the integration and entity permissions.") from exc
     if not response.content:
         return {}
     return response.json()
@@ -189,6 +199,27 @@ def discover_local_devices() -> dict[str, Any]:
 
 def _home_assistant(action: str, entity_id: str = "", service: str = "",
                     service_data: dict | None = None) -> dict[str, Any]:
+    try:
+        credentials = _ha_credentials(required=False)
+    except (RuntimeError, OSError, ValueError) as exc:
+        return {
+            "ok": False, "connected": False, "paired": False,
+            "needs_pairing": True, "provider": "Home Assistant",
+            "error": str(exc),
+            "setup": "Open EDITH Controls → Smart Network → Pair Home Assistant, or set "
+                     "EDITH_HOME_ASSISTANT_URL and EDITH_HOME_ASSISTANT_TOKEN.",
+        }
+    if not credentials:
+        return {
+            "ok": False, "connected": False, "paired": False,
+            "needs_pairing": True, "provider": "Home Assistant",
+            "action": action,
+            "message": "Home Assistant is not paired. Local network discovery remains available; "
+                       "smart-home entity reads and controls are disabled until pairing is completed.",
+            "setup": "Run scripts/configure_home_assistant.py locally, or set "
+                     "EDITH_HOME_ASSISTANT_URL and EDITH_HOME_ASSISTANT_TOKEN. "
+                     "The token is stored in the OS keychain when available.",
+        }
     if action == "status":
         _ha_request("GET", "config")
         return {"connected": True, "provider": "Home Assistant", "read_control": True, "write_control": True}
@@ -258,8 +289,19 @@ def run_smart_network(
     if action.startswith("mqtt_"):
         from agents.mqtt_bridge import run_mqtt_action
         result = run_mqtt_action(action, topic=topic, payload=payload)
+    elif action == "discover":
+        result = discover_local_devices()
     else:
-        result = discover_local_devices() if action == "discover" else _home_assistant(
-            action, entity_id=entity_id, service=service, service_data=service_data
-        )
+        try:
+            result = _home_assistant(
+                action, entity_id=entity_id, service=service, service_data=service_data
+            )
+        except (RuntimeError, requests.RequestException) as exc:
+            result = {
+                "ok": False, "connected": False, "paired": True,
+                "provider": "Home Assistant",
+                "error": str(exc),
+                "setup": "Check the paired Home Assistant URL/token and retry. "
+                         "No smart-home command was confirmed as successful.",
+            }
     return json.dumps(result, ensure_ascii=False, indent=2)
