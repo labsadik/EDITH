@@ -45,6 +45,20 @@ class WorkspaceTests(unittest.TestCase):
         from PyQt6.QtWidgets import QFrame, QScrollArea, QTabWidget, QPushButton
         from ui import PluginManagerOverlay, ProviderSettingsOverlay
 
+        # Presentation/accessibility regression checks share the existing
+        # window so Qt multimedia resources are not duplicated just for style.
+        from PyQt6.QtWidgets import QLabel
+        self.assertEqual(self.window._sub_lbl.text(),
+                         "PERSONAL AI WORKSPACE  ·  VOICE  ·  VISION  ·  AUTOMATION")
+        left_labels = [label.text() for label in self.window._left_panel.findChildren(QLabel)]
+        self.assertIn("SYSTEM HEALTH", left_labels)
+        self.assertTrue(self.window._left_panel.findChild(QFrame, "SystemDetailsCard"))
+        self.assertFalse(any("PROTOCOL" in label or "SEC CLEARED" in label
+                             for label in left_labels))
+        self.assertEqual(self.window._activity_lbl.accessibleName(), "EDITH activity status")
+        self.assertEqual(self.window._drop_zone.accessibleName(), "File attachment drop zone")
+        self.assertEqual(self.window._input.accessibleName(), "EDITH command input")
+
         self.assertIn("border-radius: 18px", self.window._left_panel.styleSheet())
         self.assertIn("border-radius: 18px", self.window._right_panel.styleSheet())
         self.assertIn("PERSONAL AI WORKSPACE", self.window._sub_lbl.text())
