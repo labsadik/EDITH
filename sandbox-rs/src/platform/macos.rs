@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use std::os::unix::process::CommandExt;
 use std::thread;
 use std::time::{Duration, Instant};
 use crate::Options;
@@ -62,6 +63,27 @@ pub fn run(options: &Options) -> Result<i32, String> {
         .env("PYTHONUNBUFFERED", "1")
         .env("PYTHONNOUSERSITE", "1")
         .env("EDITH_SANDBOX", "1");
+
+    let memory_bytes = options.memory_mb.saturating_mul(1024 * 1024);
+    let cpu_seconds = options.cpu_seconds;
+    unsafe {
+        command.pre_exec(move || {
+            // RLIMIT_DATA is portable across supported macOS releases.
+            let memory = libc::rlimit { rlim_cur: memory_bytes as libc::rlim_t, rlim_max: memory_bytes as libc::rlim_t };
+            if libc::setrlimit(libc::RLIMIT_DATA, &memory) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            let cpu = libc::rlimit { rlim_cur: cpu_seconds as libc::rlim_t, rlim_max: cpu_seconds as libc::rlim_t };
+            if libc::setrlimit(libc::RLIMIT_CPU, &cpu) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            let file_size = libc::rlimit { rlim_cur: 1024 * 1024 * 1024, rlim_max: 1024 * 1024 * 1024 };
+            if libc::setrlimit(libc::RLIMIT_FSIZE, &file_size) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
 
     let mut child = match command.spawn() {
         Ok(value) => value,

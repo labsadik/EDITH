@@ -5,6 +5,7 @@ an explicit local confirmation before passing the request to an action handler.
 """
 from __future__ import annotations
 
+import json
 import re
 from pathlib import PurePath
 from urllib.parse import urlsplit
@@ -136,6 +137,23 @@ def confirmation_requirement(tool_name: str, parameters: dict | None = None) -> 
     if name == "desktop_control" and action in {"clean", "delete", "remove"}:
         target = _text(p.get("path") or p.get("task") or "desktop items", 110)
         return f"Run the desktop cleanup/removal operation for '{target}'? Confirm before items are moved or removed."
+
+    if name == "smart_network" and action in {"control", "write"}:
+        entity = _text(p.get("entity_id") or "unspecified Home Assistant entity", 90)
+        service = _text(p.get("service") or "unspecified service", 60)
+        details = p.get("service_data") or {}
+        preview = _text(json.dumps(details, ensure_ascii=False, sort_keys=True), 220)
+        return (
+            f"Change paired smart-home device '{entity}' using '{service}'? "
+            f"Settings: {preview}. Confirm only if this is the intended device and state change."
+        )
+
+    if name == "knowledge_base" and action == "index_file":
+        target = _text(p.get("file_path") or "the selected local document", 140)
+        return (
+            f"Read '{target}' and index its contents in EDITH's local vector database? "
+            "Document text will remain on this device and will not be uploaded to an embedding service."
+        )
 
     if name in {"browser_control", "computer_control"}:
         if action in {"click", "smart_click", "screen_click", "right_click", "double_click"}:

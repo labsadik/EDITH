@@ -185,6 +185,33 @@ def _headers(spec: ProviderSpec, key: str | None) -> dict[str, str]:
     return {"Authorization": f"Bearer {key}"}
 
 
+def _extract_text_content(value: Any) -> str:
+    """Normalize provider text blocks without exposing private reasoning fields."""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict) and item.get("type") in {"text", "output_text"}:
+                text = item.get("text") or item.get("content") or ""
+                if isinstance(text, str):
+                    parts.append(text)
+        return "\n".join(x.strip() for x in parts if x and x.strip()).strip()
+    if isinstance(value, dict):
+        nested = value.get("text") or value.get("output_text") or value.get("content")
+        if isinstance(nested, (str, list)):
+            return _extract_text_content(nested)
+    return ""
+
+
+def _chat_completions_url(base_url: str) -> str:
+    base = str(base_url or "").strip().rstrip("/")
+    if not base:
+        raise ValueError("Provider endpoint is required")
+    return base + "/chat/completions" if base.endswith("/v1") else base + "/v1/chat/completions"
+
 def list_provider_models(provider: object, url: str = "", api_key: str | None = None,
                          timeout: float = 15.0) -> list[str]:
     """Fetch models available to this exact provider account (or local Ollama host)."""
@@ -197,7 +224,7 @@ def list_provider_models(provider: object, url: str = "", api_key: str | None = 
         endpoint = f"{base}/api/tags"
         headers = {}
     elif spec.protocol == "anthropic":
-        endpoint = f"{base}/models"
+        endpoint = base + "/models" if base.endswith("/v1") else base + "/v1/models"
         headers = {**_headers(spec, api_key), "anthropic-version": "2023-06-01"}
     else:
         endpoint = _openai_models_url(base)
@@ -230,7 +257,7 @@ def list_provider_models(provider: object, url: str = "", api_key: str | None = 
 
 def probe_provider(provider: object, url: str, model: str, api_key: str | None = None,
                    timeout: float = 20.0) -> dict[str, Any]:
-    """Make one real minimal completion; returned errors never contain the API key."""
+    """Verify endpoint authentication and a user-visible model response."""
     spec = provider_spec(provider)
     base = str(url or spec.default_url).rstrip("/")
     started = time.perf_counter()
@@ -239,36 +266,54 @@ def probe_provider(provider: object, url: str, model: str, api_key: str | None =
             raise RuntimeError("Gemini Live is tested from the Voice tab")
         if spec.secret_name and not api_key:
             raise RuntimeError("An API key is required for this provider")
+        prompt = "Reply with the single word OK. Do not provide analysis."
         if spec.protocol == "ollama":
-            response = requests.post(f"{base}/api/chat", json={"model": model, "stream": False,
-                                     "messages": [{"role": "user", "content": "Reply only OK."}]}, timeout=timeout)
+            payload = {
+                "model": model, "stream": False, "think": False,
+                "options": {"num_predict": 64, "temperature": 0},
+                "messages": [{"role": "user", "content": prompt}],
+            }
+            response = requests.post(f"{base}/api/chat", json=payload, timeout=timeout)
+            if response.status_code == 400:
+                payload.pop("think", None)
+                response = requests.post(f"{base}/api/chat", json=payload, timeout=timeout)
             response.raise_for_status()
-            content = response.json().get("message", {}).get("content", "")
+            data = response.json()
+            message = data.get("message") if isinstance(data, dict) else {}
+            content = _extract_text_content((message or {}).get("content"))
+            if not content and (message or {}).get("thinking"):
+                raise RuntimeError("Provider connected, but returned reasoning without a final text response; choose a model that supports a final response or check think:false support")
         elif spec.protocol == "anthropic":
-            response = requests.post(f"{base}/messages", headers=_headers(spec, api_key), json={
-                "model": model, "max_tokens": 8, "messages": [{"role": "user", "content": "Reply only OK."}],
+            endpoint = base + "/messages" if base.endswith("/v1") else base + "/v1/messages"
+            response = requests.post(endpoint, headers=_headers(spec, api_key), json={
+                "model": model, "max_tokens": 64,
+                "messages": [{"role": "user", "content": prompt}],
             }, timeout=timeout)
             response.raise_for_status()
-            content = "".join(str(part.get("text") or "") for part in response.json().get("content", [])
-                              if isinstance(part, dict) and part.get("type") == "text")
+            data = response.json()
+            content = _extract_text_content(data.get("content", []))
         else:
-            response = requests.post(f"{_openai_models_url(base).removesuffix('/models')}/chat/completions",
-                                     headers=_headers(spec, api_key), json={
-                "model": model, "messages": [{"role": "user", "content": "Reply only OK."}],
-                "max_tokens": 8,
+            response = requests.post(_chat_completions_url(base), headers=_headers(spec, api_key), json={
+                "model": model, "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 64, "stream": False,
             }, timeout=timeout)
             response.raise_for_status()
-            content = response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
-        if not str(content).strip():
-            raise RuntimeError("Provider returned no text response")
+            data = response.json()
+            choices = data.get("choices") or []
+            if not choices:
+                raise RuntimeError("Provider authenticated, but returned no completion choices")
+            choice = choices[0] if isinstance(choices[0], dict) else {}
+            message = choice.get("message") or {}
+            content = _extract_text_content(message.get("content") or message.get("refusal") or choice.get("text"))
+        if not content:
+            raise RuntimeError("Provider connected, but returned no user-visible text response")
         return {"ok": True, "provider": spec.identifier, "model": model,
                 "latency_ms": int((time.perf_counter() - started) * 1000), "error": None}
     except Exception as exc:
         detail = str(exc).replace(str(api_key or ""), "[REDACTED]")
         return {"ok": False, "provider": spec.identifier, "model": model,
                 "latency_ms": int((time.perf_counter() - started) * 1000),
-                "error": f"{type(exc).__name__}: {detail[:180]}"}
-
+                "error": f"{type(exc).__name__}: {detail[:220]}"}
 
 def _search_headers(provider: str, api_key: str) -> dict[str, str]:
     if provider == "brave":

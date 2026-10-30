@@ -436,7 +436,8 @@ TOOL_DECLARATIONS = [
             "Use this for web tasks. For a native desktop application such as WhatsApp, Telegram, Postman, "
             "MongoDB Compass, Android Studio, or Docker Desktop, first call open_app, then use computer_control "
             "for visible GUI actions and screen_process to inspect the current screen. "
-            "Simple navigation opens the user's browser; interactive browser actions use the automation session. "
+            "Use mode=embedded to open EDITH's persistent inbuilt browser with its own resizable window and saved cookies. "
+            "Use external mode for the existing Playwright/browser automation session. "
             "Always honor an explicitly requested browser."
         ),
         "parameters": {
@@ -444,6 +445,7 @@ TOOL_DECLARATIONS = [
             "properties": {
                 "action":      {"type": "STRING", "description": "go_to | search | click | type | scroll | fill_form | smart_click | smart_type | get_text | get_url | press | new_tab | close_tab | screenshot | back | forward | reload | switch | list_browsers | close | close_all"},
                 "browser":     {"type": "STRING", "description": "Target browser: chrome | edge | firefox | opera | operagx | brave | vivaldi | safari. Omit to use the currently active browser."},
+                "mode":        {"type": "STRING", "enum": ["external", "embedded"], "description": "Use embedded for EDITH's persistent inbuilt browser; external for Playwright/browser sessions."},
                 "url":         {"type": "STRING", "description": "URL for go_to / new_tab action"},
                 "query":       {"type": "STRING", "description": "Search query for search action"},
                 "engine":      {"type": "STRING", "description": "Search engine: google | bing | duckduckgo | yandex (default: google)"},
@@ -650,8 +652,36 @@ TOOL_DECLARATIONS = [
     },
     {
         "name": "smart_network",
-        "description": "Lists devices already present in the OS local neighbor cache and summarizes known local network neighbors. It does not actively scan, exploit, log in to or control other devices. Authenticated pairing is required before any remote-control adapter can be used.",
-        "parameters": {"type": "OBJECT", "properties": {}, "required": []}
+        "description": "Discovers OS-known local network neighbors and reads or controls entities on the user's paired Home Assistant instance. Actions: discover, status, entities, read, control. Control is limited to allowlisted light, switch, climate, cover and scene services; local confirmation is required for every write. Never scan, log in to or control unpaired devices.",
+        "parameters": {"type": "OBJECT", "properties": {
+            "action": {"type": "STRING", "enum": ["discover", "status", "entities", "read", "control"]},
+            "entity_id": {"type": "STRING", "description": "Exact paired Home Assistant entity id such as light.living_room."},
+            "service": {"type": "STRING", "description": "Allowlisted service such as light.turn_on, switch.turn_off, climate.set_temperature."},
+            "service_data": {"type": "OBJECT", "properties": {
+                "brightness": {"type": "NUMBER"}, "brightness_pct": {"type": "NUMBER"},
+                "color_temp": {"type": "NUMBER"}, "color_temp_kelvin": {"type": "NUMBER"},
+                "transition": {"type": "NUMBER"}, "temperature": {"type": "NUMBER"},
+                "hvac_mode": {"type": "STRING"}, "position": {"type": "NUMBER"},
+                "tilt_position": {"type": "NUMBER"}
+            }, "description": "Only these validated Home Assistant service values are accepted."}
+        }, "required": ["action"]}
+    },
+    {
+        "name": "knowledge_base",
+        "description": "Manage EDITH's local document knowledge base. Actions: index_file (extract, chunk and locally embed a document), search (semantic retrieval), stats. Uses local Ollama embeddings and local LanceDB storage; does not upload document contents to a cloud vector service.",
+        "parameters": {"type": "OBJECT", "properties": {
+            "action": {"type": "STRING", "enum": ["index_file", "search", "stats"]},
+            "file_path": {"type": "STRING", "description": "Path to a supported local text, Markdown, PDF, DOCX, CSV, JSON or source-code file. Use the currently uploaded file when omitted."},
+            "query": {"type": "STRING", "description": "Question or query for semantic search."},
+            "limit": {"type": "INTEGER", "description": "Maximum number of relevant chunks (1-20)."}
+        }, "required": ["action"]}
+    },
+    {
+        "name": "agent_supervisor",
+        "description": "Run a LangGraph multi-agent workflow using Powerful Brain. It retrieves relevant local RAG context, delegates bounded planning/research/developer/security tasks to specialist roles and synthesizes their results. It does not execute external tools or claim that devices/files were changed.",
+        "parameters": {"type": "OBJECT", "properties": {
+            "request": {"type": "STRING", "description": "Complex request to plan and analyze."}
+        }, "required": ["request"]}
     },
     {
         "name": "task_history",
@@ -1156,7 +1186,11 @@ class EdithLive:
             self._loop.call_soon_threadsafe(self._handle_busy_input, text, "text")
             return True
         mode = requested_voice_mode(text)
-        self._recent_voice_intent = (mode, time.monotonic()) if mode else None
+        if mode:
+            # Switch directly instead of relying on Gemini to remember to call a tool.
+            self._request_voice_mode_from_ui(mode)
+            return True
+        self._recent_voice_intent = None
         self._response_pending = True
         self.ui.set_state("THINKING")
         self._pending_text_started_at = time.perf_counter()
@@ -1589,8 +1623,25 @@ class EdithLive:
                 result = r or "Weather delivered."
 
             elif name == "browser_control":
-                r = await loop.run_in_executor(None, lambda: browser_control(parameters=args, player=self.ui))
-                result = r or "Done."
+                if str(args.get("mode") or "external").lower() == "embedded":
+                    action = str(args.get("action") or "go_to").lower()
+                    if action == "search":
+                        from urllib.parse import quote
+                        engines = {
+                            "google": "https://www.google.com/search?q=",
+                            "bing": "https://www.bing.com/search?q=",
+                            "duckduckgo": "https://duckduckgo.com/?q=",
+                            "yandex": "https://yandex.com/search/?text=",
+                        }
+                        engine = str(args.get("engine") or "google").lower()
+                        target = engines.get(engine, engines["google"]) + quote(str(args.get("query") or ""))
+                    else:
+                        target = str(args.get("url") or "about:blank")
+                    self.ui.open_embedded_browser(target)
+                    result = f"Opened EDITH's embedded browser: {target}"
+                else:
+                    r = await loop.run_in_executor(None, lambda: browser_control(parameters=args, player=self.ui))
+                    result = r or "Done."
 
             elif name == "file_controller":
                 r = await loop.run_in_executor(None, lambda: file_controller(parameters=args, player=self.ui))
@@ -1747,8 +1798,42 @@ class EdithLive:
 
             elif name == "smart_network":
                 from agents.smart_network import run_smart_network
-                result = await loop.run_in_executor(None, run_smart_network)
-                self.ui.show_content("LOCAL NETWORK INVENTORY", result)
+                action = str(args.get("action") or "discover")
+                result = await asyncio.to_thread(
+                    run_smart_network, action,
+                    str(args.get("entity_id") or ""),
+                    str(args.get("service") or ""),
+                    args.get("service_data") if isinstance(args.get("service_data"), dict) else {},
+                )
+                self.ui.show_content("SMART HOME / LOCAL NETWORK", result)
+
+            elif name == "knowledge_base":
+                from memory.rag_store import index_file, search_knowledge, knowledge_stats
+                action = str(args.get("action") or "stats").strip().lower()
+                if action == "index_file":
+                    file_path = str(args.get("file_path") or getattr(self.ui, "current_file", "") or "").strip()
+                    if not file_path:
+                        result = "Choose or upload a local document before indexing."
+                    else:
+                        receipt = await asyncio.to_thread(index_file, file_path)
+                        result = json.dumps(receipt, ensure_ascii=False, indent=2)
+                elif action == "search":
+                    matches = await asyncio.to_thread(
+                        search_knowledge, str(args.get("query") or ""), int(args.get("limit") or 6)
+                    )
+                    result = json.dumps(matches, ensure_ascii=False, indent=2) if matches else "No matching local knowledge chunks were found."
+                elif action == "stats":
+                    result = json.dumps(await asyncio.to_thread(knowledge_stats), ensure_ascii=False, indent=2)
+                else:
+                    result = "Use knowledge_base action=index_file, search or stats."
+                self.ui.show_content("LOCAL KNOWLEDGE BASE", result)
+
+            elif name == "agent_supervisor":
+                from core.agent_supervisor import run_agent_supervisor
+                result = await asyncio.to_thread(
+                    run_agent_supervisor, str(args.get("request") or "")
+                )
+                self.ui.show_content("MULTI-AGENT SUPERVISOR", result)
 
             elif name == "task_history":
                 result = format_task_history(self._agent_journal.recent(limit=10))
@@ -1982,6 +2067,12 @@ class EdithLive:
                                 continue
 
                             full_in = " ".join(in_buf).strip()
+                            spoken_voice_mode = requested_voice_mode(full_in)
+                            if spoken_voice_mode:
+                                await self._set_voice_mode(spoken_voice_mode)
+                                in_buf = []
+                                out_buf = []
+                                continue
                             if full_in:
                                 self.ui.write_log(f"You: {full_in}")
                                 self._session_log.append(f"User: {full_in}")

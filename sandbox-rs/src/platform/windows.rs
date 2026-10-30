@@ -207,15 +207,16 @@ fn safe_environment(options: &Options, temp: &Path) -> Vec<u16> {
     block
 }
 
-fn make_job(timeout: u64) -> Result<Handle, String> {
+fn make_job(timeout: u64, memory_mb: u64) -> Result<Handle, String> {
     let job = unsafe { CreateJobObjectW(null_mut(), null()) };
     if job.is_null() { return Err(format!("CreateJobObjectW failed: {}", std::io::Error::last_os_error())); }
     let mut info: JobExtendedLimitInformation = unsafe { zeroed() };
     info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_ACTIVE_PROCESS | JOB_OBJECT_LIMIT_PROCESS_MEMORY | JOB_OBJECT_LIMIT_JOB_MEMORY | JOB_OBJECT_LIMIT_PROCESS_TIME;
     info.BasicLimitInformation.ActiveProcessLimit = 64;
     info.BasicLimitInformation.PerProcessUserTimeLimit = (timeout.min(3600) as i64) * 10_000_000;
-    info.ProcessMemoryLimit = 2 * 1024 * 1024 * 1024usize;
-    info.JobMemoryLimit = 4 * 1024 * 1024 * 1024usize;
+    let memory_bytes = (memory_mb.clamp(64, 8192) * 1024 * 1024) as usize;
+    info.ProcessMemoryLimit = memory_bytes;
+    info.JobMemoryLimit = memory_bytes.saturating_mul(2);
     let ok = unsafe { SetInformationJobObject(job, JOB_OBJECT_EXTENDED_LIMIT_INFORMATION, (&mut info as *mut JobExtendedLimitInformation).cast(), size_of::<JobExtendedLimitInformation>() as u32) };
     if ok == 0 { unsafe { CloseHandle(job); } return Err(format!("Could not set sandbox resource limits: {}", std::io::Error::last_os_error())); }
     Ok(job)
@@ -285,7 +286,7 @@ pub fn run(options: &Options) -> Result<i32, String> {
         let created = unsafe { CreateProcessW(app_wide.as_ptr(), command_wide.as_mut_ptr(), null_mut(), null_mut(), 1, EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT, env_block.as_mut_ptr().cast(), cwd.as_mut_ptr(), (&mut startup as *mut StartupInfoExW).cast(), &mut process) };
         unsafe { DeleteProcThreadAttributeList(attributes); if !internet_sid.is_null() { LocalFree(internet_sid); } }
         check_win(created, "CreateProcessW(AppContainer)")?;
-        let job = match make_job(options.timeout) {
+        let job = match make_job(options.cpu_seconds, options.memory_mb) {
             Ok(value) => value,
             Err(error) => { unsafe { TerminateProcess(process.hProcess, 125); CloseHandle(process.hThread); CloseHandle(process.hProcess); } return Err(error); }
         };

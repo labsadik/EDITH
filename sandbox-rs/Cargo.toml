@@ -5,6 +5,9 @@ edition = "2021"
 description = "Local, fail-closed OS-enforced execution sandbox for EDITH agents"
 license = "MIT"
 
+[dependencies]
+libc = "0.2"
+
 [[bin]]
 name = "edith-sandbox"
 path = "src/main.rs"

@@ -30,3 +30,11 @@ pywin32; sys_platform == "win32"
 qrcode[pil]
 nvidia-ml-py>=12
 WMI; sys_platform == "win32"
+langchain>=1.0.0
+langchain-core>=1.0.0
+langchain-text-splitters>=1.0.0
+langgraph>=1.0.0
+lancedb>=0.20.0
+pypdf>=5.0.0
+python-docx>=1.1.0
+PyQt6-WebEngine>=6.7.0
