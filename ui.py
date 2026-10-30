@@ -4267,6 +4267,10 @@ class MainWindow(QMainWindow):
 
 
     def _escape_action(self):
+        if self._overlay and self._overlay.isVisible():
+            # First-run setup is mandatory: Escape must not dismiss the modal.
+            self._overlay._key_input.setFocus()
+            return
         for attr in ('_customize_overlay', '_remote_overlay', '_api_key_overlay', '_plugin_manager_overlay'):
             panel = getattr(self, attr, None)
             if panel and panel.isVisible():
@@ -4651,6 +4655,8 @@ class MainWindow(QMainWindow):
             self._log.append_log(f"ERR: Shortcut failed — {e}")
 
     def _toggle_fullscreen(self):
+        if self._overlay and self._overlay.isVisible():
+            return
         if self.isFullScreen():
             self.showNormal()
         else:
@@ -5408,6 +5414,9 @@ class MainWindow(QMainWindow):
         return row
 
     def _focus_command_input(self) -> None:
+        if self._overlay and self._overlay.isVisible():
+            self._overlay._key_input.setFocus()
+            return
         self._input.setFocus(Qt.FocusReason.ShortcutFocusReason)
         self._input.selectAll()
 
@@ -6050,6 +6059,8 @@ class MainWindow(QMainWindow):
             self.on_interrupt()
 
     def _toggle_mute(self):
+        if self._overlay and self._overlay.isVisible():
+            return
         self._muted = not self._muted
         self.hud.muted = self._muted
         self.hud.clear_input_level()
