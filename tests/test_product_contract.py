@@ -140,7 +140,7 @@ class ProductContractTests(unittest.TestCase):
         self.assertIn("Dependency did not succeed", self.scheduler)
         self.assertIn("MULTITASKING AND TASK DEPENDENCIES", self.prompt)
         # Both provider adapters and the original cloud model remain configured.
-        self.assertIn("def get_llm_provider()", self.llm_client)
+        self.assertIn('def get_llm_provider(profile: str = "main")', self.llm_client)
         self.assertIn("def call_llm_text(", self.llm_client)
         self.assertIn("def call_llm_stream(", self.llm_client)
         self.assertIn("models/gemini-2.5-flash-native-audio-preview-12-2025", self.main)
