@@ -118,6 +118,76 @@ class ProviderRegistryTests(unittest.TestCase):
             self.assertEqual(post.call_args.kwargs["headers"]["Authorization"],
                              "Bearer powerful-secret")
 
+    def test_main_profile_anthropic_health_check_uses_main_credentials(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "api_keys.json"
+            fake = _FakeKeyring()
+            with patch("core.secrets._keyring_backend", return_value=fake):
+                providers.save_provider_settings(
+                    path, "anthropic", "https://api.anthropic.com/v1",
+                    "claude-main", "main-secret", profile="main",
+                )
+                providers.save_provider_settings(
+                    path, "xai", "https://api.x.ai/v1",
+                    "grok-powerful", "powerful-secret", profile="powerful",
+                )
+                with (
+                    patch.object(llm_client, "CONFIG_PATH", path),
+                    patch.object(llm_client, "_cloud_headers", wraps=llm_client._cloud_headers) as headers,
+                ):
+                    self.assertTrue(llm_client.ensure_ollama_running(profile="main"))
+            headers.assert_called_once_with(
+                "anthropic", "https://api.anthropic.com/v1", "main"
+            )
+
+    def test_main_profile_anthropic_warmup_uses_main_api_key(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "api_keys.json"
+            fake = _FakeKeyring()
+            response = Mock()
+            with patch("core.secrets._keyring_backend", return_value=fake):
+                providers.save_provider_settings(
+                    path, "anthropic", "https://api.anthropic.com/v1",
+                    "claude-main", "main-secret", profile="main",
+                )
+                providers.save_provider_settings(
+                    path, "xai", "https://api.x.ai/v1",
+                    "grok-powerful", "powerful-secret", profile="powerful",
+                )
+                with (
+                    patch.object(llm_client, "CONFIG_PATH", path),
+                    patch.object(llm_client.requests, "post", return_value=response) as post,
+                ):
+                    self.assertTrue(llm_client.warmup_model(profile="main"))
+            self.assertEqual(post.call_args.kwargs["headers"]["x-api-key"], "main-secret")
+
+    def test_main_profile_anthropic_text_override_uses_main_api_key(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "api_keys.json"
+            fake = _FakeKeyring()
+            response = Mock()
+            response.json.return_value = {
+                "content": [{"type": "text", "text": "main profile response"}]
+            }
+            with patch("core.secrets._keyring_backend", return_value=fake):
+                providers.save_provider_settings(
+                    path, "anthropic", "https://api.anthropic.com/v1",
+                    "claude-main", "main-secret", profile="main",
+                )
+                providers.save_provider_settings(
+                    path, "xai", "https://api.x.ai/v1",
+                    "grok-powerful", "powerful-secret", profile="powerful",
+                )
+                with (
+                    patch.object(llm_client, "CONFIG_PATH", path),
+                    patch.object(llm_client.requests, "post", return_value=response) as post,
+                ):
+                    result = llm_client.call_llm_text(
+                        "Say hello", model="claude-override", profile="main"
+                    )
+            self.assertEqual(result, "main profile response")
+            self.assertEqual(post.call_args.kwargs["headers"]["x-api-key"], "main-secret")
+
     def test_tavily_live_search_normalizes_results(self):
         response = Mock()
         response.json.return_value = {"results": [{
