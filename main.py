@@ -617,6 +617,25 @@ TOOL_DECLARATIONS = [
         },
     },
     {
+        "name": "project_manager",
+        "description": "Creates a project plan using Powerful Brain and saves it locally; lists project/task status; updates a task as pending, in_progress, blocked or completed. Actions: plan, status/list, update, complete, start, block.",
+        "parameters": {"type": "OBJECT", "properties": {
+            "action": {"type": "STRING", "enum": ["plan", "status", "list", "update", "complete", "start", "block"]},
+            "project_id": {"type": "STRING", "description": "Short local id for the project; required except when listing all projects."},
+            "goal": {"type": "STRING", "description": "Project objective; required for plan."},
+            "task_id": {"type": "STRING", "description": "Task id such as T001; required for task updates."},
+            "status": {"type": "STRING", "enum": ["pending", "in_progress", "blocked", "completed"]},
+            "notes": {"type": "STRING", "description": "Optional task progress note."}
+        }, "required": ["action"]}
+    },
+    {
+        "name": "devsecops_audit",
+        "description": "Runs an offline static DevSecOps review of an existing project under the EDITH Projects folder. Reports hard-coded credential patterns, dynamic eval/exec, unsafe deserialization, shell=True, disabled TLS verification and unsafe YAML loading. It does not alter files or perform a penetration test.",
+        "parameters": {"type": "OBJECT", "properties": {
+            "project_name": {"type": "STRING", "description": "Existing project folder name under EDITH Projects."}
+        }, "required": ["project_name"]}
+    },
+    {
         "name": "agent_manager",
         "description": "Lists every installed EDITH agent with its exact version and enabled state. Use action=list or status to inspect. Use action=enable or disable with agent_id to toggle a specialist agent. Agent toggles are stored locally.",
         "parameters": {"type": "OBJECT", "properties": {
@@ -1675,6 +1694,35 @@ class EdithLive:
             elif name == "flight_finder":
                 r = await loop.run_in_executor(None, lambda: flight_finder(parameters=args, player=self.ui))
                 result = r or "Done."
+
+            elif name == "project_manager":
+                from agents.project_manager import run_project_manager
+                result = await asyncio.to_thread(
+                    run_project_manager,
+                    str(args.get("action") or "status"),
+                    str(args.get("project_id") or ""),
+                    str(args.get("goal") or ""),
+                    str(args.get("task_id") or ""),
+                    str(args.get("status") or ""),
+                    str(args.get("notes") or ""),
+                )
+                self.ui.show_content("PROJECT MANAGER", result)
+
+            elif name == "devsecops_audit":
+                from agents.devsecops import scan_project, format_report
+                from core.branding import prepare_projects_dir
+                project_name = str(args.get("project_name") or "").strip()
+                if not project_name or Path(project_name).name != project_name or project_name in {".", ".."}:
+                    result = "Specify an existing project folder name under EDITH Projects."
+                else:
+                    project_root = prepare_projects_dir().resolve()
+                    project_path = (project_root / project_name).resolve()
+                    if project_path.parent != project_root or not project_path.is_dir():
+                        result = "Project not found inside EDITH Projects; no files were read."
+                    else:
+                        report = await asyncio.to_thread(scan_project, project_path)
+                        result = format_report(report)
+                        self.ui.show_content("DEVSECOPS STATIC REVIEW", result)
 
             elif name == "agent_manager":
                 from core.agent_registry import format_agent_catalog, set_agent_enabled
