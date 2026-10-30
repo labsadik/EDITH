@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from core.hardware_check import audio_compatibility, desktop_compatibility, report
 from core.audio_meter import pcm16_level
-from core.narration_audio import SpeechBuffer, SpeechPlayer
+from core.narration_audio import SpeechBuffer, SpeechPlayer, WRITE_BYTES
 
 ROOT = Path(__file__).resolve().parents[1]
 
