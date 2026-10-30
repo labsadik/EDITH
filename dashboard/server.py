@@ -383,7 +383,7 @@ def _ensure_certs() -> bool:
     Returns True when a usable pair exists afterwards; False leaves the caller on
     plain HTTP, which still works — the QR code simply encodes http:// instead.
     """
-    certs = BASE_DIR / "config" / "certs"
+    certs = config_path().parent / "certs"
     key_p, crt_p = _certificate_paths()
     if key_p.exists() and crt_p.exists():
         return True
@@ -497,7 +497,7 @@ class DashboardServer:
 
     @staticmethod
     def _ssl_enabled() -> bool:
-        certs = BASE_DIR / "config" / "certs"
+        certs = config_path().parent / "certs"
         return all(p.exists() for p in _certificate_paths())
 
     def get_url(self) -> str:
