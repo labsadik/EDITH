@@ -35,6 +35,8 @@ jobs:
         run: cargo check --manifest-path sandbox-rs/Cargo.toml
       - name: Build release helper
         run: cargo build --release --manifest-path sandbox-rs/Cargo.toml
+      - name: Run native sandbox unit tests
+        run: cargo test --manifest-path sandbox-rs/Cargo.toml
       - name: Check native binary version (Unix)
         if: runner.os != 'Windows'
         run: ./sandbox-rs/target/release/edith-sandbox --version
