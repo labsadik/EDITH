@@ -73,6 +73,8 @@ for package in (
 ):
     args += ["--collect-all", package]
 args += [
+    # SDK tests are not runtime dependencies; avoid bundling pytest-only modules.
+    "--exclude-module", "google.genai.tests",
     "--hidden-import", "google.genai.types",
     "--hidden-import", "PyQt6.QtCore",
     "--hidden-import", "PyQt6.QtGui",
