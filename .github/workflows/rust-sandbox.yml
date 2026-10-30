@@ -49,6 +49,7 @@ jobs:
           $workspace = Join-Path $env:RUNNER_TEMP "edith-appcontainer-smoke-$env:GITHUB_RUN_ID"
           New-Item -ItemType Directory -Path $workspace -Force | Out-Null
           $env:EDITH_SANDBOX_BIN = Join-Path $PWD "sandbox-rs/target/release/edith-sandbox.exe"
+          $env:EDITH_SANDBOX_DEBUG = "1"
           $env:EDITH_SANDBOX_SMOKE_WORKSPACE = $workspace
           try {
             @'
