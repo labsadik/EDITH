@@ -70,8 +70,8 @@ class ProductContractTests(unittest.TestCase):
         self.assertIn('"llm_provider"', self.llm_client)
         self.assertIn('"llm_url"', self.llm_client)
         self.assertIn('"llm_model"', self.llm_client)
-        self.assertIn("def get_llm_provider()", self.llm_client)
-        self.assertIn("def get_llm_settings()", self.llm_client)
+        self.assertIn('def get_llm_provider(profile: str = "main")', self.llm_client)
+        self.assertIn('def get_llm_settings(profile: str = "main")', self.llm_client)
         self.assertIn("def call_llm(", self.llm_client)
         self.assertNotIn("self._local_endpoint", self.ui)
 
