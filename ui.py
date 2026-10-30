@@ -147,66 +147,11 @@ _THEME_DEFAULTS = {
     },
 }
 
-# Accent affects the cyan family only; status colours retain their semantic role.
-_HUE_LINKED = (
-    "BG", "PANEL", "PANEL2", "BORDER", "BORDER_B", "BORDER_A",
-    "PRI", "PRI_DIM", "PRI_GHO", "TEXT", "TEXT_DIM", "TEXT_MED",
-    "WHITE", "DARK", "BAR_BG",
-)
-_PALETTE_DEFAULTS: dict[str, str] = dict(_THEME_DEFAULTS["dark"])
-
-DEFAULT_UI_COLOR = _PALETTE_DEFAULTS["PRI"]
-
-
-def apply_ui_accent(accent_hex: str) -> bool:
-    """
-    Seçilen accent rengine göre tüm turkuaz-ailesi paleti yeniden türetir
-    (hue kaydırma — parlaklık/doygunluk oranları korunur, tasarım bozulmaz).
-    Boyanan öğeler (HUD, dalga formu, metrikler) bir sonraki karede yeni
-    rengi alır; stylesheet tabanlı paneller yeniden kurulduklarında alır.
-    """
-    import colorsys
-
-    accent_hex = (accent_hex or "").strip().lower()
-    if not (accent_hex.startswith("#") and len(accent_hex) == 7):
-        return False
-    try:
-        int(accent_hex[1:], 16)
-    except ValueError:
-        return False
-
-    def _hsv(h: str) -> tuple[float, float, float]:
-        r = int(h[1:3], 16) / 255
-        g = int(h[3:5], 16) / 255
-        b = int(h[5:7], 16) / 255
-        return colorsys.rgb_to_hsv(r, g, b)
-
-    base_h            = _hsv(_PALETTE_DEFAULTS["PRI"])[0]
-    acc_h, acc_s, _av = _hsv(accent_hex)
-    dh   = acc_h - base_h
-    grey = acc_s < 0.08   # griye yakın accent → tüm tema desaturize edilir
-
-    for key in _HUE_LINKED:
-        hex0 = _PALETTE_DEFAULTS[key]
-        h, s, v = _hsv(hex0)
-        if grey:
-            s *= 0.15
-        r, g, b = colorsys.hsv_to_rgb((h + dh) % 1.0, s, v)
-        setattr(C, key, "#{:02x}{:02x}{:02x}".format(
-            int(r * 255 + 0.5), int(g * 255 + 0.5), int(b * 255 + 0.5)))
-    return True
-
-
-def apply_ui_theme(theme: str, accent_hex: str = "") -> str:
-    """Set the base palette, then reapply the optional persisted accent."""
+def apply_ui_theme(theme: str) -> str:
+    """Apply the selected system palette without user-defined accent overrides."""
     resolved = normalise_theme(theme)
-    defaults = _THEME_DEFAULTS[resolved]
-    for key, value in defaults.items():
+    for key, value in _THEME_DEFAULTS[resolved].items():
         setattr(C, key, value)
-    _PALETTE_DEFAULTS.clear()
-    _PALETTE_DEFAULTS.update(defaults)
-    if accent_hex and accent_hex.strip().lower() != DEFAULT_UI_COLOR.lower():
-        apply_ui_accent(accent_hex)
     return resolved
 
 
@@ -2922,12 +2867,12 @@ class SetupOverlay(QWidget):
 class CustomizeOverlay(QWidget):
     """Minimal preferences sheet: identity and system appearance only."""
 
-    saved = pyqtSignal(str, str, str)
+    saved = pyqtSignal(str, str)
     theme_saved = pyqtSignal(str)
     _OW, _OH = 420, 300
 
     def __init__(self, assistant_name="EDITH", user_name="",
-                 ui_color=DEFAULT_UI_COLOR, theme_preference="system", parent=None):
+                 theme_preference="system", parent=None):
         super().__init__(parent)
         _glass_shadow(self)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -3039,7 +2984,7 @@ class CustomizeOverlay(QWidget):
         self.hide()
 
     def _save(self):
-        self.saved.emit("EDITH", self._user_input.text().strip(), "")
+        self.saved.emit("EDITH", self._user_input.text().strip())
         self.theme_saved.emit(self._sel_theme)
         self.hide()
 
@@ -3867,7 +3812,6 @@ class MainWindow(QMainWindow):
         self._display_name = _display
 
         # Keep the new default theme when an older installation saved the old cyan default.
-        self._ui_accent = DEFAULT_UI_COLOR
         # Appearance follows the system palette; manual accent editing is intentionally unavailable.
         apply_ui_theme(self._resolved_theme())
         apply_dark_theme(QApplication.instance(), C)
@@ -5747,13 +5691,7 @@ class MainWindow(QMainWindow):
         ov.show()
         self._customize_overlay = ov
 
-    def _preview_ui_color(self, hex_color: str):
-        """Canlı önizleme — tüm arayüzü yeni renge boyar (config'e YAZMAZ)."""
-        old = current_palette()
-        if apply_ui_accent(hex_color):
-            retheme_all_widgets(old, current_palette())
-
-    def _apply_name_update(self, name: str, user_name: str, _unused_color: str = ""):
+    def _apply_name_update(self, name: str, user_name: str):
         """Update identity fields without exposing manual accent controls."""
         self._assistant_name = "EDITH"
         self._display_name = UI_BRAND
