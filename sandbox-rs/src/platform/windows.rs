@@ -158,6 +158,27 @@ fn is_windows_system_directory(path: &Path) -> bool {
     normalize_windows_path(path) == normalize_windows_path(&system)
 }
 
+fn windows_path_is_within(path: &Path, root: &Path) -> bool {
+    let path = normalize_windows_path(path);
+    let root = normalize_windows_path(root);
+    path == root || path.strip_prefix(&root).is_some_and(|suffix| suffix.starts_with('\\'))
+}
+
+fn is_windows_default_readonly_path(path: &Path) -> bool {
+    if is_windows_system_directory(path) {
+        return true;
+    }
+    // Windows' standard Program Files ACLs already provide package read/execute
+    // access. Avoid propagating a new inheritable ACE through huge SDK/runtime
+    // trees (for example .NET), which is slow and unnecessary. These paths are
+    // never granted write access by EDITH.
+    ["ProgramFiles", "ProgramFiles(x86)"].iter().any(|name| {
+        std::env::var(name)
+            .ok()
+            .is_some_and(|root| windows_path_is_within(path, Path::new(&root)))
+    })
+}
+
 fn win32_path(path: &Path) -> PathBuf {
     // Keep filesystem/ACL operations on canonical paths, but pass ordinary
     // DOS/UNC paths to CreateProcess and child environment variables. cmd.exe
@@ -198,6 +219,20 @@ mod path_tests {
             normalize_windows_path(regular),
             normalize_windows_path(differently_cased)
         );
+    }
+
+    #[test]
+    fn program_files_subtrees_are_detected_without_prefix_collisions() {
+        let root = Path::new(r"C:\Program Files");
+        assert!(windows_path_is_within(
+            Path::new(r"c:\program files\dotnet"),
+            root
+        ));
+        assert!(windows_path_is_within(root, root));
+        assert!(!windows_path_is_within(
+            Path::new(r"C:\Program FilesBackup\tool"),
+            root
+        ));
     }
 
     #[test]
@@ -321,7 +356,7 @@ pub fn run(options: &Options) -> Result<i32, String> {
         grant_tree(workspace, sid, true)?;
         debug_step(&started, "granted workspace ACL");
         for path in &options.read_only {
-            if path.exists() && !path.starts_with(workspace) && !is_windows_system_directory(path) {
+            if path.exists() && !path.starts_with(workspace) && !is_windows_default_readonly_path(path) {
                 debug_step(&started, &format!("grant read-only ACL {}", path.display()));
                 grant_tree(path, sid, false)?;
                 debug_step(&started, &format!("granted read-only ACL {}", path.display()));
@@ -334,7 +369,7 @@ pub fn run(options: &Options) -> Result<i32, String> {
         };
         let app = win32_path(&app);
         if !app.is_file() { return Err(format!("Sandbox executable does not exist: {}", app.display())); }
-        if !app.starts_with(workspace) && !is_windows_system_directory(app.parent().unwrap_or(Path::new(""))) {
+        if !app.starts_with(workspace) && !is_windows_default_readonly_path(app.parent().unwrap_or(Path::new(""))) {
             grant_path(app.parent().ok_or("Executable has no parent directory")?, sid, false)?;
             grant_acl(&app, sid, GENERIC_READ | GENERIC_EXECUTE, 0)?;
         }
