@@ -51,7 +51,6 @@ _DEFAULTS = {
 
 def get_llm_provider(profile: str = "main") -> str:
     """Return the active protocol, preserving legacy local OpenAI aliases."""
-    cfg = _load_config()
     selected = load_provider_settings(CONFIG_PATH, profile)["provider"]
     if selected in {"anthropic", "xai", "groq"}:
         return selected
@@ -80,7 +79,7 @@ def ensure_ollama_running(timeout: int = 15, profile: str = "main") -> bool:
         # by the user — we just check if they're reachable.
         health = _openai_endpoint(url, "/models")
         try:
-            ok = requests.get(health, timeout=5, headers=_cloud_headers(provider, url)).status_code == 200
+            ok = requests.get(health, timeout=5, headers=_cloud_headers(provider, url, profile)).status_code == 200
             if ok:
                 print(f"[LLM] OpenAI-compatible server reachable at {url}")
             else:
@@ -158,7 +157,7 @@ def warmup_model(system_prompt: str | None = None, profile: str = "main") -> boo
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": "hi"})
 
-    if provider in {"openai", "xai"}:
+    if provider in {"openai", "xai", "groq"}:
         # OpenAI-compatible: just fire a minimal request to ensure the model is loaded.
         # No keep_alive or KV-cache priming available — server manages this internally.
         payload = {
@@ -169,7 +168,7 @@ def warmup_model(system_prompt: str | None = None, profile: str = "main") -> boo
         }
         try:
             resp = requests.post(_openai_endpoint(url, "/chat/completions"), json=payload,
-                                 headers=_cloud_headers(provider, url), timeout=180)
+                                 headers=_cloud_headers(provider, url, profile), timeout=180)
             resp.raise_for_status()
             print(f"[LLM] '{model}' ready (OpenAI-compatible server).")
             return True
@@ -221,7 +220,7 @@ def check_model_available(log: Callable | None = None, profile: str = "main") ->
     if get_llm_provider(profile) != "ollama":
         return True
 
-    url, model = get_llm_settings()
+    url, model = get_llm_settings(profile)
     try:
         resp = requests.get(f"{url}/api/tags", timeout=5)
         resp.raise_for_status()
@@ -348,7 +347,7 @@ def call_llm(
             payload["system"] = system
         try:
             resp = requests.post(f"{url}/messages", json=payload,
-                                 headers=_cloud_headers(provider, url), timeout=timeout)
+                                 headers=_cloud_headers(provider, url, profile), timeout=timeout)
             resp.raise_for_status()
             data = resp.json()
             content = "".join(str(part.get("text") or "") for part in data.get("content", [])
@@ -457,11 +456,11 @@ def call_llm_text(
         resp = requests.post(endpoint, json=payload, headers=headers, timeout=timeout)
         resp.raise_for_status()
         data = resp.json()
-        if provider in {"openai", "xai"}:
+        if provider in {"openai", "xai", "groq"}:
             return (data["choices"][0]["message"].get("content") or "").strip()
         return (data.get("message", {}).get("content") or "").strip()
     except requests.exceptions.ConnectionError as exc:
-        if provider == "ollama" and ensure_ollama_running():
+        if provider == "ollama" and ensure_ollama_running(profile=profile):
             try:
                 resp = requests.post(endpoint, json=payload, timeout=timeout)
                 resp.raise_for_status()
