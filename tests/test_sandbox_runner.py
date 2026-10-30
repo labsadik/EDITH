@@ -1,6 +1,7 @@
 """Fail-closed contract tests for the local Rust sandbox bridge."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -70,6 +71,24 @@ class SandboxRunnerTests(unittest.TestCase):
             python = sandbox_runner.ensure_project_venv(folder)
             self.assertTrue(python.is_file())
             self.assertTrue(python.is_relative_to(Path(folder).resolve()))
+
+    @unittest.skipIf(os.name == "nt", "symlink creation may require elevated Windows developer mode")
+    def test_symlinked_workspace_is_rejected_before_sandbox_creation(self):
+        with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as outside:
+            link = Path(folder) / "linked-workspace"
+            link.symlink_to(Path(outside), target_is_directory=True)
+            with patch.object(sandbox_runner, "ensure_sandbox_ready") as build:
+                with self.assertRaises(ValueError):
+                    sandbox_runner.run_sandboxed(["python", "main.py"], workspace=link)
+            build.assert_not_called()
+
+    @unittest.skipIf(os.name == "nt", "symlink creation may require elevated Windows developer mode")
+    def test_external_project_venv_symlink_is_rejected(self):
+        with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as outside:
+            workspace = Path(folder)
+            (workspace / ".venv").symlink_to(Path(outside), target_is_directory=True)
+            with self.assertRaises(sandbox_runner.SandboxUnavailable):
+                sandbox_runner.ensure_project_venv(workspace)
 
 
 if __name__ == "__main__":
