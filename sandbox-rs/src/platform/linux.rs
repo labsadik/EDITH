@@ -4,11 +4,31 @@ use std::thread;
 use std::time::{Duration, Instant};
 use crate::{add_if_exists, Options};
 
+fn is_already_mounted(path: &Path) -> bool {
+    let key = path.to_string_lossy();
+    ["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/ssl/certs", "/etc/alternatives", "/dev", "/proc", "/tmp"]
+        .iter().any(|base| key == *base || key.starts_with(&format!("{base}/")))
+}
+
+fn ensure_target_dirs(command: &mut Command, path: &Path) {
+    let mut ancestors: Vec<_> = path.ancestors().filter(|item| *item != Path::new("/")).collect();
+    ancestors.reverse();
+    for item in ancestors {
+        if !is_already_mounted(item) {
+            command.arg("--dir").arg(item);
+        }
+    }
+}
+
 fn push_ro_bind(command: &mut Command, path: &Path) {
     let key = path.to_string_lossy();
-    if ["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/ssl/certs", "/etc/alternatives"]
-        .iter().any(|base| key == *base || key.starts_with(&format!("{base}/"))) { return; }
-    add_if_exists(command, path, &key);
+    if is_already_mounted(path) { return; }
+    if path.exists() {
+        if let Some(parent) = path.parent() {
+            ensure_target_dirs(command, parent);
+        }
+        command.arg("--ro-bind").arg(path).arg(&*key);
+    }
 }
 
 pub fn run(options: &Options) -> Result<i32, String> {
@@ -30,6 +50,10 @@ pub fn run(options: &Options) -> Result<i32, String> {
     ] { add_if_exists(&mut command, Path::new(source), target); }
     command.arg("--dev").arg("/dev").arg("--proc").arg("/proc").arg("--tmpfs").arg("/tmp");
     let workspace = options.workspace.to_string_lossy().to_string();
+    if let Some(parent) = options.workspace.parent() {
+        ensure_target_dirs(&mut command, parent);
+    }
+    command.arg("--dir").arg(&workspace);
     command.arg("--bind").arg(&workspace).arg(&workspace).arg("--chdir").arg(&workspace);
     for path in &options.read_only { push_ro_bind(&mut command, path); }
     command.arg("--clearenv")
