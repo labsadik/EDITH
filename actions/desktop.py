@@ -84,19 +84,45 @@ def _build_sandbox() -> dict:
 
 
 def _execute_generated_code(code: str, player=None) -> str:
+    """Run generated desktop snippets only in an ephemeral local Rust sandbox."""
     if not code or code.strip() == "UNSAFE":
         return "This action cannot be performed safely."
+    if len(code) > 1_000_000:
+        return "Execution failed: generated desktop snippet exceeds the 1 MB sandbox limit."
 
-    # Kod temizleme
     if code.startswith("```"):
         lines = code.split("\n")
-        code  = "\n".join(lines[1:-1]).strip()
+        code = "\n".join(lines[1:-1]).strip()
 
-    from core.execution import SERVICE,format_execution
-    worker=Path(__file__).resolve().parent.parent/'core'/'desktop_worker.py'
-    receipt=SERVICE.run_argv([sys.executable,str(worker)],cwd=str(Path.home()),timeout=60,
-        source=code,input_data=json.dumps({'source':code}).encode('utf-8'))
-    return format_execution(receipt)
+    worker_source = Path(__file__).resolve().parent.parent / "core" / "desktop_worker.py"
+    try:
+        from core.sandbox_runner import run_sandboxed
+        with tempfile.TemporaryDirectory(prefix="edith-desktop-sandbox-") as folder:
+            workspace = Path(folder).resolve()
+            worker = workspace / "desktop_worker.py"
+            shutil.copy2(worker_source, worker)
+            receipt = run_sandboxed(
+                [sys.executable, "-I", str(worker)],
+                workspace=workspace, timeout=60, network=False,
+                read_only_paths=[sys.base_prefix, sys.prefix],
+                prepend_paths=[Path(sys.executable).resolve().parent],
+                input_data=json.dumps({"source": code}),
+            )
+    except Exception as exc:
+        return (
+            "Execution failed: Rust sandbox unavailable; generated code was not "
+            f"run on the host. {type(exc).__name__}: {exc}"
+        )
+
+    stdout = (receipt.stdout or "").strip()
+    stderr = (receipt.stderr or "").strip()
+    if receipt.returncode != 0:
+        return f"Execution failed (exit {receipt.returncode}).\\n{stdout}\\n{stderr}".strip()
+    return (
+        "Exit code: 0\\n"
+        + (f"STDOUT:\\n{stdout}" if stdout else "")
+        + (f"\\nSTDERR:\\n{stderr}" if stderr else "")
+    )
 
 
 def _ask_gemini_for_desktop_action(task: str) -> str:
