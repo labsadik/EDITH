@@ -117,11 +117,11 @@ def _execute_generated_code(code: str, player=None) -> str:
     stdout = (receipt.stdout or "").strip()
     stderr = (receipt.stderr or "").strip()
     if receipt.returncode != 0:
-        return f"Execution failed (exit {receipt.returncode}).\\n{stdout}\\n{stderr}".strip()
+        return f"Execution failed (exit {receipt.returncode}).\n{stdout}\n{stderr}".strip()
     return (
-        "Exit code: 0\\n"
-        + (f"STDOUT:\\n{stdout}" if stdout else "")
-        + (f"\\nSTDERR:\\n{stderr}" if stderr else "")
+        "Exit code: 0\n"
+        + (f"STDOUT:\n{stdout}" if stdout else "")
+        + (f"\nSTDERR:\n{stderr}" if stderr else "")
     )
 
 
