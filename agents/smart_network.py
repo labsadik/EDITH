@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import requests
+from core.app_paths import config_path
 
 AGENT_ID = "smart_network"
 AGENT_VERSION = "2.0.0"
@@ -103,7 +104,7 @@ def _interfaces() -> dict[str, dict[str, Any]]:
 
 
 def _config_path() -> Path:
-    return Path(__file__).resolve().parent.parent / "config" / "api_keys.json"
+    return config_path()
 
 
 def _ha_credentials(required: bool = True) -> tuple[str, str] | None:
