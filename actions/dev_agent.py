@@ -37,6 +37,62 @@ def _get_model(model_name: str | None = None):
     return _W()
 
 
+def _safe_project_path(project_dir: Path, relative_path: str) -> Path:
+    """Resolve a model-generated path without allowing traversal or symlink escape."""
+    root = Path(project_dir).expanduser().resolve()
+    raw = str(relative_path or "").strip()
+    candidate = Path(raw)
+    if not raw or candidate.is_absolute() or any(part in {"..", ""} for part in candidate.parts):
+        raise ValueError(f"Unsafe project-relative path: {raw!r}")
+    target = (root / candidate).resolve()
+    if target != root and root not in target.parents:
+        raise ValueError(f"Project path escapes workspace: {raw!r}")
+    current = root
+    for part in candidate.parts[:-1]:
+        current = current / part
+        if current.exists() and current.is_symlink():
+            raise ValueError(f"Project path traverses a symlink: {raw!r}")
+    if target.exists() and target.is_symlink():
+        raise ValueError(f"Project file is a symlink: {raw!r}")
+    return target
+
+
+def _validate_project_plan(plan: dict) -> dict:
+    """Validate model-produced paths, entry point and dependency shape before writes."""
+    if not isinstance(plan, dict):
+        raise ValueError("Planner must return a JSON object")
+    files = plan.get("files")
+    if not isinstance(files, list) or not files or len(files) > 150:
+        raise ValueError("Planner must return between 1 and 150 project files")
+    paths = []
+    for item in files:
+        if not isinstance(item, dict):
+            raise ValueError("Every project file entry must be an object")
+        path = str(item.get("path") or "")
+        # Path root is validated again before each file read/write.
+        _safe_project_path(Path.cwd(), path) if Path(path).is_absolute() else None
+        if not path or Path(path).is_absolute() or ".." in Path(path).parts:
+            raise ValueError(f"Unsafe project path in plan: {path!r}")
+        if path in paths:
+            raise ValueError(f"Duplicate project path in plan: {path!r}")
+        paths.append(path)
+    entry_point = str(plan.get("entry_point") or "")
+    if not entry_point or Path(entry_point).is_absolute() or ".." in Path(entry_point).parts:
+        raise ValueError("Planner returned an unsafe entry point")
+    if entry_point not in paths:
+        raise ValueError("Planner entry point must be included in the file list")
+    dependencies = plan.get("dependencies", [])
+    if not isinstance(dependencies, list) or len(dependencies) > 80:
+        raise ValueError("Planner dependency list must contain at most 80 package names")
+    if any(not isinstance(item, str) for item in dependencies):
+        raise ValueError("Every dependency must be a package name string")
+    run_command = str(plan.get("run_command") or f"python {entry_point}")
+    if not run_command.strip() or len(run_command) > 2000:
+        raise ValueError("Planner returned an invalid run command")
+    plan["run_command"] = run_command
+    return plan
+
+
 def _strip_fences(text: str) -> str:
     text = text.strip()
     text = re.sub(r"^```[a-zA-Z]*\r?\n?", "", text)
@@ -224,7 +280,7 @@ Code for {file_path}:"""
         response = model.generate_content(prompt)
         code = _strip_fences(response.text)
 
-        full_path = project_dir / file_path
+        full_path = _safe_project_path(project_dir, file_path)
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_text(code, encoding="utf-8")
 
@@ -388,7 +444,7 @@ Fixed code for {fix_path}:"""
             response = model.generate_content(prompt)
             fixed = _strip_fences(response.text)
 
-            full_path = project_dir / fix_path
+            full_path = _safe_project_path(project_dir, fix_path)
             full_path.parent.mkdir(parents=True, exist_ok=True)
             full_path.write_text(fixed, encoding="utf-8")
 
@@ -418,7 +474,7 @@ def _build_project(
 
     log("Planning project structure...")
     try:
-        plan = _plan_project(description, language)
+        plan = _validate_project_plan(_plan_project(description, language))
     except RateLimitError:
         msg = "Rate limit reached, sir. Please try again in a moment."
         if speak: speak(msg)
