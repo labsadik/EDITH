@@ -157,7 +157,7 @@ def run_sandboxed(
         try:
             candidate = Path(path).expanduser().resolve()
             key = os.path.normcase(str(candidate))
-            if candidate.is_dir() and candidate != root and root not in candidate.parents and key not in path_seen:
+            if candidate.is_dir() and candidate != root and key not in path_seen:
                 path_dirs.append(candidate)
                 path_seen.add(key)
         except OSError:
