@@ -4185,7 +4185,8 @@ class MainWindow(QMainWindow):
         self._setup_backdrop: ModalBackdrop | None = None
         self._ready = self._check_config()
         if not self._ready:
-            self._show_setup()
+            # Let the main window paint once before capturing the blurred modal backdrop.
+            QTimer.singleShot(120, self._show_setup)
 
         sc_mute = QShortcut(QKeySequence("F4"), self)
         sc_mute.activated.connect(self._toggle_mute)
