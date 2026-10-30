@@ -9,6 +9,14 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+sys.path.insert(0, str(ROOT))
+from core.app_icon import build_edith_icon
+
+# Generate the canonical EDITH E-monogram once and reuse it for the app and
+# installer so Windows taskbar, executable and setup wizard cannot diverge.
+ICON_FILE = ROOT / "build" / "edith.ico"
+if not build_edith_icon(ICON_FILE):
+    raise SystemExit("Could not generate the EDITH icon. Verify that Pillow is installed.")
 WINDOWS = os.name == "nt"
 BINARY = "edith-sandbox.exe" if WINDOWS else "edith-sandbox"
 SANDBOX = ROOT / "sandbox-rs" / "target" / "release" / BINARY
@@ -47,14 +55,14 @@ args = [
 ]
 if WINDOWS:
     args += [
-        "--icon", str(ROOT / "config" / "assistant.ico"),
+        "--icon", str(ICON_FILE),
         "--version-file", str(ROOT / "installer" / "windows" / "version_info.txt"),
     ]
 elif sys.platform == "darwin":
     from PIL import Image
     icon_file = ROOT / "build" / "edith.icns"
     icon_file.parent.mkdir(parents=True, exist_ok=True)
-    with Image.open(ROOT / "config" / "assistant.ico") as source_icon:
+    with Image.open(ICON_FILE) as source_icon:
         source_icon.convert("RGBA").save(
             icon_file, format="ICNS",
             sizes=[(16, 16), (32, 32), (64, 64), (128, 128), (256, 256), (512, 512)],
