@@ -46,6 +46,33 @@ class HomeAssistantSetupTests(unittest.TestCase):
                 "http://user:pass@ha.local:8123", "token"
             )
 
+    def test_pair_home_assistant_verifies_before_saving(self):
+        with (
+            patch.object(smart_network, "test_home_assistant_connection",
+                         return_value={"ok": True, "connected": True}) as verify,
+            patch.object(smart_network, "configure_home_assistant",
+                         return_value={"saved": True, "token_storage": "keyring"}) as save,
+        ):
+            result = smart_network.pair_home_assistant(
+                "http://ha.local:8123", "secret-token"
+            )
+        verify.assert_called_once_with("http://ha.local:8123", "secret-token", timeout=5.0)
+        save.assert_called_once_with("http://ha.local:8123", "secret-token")
+        self.assertTrue(result["verified"])
+        self.assertEqual(result["token_storage"], "keyring")
+
+    def test_pair_home_assistant_does_not_save_rejected_credentials(self):
+        with (
+            patch.object(smart_network, "test_home_assistant_connection",
+                         side_effect=RuntimeError("Home Assistant rejected this token")),
+            patch.object(smart_network, "configure_home_assistant") as save,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "rejected this token"):
+                smart_network.pair_home_assistant(
+                    "http://ha.local:8123", "bad-token"
+                )
+        save.assert_not_called()
+
     def test_status_without_pairing_is_a_structured_setup_state(self):
         with (
             patch.object(smart_network, "_ha_credentials", return_value=None),
