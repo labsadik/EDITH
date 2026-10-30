@@ -8,6 +8,8 @@ mod platform;
 struct Options {
     workspace: PathBuf,
     timeout: u64,
+    memory_mb: u64,
+    cpu_seconds: u64,
     network: bool,
     read_only: Vec<PathBuf>,
     path_dirs: Vec<PathBuf>,
@@ -16,7 +18,7 @@ struct Options {
 }
 
 fn usage() -> &'static str {
-    "Usage: edith-sandbox run --workspace DIR [--timeout SECONDS] [--network deny|allow] [--read-only PATH]... [--path-dir PATH]... -- PROGRAM [ARG...]\nThe default policy is no network access and write access only to the workspace."
+    "Usage: edith-sandbox run --workspace DIR [--timeout SECONDS] [--memory-mb MB] [--cpu-seconds SECONDS] [--network deny|allow] [--read-only PATH]... [--path-dir PATH]... -- PROGRAM [ARG...]\nThe default policy is no network access, bounded CPU/memory, and write access only to the workspace."
 }
 
 fn parse_args() -> Result<Options, String> {
@@ -29,6 +31,8 @@ fn parse_args() -> Result<Options, String> {
     if command != "run" { return Err(usage().to_string()); }
     let mut workspace = None;
     let mut timeout = 60u64;
+    let mut memory_mb = 2048u64;
+    let mut cpu_seconds: Option<u64> = None;
     let mut network = false;
     let mut read_only = Vec::new();
     let mut path_dirs = Vec::new();
@@ -40,6 +44,8 @@ fn parse_args() -> Result<Options, String> {
             "--" => passthrough = true,
             "--workspace" => workspace = Some(PathBuf::from(args.next().ok_or("--workspace requires a path")?)),
             "--timeout" => timeout = args.next().ok_or("--timeout requires seconds")?.parse::<u64>().map_err(|_| "Invalid timeout")?.clamp(1, 3600),
+            "--memory-mb" => memory_mb = args.next().ok_or("--memory-mb requires megabytes")?.parse::<u64>().map_err(|_| "Invalid memory limit")?.clamp(64, 8192),
+            "--cpu-seconds" => cpu_seconds = Some(args.next().ok_or("--cpu-seconds requires seconds")?.parse::<u64>().map_err(|_| "Invalid CPU limit")?.clamp(1, 3600)),
             "--network" => network = match args.next().as_deref() { Some("deny") => false, Some("allow") => true, _ => return Err("--network must be deny or allow".into()) },
             "--read-only" => read_only.push(PathBuf::from(args.next().ok_or("--read-only requires a path")?)),
             "--path-dir" => path_dirs.push(PathBuf::from(args.next().ok_or("--path-dir requires a path")?)),
@@ -67,7 +73,10 @@ fn parse_args() -> Result<Options, String> {
         let canonical = path.canonicalize().map_err(|e| format!("PATH directory does not exist: {} ({e})", path.display()))?;
         if canonical.is_dir() { validated_path.push(canonical); }
     }
-    Ok(Options { workspace, timeout, network, read_only: validated, path_dirs: validated_path, program, args: command_vec })
+    Ok(Options {
+        workspace, timeout, memory_mb, cpu_seconds: cpu_seconds.unwrap_or(timeout).clamp(1, 3600),
+        network, read_only: validated, path_dirs: validated_path, program, args: command_vec,
+    })
 }
 
 fn main() -> ExitCode {

@@ -72,6 +72,26 @@ class AgentRegistryTests(unittest.TestCase):
         self.assertIn("device_security", catalog)
         self.assertIn("smart_network", catalog)
 
+    def test_plugin_manager_records_expose_agents_and_persist_toggles(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(
+            agent_registry, "CONFIG_PATH", Path(folder) / "agents.json"
+        ):
+            changes = []
+            records = agent_registry.plugin_manager_records(changes.append)
+            expected = agent_registry.list_agents()
+            self.assertEqual(len(records), len(expected))
+
+            by_id = {record["agent_id"]: record for record in records}
+            self.assertEqual(set(by_id), {agent["id"] for agent in expected})
+            self.assertIn("v1.0.0", by_id["smart_network"]["name"])
+            self.assertTrue(all(record["valid"] for record in records))
+            self.assertTrue(all(record["kind"] == "agent" for record in records))
+
+            by_id["smart_network"]["toggle"](False)
+            self.assertFalse(agent_registry.get_agent("smart_network")["enabled"])
+            self.assertEqual(changes[0]["id"], "smart_network")
+            self.assertEqual(changes[0]["status"], "disabled")
+
 
 if __name__ == "__main__":
     unittest.main()

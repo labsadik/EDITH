@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::process::Command;
+use std::os::unix::process::CommandExt;
 use std::thread;
 use std::time::{Duration, Instant};
 use crate::{add_if_exists, Options};
@@ -66,6 +67,25 @@ pub fn run(options: &Options) -> Result<i32, String> {
     path_dirs.extend(["/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"].iter().map(|s| s.to_string()));
     command.arg("--setenv").arg("PATH").arg(path_dirs.join(":"));
     command.arg("--").arg(&options.program).args(&options.args);
+    let memory_bytes = options.memory_mb.saturating_mul(1024 * 1024);
+    let cpu_seconds = options.cpu_seconds;
+    unsafe {
+        command.pre_exec(move || {
+            let memory = libc::rlimit { rlim_cur: memory_bytes as libc::rlim_t, rlim_max: memory_bytes as libc::rlim_t };
+            if libc::setrlimit(libc::RLIMIT_AS, &memory) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            let cpu = libc::rlimit { rlim_cur: cpu_seconds as libc::rlim_t, rlim_max: cpu_seconds as libc::rlim_t };
+            if libc::setrlimit(libc::RLIMIT_CPU, &cpu) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            let file_size = libc::rlimit { rlim_cur: 1024 * 1024 * 1024, rlim_max: 1024 * 1024 * 1024 };
+            if libc::setrlimit(libc::RLIMIT_FSIZE, &file_size) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
     let mut child = command.spawn().map_err(|e| format!("Could not start bubblewrap. Install bubblewrap and enable unprivileged user namespaces: {e}"))?;
     let started = Instant::now();
     loop {

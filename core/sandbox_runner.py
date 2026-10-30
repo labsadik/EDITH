@@ -142,6 +142,8 @@ def run_sandboxed(
     read_only_paths: Sequence[str | Path] = (),
     prepend_paths: Sequence[str | Path] = (),
     input_data: str | None = None,
+    memory_mb: int = 2048,
+    cpu_seconds: int | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run exact argv with workspace-only writes, clean child env and bounded time."""
     if not argv:
@@ -158,7 +160,10 @@ def run_sandboxed(
     limit = max(1, min(int(timeout), 3600))
     command = [
         str(binary), "run", "--workspace", str(root),
-        "--timeout", str(limit), "--network", "allow" if network else "deny",
+        "--timeout", str(limit),
+        "--memory-mb", str(max(64, min(int(memory_mb), 8192))),
+        "--cpu-seconds", str(max(1, min(int(cpu_seconds if cpu_seconds is not None else limit), 3600))),
+        "--network", "allow" if network else "deny",
     ]
     exposed: set[str] = set()
     for path in [*read_only_paths, *_runtime_read_paths(root)]:

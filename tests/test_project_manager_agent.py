@@ -51,6 +51,29 @@ class ProjectManagerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 project_manager.update_task("demo", "T001", "running")
 
+    def test_unavailable_ollama_returns_actionable_error_and_does_not_save(self):
+        with tempfile.TemporaryDirectory() as folder, \
+             patch.object(project_manager, "STORE", Path(folder) / "projects.json"), \
+             patch("core.brain_router.call_brain_text", side_effect=RuntimeError(
+                 "Cannot connect to Ollama at http://localhost:11434. Make sure Ollama is installed."
+             )):
+            result = project_manager.run_project_manager(
+                "plan", "edith-agent-test", "Build a Hello World app"
+            )
+            self.assertIn("Project plan was NOT saved", result)
+            self.assertIn("POWERFUL BRAIN", result)
+            self.assertIn("ollama serve", result.lower())
+            self.assertFalse((Path(folder) / "projects.json").exists())
+
+    def test_status_for_project_whose_plan_failed_is_user_friendly(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(
+            project_manager, "STORE", Path(folder) / "projects.json"
+        ):
+            result = project_manager.run_project_manager("status", "edith-agent-test")
+            self.assertIn("No saved project named 'edith-agent-test'", result)
+            self.assertIn("action=plan", result)
+            self.assertNotIn("Traceback", result)
+
 
 if __name__ == "__main__":
     unittest.main()

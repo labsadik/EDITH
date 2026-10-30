@@ -1314,101 +1314,44 @@ class ApiKeyOverlay(QWidget):
         """
 
     def _refresh_local_llm_config(self) -> tuple[str, str, str]:
-        """Read the same LLM provider, URL and model that core.llm_client uses."""
+        """Read the exact Powerful Brain provider profile used by runtime."""
         try:
-            from core.llm_client import get_llm_provider, get_llm_settings
-
-            provider = get_llm_provider()
-            url, model = get_llm_settings()
-            self._local_provider = str(provider or "ollama").strip().lower()
-            self._local_url = str(url or "").rstrip("/")
-            self._local_model = str(model or "").strip()
+            from core.provider_registry import load_provider_settings, provider_spec
+            settings = load_provider_settings(API_FILE, "powerful")
+            self._local_provider = str(settings.get("provider") or "ollama").strip().lower()
+            self._local_url = str(settings.get("url") or "").rstrip("/")
+            self._local_model = str(settings.get("model") or "").strip()
+            provider_label = provider_spec(self._local_provider).label
         except Exception as exc:
             self._local_provider = "unknown"
             self._local_url = ""
             self._local_model = ""
-            self._local_info.setText(f"LOCAL AGENT CONNECTION  CONFIG ERROR · {type(exc).__name__}")
+            provider_label = "Unknown"
+            self._local_info.setText(f"POWERFUL BRAIN CONNECTION  CONFIG ERROR · {type(exc).__name__}")
             self._local_info.setStyleSheet(
                 f"color: {C.RED}; background: transparent; border: none; font-weight: 700;"
             )
-
-        provider_label = {
-            "ollama": "Ollama",
-            "openai": "OpenAI-compatible server",
-        }.get(self._local_provider, self._local_provider or "Unknown")
-        self._local_provider_info.setText(f"LOCAL AGENT PROVIDER  {provider_label}")
-        self._local_model_info.setText(f"LOCAL AGENT MODEL  {self._local_model or 'not configured'}")
-        self._local_url_info.setText(f"LOCAL AGENT ENDPOINT  {self._local_url or 'not configured'}")
+        self._local_provider_info.setText(f"POWERFUL BRAIN PROVIDER  {provider_label}")
+        self._local_model_info.setText(f"POWERFUL BRAIN MODEL  {self._local_model or 'not configured'}")
+        self._local_url_info.setText(f"POWERFUL BRAIN ENDPOINT  {self._local_url or 'not configured'}")
         return self._local_provider, self._local_url, self._local_model
 
     def _probe_local_connection(self, provider: str, url: str, model: str):
-        """Check the configured backend, not a separately hard-coded Ollama URL."""
+        """Use the same authenticated completion probe as the provider workspace."""
         try:
-            import requests
-
-            if not url or not model:
-                raise RuntimeError("llm_url or llm_model is missing from config/api_keys.json.")
-
-            if provider == "ollama":
-                response = requests.get(f"{url}/api/tags", timeout=4)
-            elif provider == "openai":
-                response = requests.get(f"{url}/v1/models", timeout=4)
-            else:
-                raise RuntimeError(f"Unsupported configured provider: {provider}")
-
-            response.raise_for_status()
-            data = response.json()
-            if provider == "ollama":
-                available = [
-                    str(item.get("name") or "").strip()
-                    for item in data.get("models", [])
-                    if isinstance(item, dict)
-                ]
-                model_base = model.split(":")[0]
-                found = any(
-                    name == model or name == model_base or name.startswith(model_base + ":")
-                    for name in available
-                )
-                if found:
-                    detail = "Server online · configured model is installed."
-                    ok = True
-                else:
-                    detail = "Server online, but configured model was not found in its model list."
-                    ok = False
-            else:
-                model_items = data.get("data", []) if isinstance(data, dict) else []
-                available = [
-                    str(item.get("id") or "").strip()
-                    for item in model_items if isinstance(item, dict)
-                ]
-                if not available:
-                    detail = "OpenAI-compatible endpoint online · model list unavailable; use TEST LOCAL LLM to verify inference."
-                    ok = True
-                else:
-                    found = any(
-                        name == model or name.rsplit("/", 1)[-1] == model
-                        for name in available
-                    )
-                    if found:
-                        detail = "OpenAI-compatible endpoint online · configured model appears available."
-                        ok = True
-                    else:
-                        detail = "Server online, but configured model was not found in /v1/models."
-                        ok = False
-
+            from core.provider_registry import probe_provider, provider_api_key
+            key = provider_api_key(provider, API_FILE, "powerful")
+            outcome = probe_provider(provider, url, model, api_key=key, timeout=25.0)
+            ok = bool(outcome.get("ok"))
+            detail = (
+                f"Live inference succeeded · {outcome.get('latency_ms', 0)} ms."
+                if ok else str(outcome.get("error") or "Provider probe failed.")
+            )
             self._local_connection_result.emit(ok, provider, url, model, detail)
         except Exception as exc:
-            try:
-                import requests as _requests
-                if isinstance(exc, _requests.exceptions.Timeout):
-                    detail = "Connection check timed out."
-                elif isinstance(exc, _requests.exceptions.ConnectionError):
-                    detail = "Cannot reach the configured local LLM endpoint."
-                else:
-                    detail = f"{type(exc).__name__}: {str(exc)[:150]}"
-            except Exception:
-                detail = f"{type(exc).__name__}: {str(exc)[:150]}"
-            self._local_connection_result.emit(False, provider, url, model, detail)
+            self._local_connection_result.emit(
+                False, provider, url, model, f"{type(exc).__name__}: {str(exc)[:180]}"
+            )
 
     def _finish_local_connection(
         self, ok: bool, provider: str, url: str, model: str, detail: str
@@ -1456,10 +1399,12 @@ class ApiKeyOverlay(QWidget):
     def _probe_local_llm(self, provider: str, url: str, model: str):
         started = time.perf_counter()
         try:
-            from core.llm_client import call_llm, get_llm_provider, get_llm_settings
+            from core.llm_client import call_llm
+            from core.provider_registry import load_provider_settings
 
-            if (provider, url, model) != (get_llm_provider(), *get_llm_settings()):
-                raise RuntimeError("Local LLM config changed during the test; reopen Settings.")
+            settings = load_provider_settings(API_FILE, "powerful")
+            if (provider, url, model) != (settings["provider"], settings["url"], settings["model"]):
+                raise RuntimeError("Powerful Brain config changed during the test; reopen Settings.")
             result = call_llm(
                 [{"role": "user", "content": "Reply with only the word OK."}],
                 timeout=45,
@@ -1486,7 +1431,8 @@ class ApiKeyOverlay(QWidget):
             self._local_latency_status.setText("LOCAL MODEL INFERENCE  NOT VERIFIED")
             return
         if ok:
-            provider_label = "Ollama" if current_provider == "ollama" else "OpenAI-compatible"
+            from core.provider_registry import provider_spec
+            provider_label = provider_spec(current_provider).label
             self._local_info.setText(
                 f"LOCAL AGENT CONNECTION  ONLINE · {provider_label} inference succeeded"
             )
@@ -3790,6 +3736,7 @@ class RemoteKeyOverlay(QWidget):
 
 
 class MainWindow(QMainWindow):
+    browser_open_signal = pyqtSignal(str)
     _url_prompt_sig = pyqtSignal(object)
     voice_mode_signal = pyqtSignal(str)
     open_api_key_settings_signal = pyqtSignal()
@@ -3820,6 +3767,8 @@ class MainWindow(QMainWindow):
         self._confirmation_busy = False
         self._confirmation_queue = []
         self.voice_mode_signal.connect(self.set_voice_mode_display)
+        self.browser_open_signal.connect(self._open_embedded_browser)
+        self._embedded_browser_dialog = None
         self.task_status_signal.connect(self._update_task_status)
         self.task_detail_signal.connect(self._update_task_details)
         self.text_send_failed_signal.connect(self._restore_unsent_command)
@@ -5741,6 +5690,19 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self._log.append_log(f"ERR: Config save failed — {type(exc).__name__}")
 
+    def _open_embedded_browser(self, url: str = "about:blank"):
+        """Open or reuse EDITH's persistent embedded browser window."""
+        try:
+            from core.embedded_browser import EmbeddedBrowserDialog
+            if self._embedded_browser_dialog is None:
+                self._embedded_browser_dialog = EmbeddedBrowserDialog(self)
+            self._embedded_browser_dialog.navigate(url)
+        except Exception as exc:
+            self._log.append_log(
+                f"ERR: Embedded browser unavailable ({type(exc).__name__}). "
+                "Install PyQt6-WebEngine and restart EDITH."
+            )
+
     def _open_plugin_manager(self):
         plugins = self.get_plugins() if self.get_plugins else []
         cw = self.centralWidget()
@@ -6082,6 +6044,10 @@ class EdithUI:
     def show_content(self, title: str, text: str):
         """Thread-safe: display content in the panel below the HUD."""
         self._emit_if_open("_content_sig", title[:48], text[:4000])
+
+    def open_embedded_browser(self, url: str = "about:blank") -> None:
+        """Thread-safe request to open EDITH's embedded browser."""
+        self._emit_if_open("browser_open_signal", str(url or "about:blank"))
 
     def confirm_sensitive_action(self, title: str, details: str, timeout: float = 180.0) -> bool:
         """Ask the user through the Qt GUI; timeout/cancellation never authorizes the action."""

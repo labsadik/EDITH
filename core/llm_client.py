@@ -197,8 +197,10 @@ def warmup_model(system_prompt: str | None = None, profile: str = "powerful") ->
         "messages":   messages,
         "stream":     False,
         "keep_alive": -1,
+        "think": False,
         # num_gpu:99 → push ALL transformer layers to GPU (Ollama caps at available)
         # This is safe even without a GPU — Ollama silently ignores if n_gpu_layers=0
+        "think": False,
         "options":    {"num_predict": 1, "num_gpu": 99},
     }
     try:
@@ -278,199 +280,290 @@ def _cloud_headers(provider: str, url: str, profile: str = "powerful") -> dict[s
 
 
 def _anthropic_messages(messages: list) -> tuple[str, list[dict]]:
-    system = "\n".join(str(item.get("content") or "") for item in messages if item.get("role") == "system")
-    chat = [{"role": "assistant" if item.get("role") == "assistant" else "user",
-             "content": str(item.get("content") or "")}
-            for item in messages if item.get("role") != "system"]
+    """Convert EDITH/OpenAI-style history into Anthropic Messages content blocks."""
+    system = "\n".join(
+        str(item.get("content") or "")
+        for item in messages if item.get("role") == "system"
+    )
+    chat: list[dict] = []
+    for item in messages:
+        role = str(item.get("role") or "user")
+        if role == "system":
+            continue
+        if role == "tool":
+            tool_call_id = str(item.get("tool_call_id") or item.get("id") or "")
+            if not tool_call_id:
+                # Preserve the result as ordinary user text if an upstream caller
+                # supplied incomplete tool metadata.
+                chat.append({"role": "user", "content": str(item.get("content") or "")})
+            else:
+                chat.append({"role": "user", "content": [{
+                    "type": "tool_result", "tool_use_id": tool_call_id,
+                    "content": str(item.get("content") or ""),
+                }]})
+            continue
+        content = str(item.get("content") or "")
+        if role == "assistant" and item.get("tool_calls"):
+            blocks: list[dict] = []
+            if content.strip():
+                blocks.append({"type": "text", "text": content})
+            for call in item.get("tool_calls") or []:
+                function = call.get("function") or {}
+                arguments = function.get("arguments") or {}
+                if isinstance(arguments, str):
+                    try:
+                        arguments = json.loads(arguments)
+                    except json.JSONDecodeError:
+                        arguments = {}
+                blocks.append({
+                    "type": "tool_use",
+                    "id": str(call.get("id") or ""),
+                    "name": str(function.get("name") or ""),
+                    "input": arguments if isinstance(arguments, dict) else {},
+                })
+            chat.append({"role": "assistant", "content": blocks})
+        else:
+            chat.append({
+                "role": "assistant" if role == "assistant" else "user",
+                "content": content,
+            })
     return system, chat or [{"role": "user", "content": "Hello"}]
+
+
+def _anthropic_tools(tools: list | None) -> list[dict]:
+    """Convert OpenAI function declarations into Anthropic input_schema tools."""
+    converted = []
+    for item in tools or []:
+        if not isinstance(item, dict):
+            continue
+        function = item.get("function") if item.get("type") == "function" else item
+        if not isinstance(function, dict):
+            continue
+        name = str(function.get("name") or "").strip()
+        if not name:
+            continue
+        schema = function.get("parameters") or {"type": "object", "properties": {}}
+        if not isinstance(schema, dict) or schema.get("type") != "object":
+            schema = {"type": "object", "properties": {}}
+        converted.append({
+            "name": name,
+            "description": str(function.get("description") or "")[:1000],
+            "input_schema": schema,
+        })
+    return converted
+
+
+def _text_from_content(value) -> str:
+    """Read visible text blocks from OpenAI-compatible and Anthropic responses."""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        chunks = []
+        for part in value:
+            if isinstance(part, str):
+                chunks.append(part)
+            elif isinstance(part, dict) and part.get("type") in {"text", "output_text"}:
+                text = part.get("text") or part.get("content") or ""
+                if isinstance(text, str):
+                    chunks.append(text)
+        return " ".join(x.strip() for x in chunks if x and x.strip()).strip()
+    if isinstance(value, dict):
+        nested = value.get("text") or value.get("output_text") or value.get("content")
+        if isinstance(nested, (str, list)):
+            return _text_from_content(nested)
+    return ""
+
+
+def _ollama_chat(url: str, payload: dict, timeout: int) -> dict:
+    """Call Ollama and retry once without think:false for older API versions."""
+    endpoint = f"{url.rstrip('/')}/api/chat"
+    response = requests.post(endpoint, json=payload, timeout=timeout)
+    if response.status_code == 400 and "think" in payload:
+        retry_payload = dict(payload)
+        retry_payload.pop("think", None)
+        response = requests.post(endpoint, json=retry_payload, timeout=timeout)
+    response.raise_for_status()
+    data = response.json()
+    message = data.get("message") or {}
+    content = _text_from_content(message.get("content"))
+    calls = message.get("tool_calls") or []
+    if not content and not calls:
+        if message.get("thinking"):
+            raise RuntimeError(
+                "Ollama returned reasoning but no final text. The request was retried "
+                "with think:false; choose a model that supports a final text response."
+            )
+        raise RuntimeError("Ollama connected but returned an empty final response.")
+    return {"content": content, "tool_calls": calls}
 
 
 def call_llm(
     messages: list,
-    tools:    list | None = None,
-    timeout:  int = 120,
+    tools: list | None = None,
+    timeout: int = 120,
     max_tokens: int = 150,
     profile: str = "powerful",
 ) -> dict:
-    """
-    Non-streaming chat request.  Routes to Ollama or OpenAI-compatible backend.
-
-    Returns:
-        {"content": str, "tool_calls": list}
-    """
+    """Non-streaming chat routed through the selected profile and provider."""
     url, model = get_llm_settings(profile)
-    provider   = get_llm_provider(profile)
+    provider = get_llm_provider(profile)
 
     if provider in {"openai", "xai", "groq"}:
-        endpoint = _openai_endpoint(url, "/chat/completions")
-        payload: dict = {
-            "model":      model,
-            "messages":   messages,
-            "stream":     False,
-            "max_tokens": max_tokens,
-        }
+        payload: dict = {"model": model, "messages": messages, "stream": False,
+                         "max_tokens": max(32, int(max_tokens))}
         if tools:
-            payload["tools"]       = tools
+            payload["tools"] = tools
             payload["tool_choice"] = "auto"
         try:
-            resp = requests.post(endpoint, json=payload, headers=_cloud_headers(provider, url, profile), timeout=timeout)
+            resp = requests.post(_openai_endpoint(url, "/chat/completions"), json=payload,
+                                 headers=_cloud_headers(provider, url, profile), timeout=timeout)
             resp.raise_for_status()
-            choice = resp.json().get("choices", [{}])[0]
-            msg    = choice.get("message", {})
-            # OpenAI tool_calls format → normalise to Ollama-style
-            raw_tc  = msg.get("tool_calls") or []
-            tc_list = [
-                {
-                    "id":       t.get("id", ""),
-                    "function": {
-                        "name":      t["function"]["name"],
-                        "arguments": (
-                            json.loads(t["function"]["arguments"])
-                            if isinstance(t["function"].get("arguments"), str)
-                            else t["function"].get("arguments", {})
-                        ),
-                    },
-                }
-                for t in raw_tc
-            ]
-            return {
-                "content":    (msg.get("content") or "").strip(),
-                "tool_calls": tc_list,
-            }
-        except Exception as e:
-            raise RuntimeError(f"OpenAI-compatible LLM call failed: {e}")
+            choices = resp.json().get("choices") or []
+            if not choices:
+                raise RuntimeError("Provider returned no completion choices")
+            msg = choices[0].get("message") or {}
+            raw_calls = msg.get("tool_calls") or []
+            tc_list = []
+            for tool_call in raw_calls:
+                function = tool_call.get("function") or {}
+                arguments = function.get("arguments", {})
+                if isinstance(arguments, str):
+                    try:
+                        arguments = json.loads(arguments)
+                    except json.JSONDecodeError:
+                        arguments = {}
+                tc_list.append({"id": tool_call.get("id", ""),
+                                "function": {"name": function.get("name", ""),
+                                             "arguments": arguments if isinstance(arguments, dict) else {}}})
+            content = _text_from_content(msg.get("content") or msg.get("refusal"))
+            if not content and not tc_list:
+                raise RuntimeError("Provider returned an empty user-visible response")
+            return {"content": content, "tool_calls": tc_list}
+        except Exception as exc:
+            raise RuntimeError(f"{provider} LLM call failed: {type(exc).__name__}: {exc}") from exc
 
     if provider == "anthropic":
         system, chat = _anthropic_messages(messages)
-        payload: dict = {"model": model, "max_tokens": max_tokens, "messages": chat}
+        payload = {"model": model, "max_tokens": max(32, int(max_tokens)), "messages": chat}
+        anthropic_tools = _anthropic_tools(tools)
         if system:
             payload["system"] = system
+        if anthropic_tools:
+            payload["tools"] = anthropic_tools
         try:
-            resp = requests.post(f"{url}/messages", json=payload,
+            resp = requests.post(f"{url.rstrip('/')}/messages", json=payload,
                                  headers=_cloud_headers(provider, url, profile), timeout=timeout)
             resp.raise_for_status()
-            data = resp.json()
-            content = "".join(str(part.get("text") or "") for part in data.get("content", [])
-                              if isinstance(part, dict) and part.get("type") == "text")
-            return {"content": content.strip(), "tool_calls": []}
-        except Exception as e:
-            raise RuntimeError(f"Anthropic LLM call failed: {e}")
+            blocks = resp.json().get("content", [])
+            content = _text_from_content(blocks)
+            tool_calls = []
+            for block in blocks if isinstance(blocks, list) else []:
+                if not isinstance(block, dict) or block.get("type") != "tool_use":
+                    continue
+                arguments = block.get("input") or {}
+                tool_calls.append({
+                    "id": str(block.get("id") or ""),
+                    "function": {
+                        "name": str(block.get("name") or ""),
+                        "arguments": arguments if isinstance(arguments, dict) else {},
+                    },
+                })
+            if not content and not tool_calls:
+                raise RuntimeError("Anthropic returned an empty user-visible response")
+            return {"content": content, "tool_calls": tool_calls}
+        except Exception as exc:
+            raise RuntimeError(f"Anthropic LLM call failed: {type(exc).__name__}: {exc}") from exc
 
-    # ── Ollama ──────────────────────────────────────────────────────────────
-    endpoint = f"{url}/api/chat"
     payload = {
-        "model":      model,
-        "messages":   messages,
-        "stream":     False,
-        "keep_alive": -1,
-        "options":    {"num_predict": max_tokens, "num_gpu": 99},
+        "model": model, "messages": messages, "stream": False,
+        "keep_alive": -1, "think": False,
+        "options": {"num_predict": max(32, int(max_tokens)), "num_gpu": 99},
     }
     if tools:
         payload["tools"] = tools
-
     try:
-        resp = requests.post(endpoint, json=payload, timeout=timeout)
-        resp.raise_for_status()
-        data = resp.json()
-        msg  = data.get("message", {})
-        return {
-            "content":    (msg.get("content") or "").strip(),
-            "tool_calls": msg.get("tool_calls") or [],
-        }
-    except requests.exceptions.ConnectionError as e:
-        print(f"[LLM] ConnectionError — trying to restart Ollama… ({e})")
+        return _ollama_chat(url, payload, timeout)
+    except requests.exceptions.ConnectionError as exc:
+        print(f"[LLM] Ollama connection failed; checking service and retrying ({type(exc).__name__}).")
         if ensure_ollama_running(profile=profile):
             try:
-                resp = requests.post(endpoint, json=payload, timeout=timeout)
-                resp.raise_for_status()
-                data = resp.json()
-                msg  = data.get("message", {})
-                return {
-                    "content":    (msg.get("content") or "").strip(),
-                    "tool_calls": msg.get("tool_calls") or [],
-                }
-            except Exception:
-                pass
-        raise RuntimeError(
-            f"Cannot connect to Ollama at {url}. "
-            "Make sure Ollama is installed and run: ollama serve"
-        )
-    except requests.exceptions.Timeout:
-        raise RuntimeError(f"Ollama request timed out after {timeout} s.")
-    except requests.exceptions.HTTPError as e:
-        print(f"[LLM] HTTPError: {e.response.status_code} — {e.response.text[:200]}")
-        raise RuntimeError(f"Ollama HTTP error: {e.response.status_code}")
-    except Exception as e:
-        print(f"[LLM] Unexpected error: {type(e).__name__}: {e}")
-        raise RuntimeError(f"LLM call failed: {e}")
-
+                return _ollama_chat(url, payload, timeout)
+            except Exception as retry_exc:
+                raise RuntimeError(f"Ollama retry failed: {type(retry_exc).__name__}: {retry_exc}") from retry_exc
+        raise RuntimeError(f"Cannot connect to Ollama at {url}. Install Ollama and run: ollama serve") from exc
+    except requests.exceptions.Timeout as exc:
+        raise RuntimeError(f"Ollama request timed out after {timeout} seconds.") from exc
+    except requests.exceptions.HTTPError as exc:
+        status = getattr(exc.response, "status_code", "unknown")
+        raise RuntimeError(f"Ollama HTTP error: {status}") from exc
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(f"Ollama LLM call failed: {type(exc).__name__}: {exc}") from exc
 
 def call_llm_text(
-    prompt:  str,
-    system:  str | None = None,
-    model:   str | None = None,
+    prompt: str,
+    system: str | None = None,
+    model: str | None = None,
     timeout: int = 120,
     profile: str = "powerful",
 ) -> str:
-    """Text-only generation using the configured local provider.
-
-    Explicit model overrides are supported for both Ollama and OpenAI-compatible
-    servers. The shared call_llm path handles default-model requests.
-    """
+    """Generate visible text through the selected provider; omit hidden reasoning."""
     messages: list[dict] = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
-
     if model is None:
-        # Preserve the original 600-token budget for planning and coding tasks.
-        # Short conversational requests retain call_llm's 150-token default.
         return call_llm(messages, timeout=timeout, max_tokens=600, profile=profile)["content"]
 
-    url, _ = get_llm_settings(profile)
+    url, _selected_model = get_llm_settings(profile)
     provider = get_llm_provider(profile)
     if provider in {"openai", "xai", "groq"}:
         endpoint = _openai_endpoint(url, "/chat/completions")
         payload = {"model": model, "messages": messages, "stream": False, "max_tokens": 600}
+        headers = _cloud_headers(provider, url, profile)
     elif provider == "anthropic":
-        system, chat = _anthropic_messages(messages)
+        system_text, chat = _anthropic_messages(messages)
         payload = {"model": model, "messages": chat, "max_tokens": 600}
-        if system:
-            payload["system"] = system
+        if system_text:
+            payload["system"] = system_text
         try:
-            resp = requests.post(f"{url}/messages", json=payload,
+            resp = requests.post(f"{url.rstrip('/')}/messages", json=payload,
                                  headers=_cloud_headers(provider, url, profile), timeout=timeout)
             resp.raise_for_status()
-            return "".join(str(part.get("text") or "") for part in resp.json().get("content", [])
-                           if isinstance(part, dict) and part.get("type") == "text").strip()
-        except requests.exceptions.RequestException as exc:
-            raise RuntimeError(f"Anthropic text call failed: {exc}") from exc
+            text = _text_from_content(resp.json().get("content", []))
+            if not text:
+                raise RuntimeError("Anthropic returned an empty user-visible response")
+            return text
+        except Exception as exc:
+            raise RuntimeError(f"Anthropic text call failed: {type(exc).__name__}: {exc}") from exc
     else:
-        endpoint = f"{url}/api/chat"
-        payload = {
-            "model": model, "messages": messages, "stream": False,
-            "keep_alive": -1, "options": {"num_predict": 600},
-        }
+        payload = {"model": model, "messages": messages, "stream": False,
+                   "keep_alive": -1, "think": False,
+                   "options": {"num_predict": 600, "num_gpu": 99}}
+        try:
+            return _ollama_chat(url, payload, timeout)["content"]
+        except requests.exceptions.ConnectionError as exc:
+            if ensure_ollama_running(profile=profile):
+                try:
+                    return _ollama_chat(url, payload, timeout)["content"]
+                except Exception as retry_exc:
+                    raise RuntimeError(f"Ollama text retry failed: {type(retry_exc).__name__}: {retry_exc}") from retry_exc
+            raise RuntimeError(f"Cannot connect to configured Ollama LLM at {url}") from exc
+
     try:
-        headers = _cloud_headers(provider, url, profile) if provider in {"openai", "xai", "groq"} else None
         resp = requests.post(endpoint, json=payload, headers=headers, timeout=timeout)
         resp.raise_for_status()
-        data = resp.json()
-        if provider in {"openai", "xai", "groq"}:
-            return (data["choices"][0]["message"].get("content") or "").strip()
-        return (data.get("message", {}).get("content") or "").strip()
-    except requests.exceptions.ConnectionError as exc:
-        if provider == "ollama" and ensure_ollama_running(profile=profile):
-            try:
-                resp = requests.post(endpoint, json=payload, timeout=timeout)
-                resp.raise_for_status()
-                return (resp.json().get("message", {}).get("content") or "").strip()
-            except requests.exceptions.RequestException as retry_exc:
-                raise RuntimeError(f"LLM text call failed after Ollama restart: {retry_exc}") from retry_exc
-        raise RuntimeError(f"Cannot connect to configured {provider} LLM at {url}") from exc
-    except requests.exceptions.RequestException as exc:
-        raise RuntimeError(f"LLM text call failed: {exc}") from exc
-
+        choices = resp.json().get("choices") or []
+        if not choices:
+            raise RuntimeError("Provider returned no completion choices")
+        msg = choices[0].get("message") or {}
+        content = _text_from_content(msg.get("content") or msg.get("refusal"))
+        if not content:
+            raise RuntimeError("Provider returned an empty user-visible response")
+        return content
+    except Exception as exc:
+        raise RuntimeError(f"{provider} text call failed: {type(exc).__name__}: {exc}") from exc
 
 def _stream_openai(
     messages: list,
@@ -629,6 +722,7 @@ def call_llm_stream(
         "messages":   messages,
         "stream":     True,
         "keep_alive": -1,
+        "think": False,
         # 150 tokens ≈ 100 words ≈ 3-4 sentences — enough for any voice reply.
         # num_gpu:99 pushes all layers to GPU; num_thread removed (Ollama auto-tunes).
         "options":    {"num_predict": 150, "num_gpu": 99},
@@ -637,7 +731,13 @@ def call_llm_stream(
         payload["tools"] = tools
 
     def _do_stream() -> Generator[dict, None, None]:
-        with requests.post(endpoint, json=payload, timeout=timeout, stream=True) as resp:
+        response = requests.post(endpoint, json=payload, timeout=timeout, stream=True)
+        if response.status_code == 400 and "think" in payload:
+            response.close()
+            retry_payload = dict(payload)
+            retry_payload.pop("think", None)
+            response = requests.post(endpoint, json=retry_payload, timeout=timeout, stream=True)
+        with response as resp:
             resp.raise_for_status()
             full_content = ""
             tool_calls:  list = []
@@ -652,7 +752,7 @@ def call_llm_stream(
                     continue
 
                 msg   = chunk.get("message", {})
-                delta = msg.get("content") or ""
+                delta = _text_from_content(msg.get("content"))
 
                 full_content += delta
                 buf          += delta
