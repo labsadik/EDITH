@@ -39,6 +39,10 @@ Linux requires bubblewrap and working unprivileged user namespaces. macOS uses t
 
 The Windows local dependency-install capability is scoped to the Windows AppContainer InternetClient policy, which does not grant private-network-client access. Linux/macOS dependency installation currently needs a pre-populated local package cache or another explicitly approved offline source; do not enable unrestricted egress as a workaround.
 
+Generated desktop snippets are isolated and do **not** get unrestricted access to the host desktop session, keyboard/mouse, OS settings or arbitrary home directories. Use EDITH's existing native computer/browser control tools for actual desktop interaction; those remain separate, permission-gated host actions. The generic `shell_execute` tool also remains an explicitly permission-graded host command path for owner-requested OS administration; it is audited separately and is not the agent project sandbox. Do not use it as a fallback for a sandbox failure.
+
+The software-development agent currently supports local build/test/repair and deployment planning. It does not claim a remote production deployment: project runs are offline by default, and Linux/macOS do not have an internet-enabled sandbox until scoped egress is implemented.
+
 The project virtual environment is created in each workspace as `.venv`. Generated project files are validated against absolute paths, drive/UNC paths, traversal and symlink escape before writing. DevSecOps scans local source before every execution. This is defense in depth, not a substitute for code review or a formal penetration test.
 
 ## Local agent data
