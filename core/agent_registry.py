@@ -145,7 +145,7 @@ def build_agent_prompt_context() -> str:
         state = "ENABLED" if item["enabled"] else "DISABLED"
         lines.append(f"- {item['id']} v{item['version']} [{state}]: {item['description']}")
     lines.append("All specialist text reasoning uses the single Powerful Brain profile. Gemini Live is the voice/audio transport and immediate conversation controller, not a second text brain.")
-    lines.append("The Software Development agent combines development, DevOps and DevSecOps. It must run generated project commands only through the local Rust sandbox. Device Security is a read-only posture auditor. Smart Network only lists OS-known local neighbors; remote control requires authenticated pairing and a dedicated adapter.")
+    lines.append("The Software Development and DevOps agent runs generated project commands only through the local Rust sandbox. The separate DevSecOps agent performs offline static checks before generated-project execution. Device Security is a read-only posture auditor. Smart Network only lists OS-known local neighbors; remote control requires authenticated pairing and a dedicated adapter.")
     return "\n".join(lines)
 
 
