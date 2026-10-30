@@ -26,6 +26,7 @@ dist.mkdir(parents=True, exist_ok=True)
 
 sep = os.pathsep
 data = [
+    ("VERSION", "."),
     ("core/prompt.txt", "core"),
     ("assets/hud_reference.mp4", "assets"),
     ("config/mcp_servers.json", "config"),
