@@ -92,6 +92,10 @@ def run_sandboxed(
         candidate = Path(path).expanduser().resolve()
         if candidate.exists():
             command.extend(["--read-only", str(candidate)])
+    for path in prepend_paths:
+        candidate = Path(path).expanduser().resolve()
+        if candidate.is_dir():
+            command.extend(["--path-dir", str(candidate)])
     args = [str(item) for item in argv]
     command.append("--")
     command.extend(args)
@@ -140,9 +144,9 @@ def run_project_command(
         )
     except SandboxUnavailable as exc:
         return f"Execution failed: Rust sandbox unavailable; host execution was not attempted. {exc}"
-    output = (result.stdout or "") + ("\\n[stderr]\\n" + result.stderr if result.stderr else "")
+    output = (result.stdout or "") + ("\n[stderr]\n" + result.stderr if result.stderr else "")
     if result.returncode != 0:
-        return f"Execution failed (exit {result.returncode}).\\n{output[-12000:]}"
+        return f"Execution failed (exit {result.returncode}).\n{output[-12000:]}"
     return output[-12000:] or "Command completed with no output."
 
 
