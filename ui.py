@@ -75,9 +75,9 @@ class C:
     BG        = "#0A0F18"
     PANEL     = "#141C29"
     PANEL2    = "#1D2939"
-    BORDER    = "#2C3A4D"
-    BORDER_B  = "#43566F"
-    BORDER_A  = "#657C97"
+    BORDER    = "#1B2533"
+    BORDER_B  = "#29374A"
+    BORDER_A  = "#36485E"
     PRI       = "#B39AFB"
     PRI_DIM   = "#987FE4"
     PRI_GHO   = "#392C5B"
@@ -124,7 +124,7 @@ _THEME_DEFAULTS = {
     "dark": {key: getattr(C, key) for key in _THEME_COLOR_KEYS},
     "light": {
         "BG": "#EEF1F7", "PANEL": "#F8F9FC", "PANEL2": "#EEF0F7",
-        "BORDER": "#D7DCE7", "BORDER_B": "#B8C1D1", "BORDER_A": "#8D9BB0",
+        "BORDER": "#E7ECF3", "BORDER_B": "#D8E0EB", "BORDER_A": "#C4CFDE",
         "PRI": "#7156C8", "PRI_DIM": "#806BD0", "PRI_GHO": "#E9E2FB",
         "ACC": "#26769F", "ACC2": "#946018", "GREEN": "#187A60",
         "GREEN_D": "#246D58", "RED": "#BD4057", "MUTED_C": "#BD4057",
@@ -2919,103 +2919,12 @@ class SetupOverlay(QWidget):
         self.done.emit(key, self._sel_os)
 
 
-class HueWheel(QWidget):
-    """
-    Dairesel renk seçici. Kullanıcı tutamacı (küçük beyaz daire) çarkın
-    çevresinde sürükleyerek TÜM renk tonları arasından seçim yapar.
-    Merkezdeki dolu daire seçilen rengin canlı önizlemesidir.
-    """
-
-    hue_picked    = pyqtSignal(str)   # sürükleme sırasında (canlı)
-    hue_committed = pyqtSignal(str)   # tutamaç bırakıldığında
-
-    _RING = 14   # halka kalınlığı (px)
-
-    def __init__(self, initial_hex: str = DEFAULT_UI_COLOR, parent=None):
-        super().__init__(parent)
-        self.setFixedSize(140, 140)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._hue  = 0.53
-        self._drag = False
-        self.set_color(initial_hex)
-
-    # ── API ──────────────────────────────────────────────────────────────────
-    def color(self) -> str:
-        return QColor.fromHsvF(self._hue, 1.0, 1.0).name()
-
-    def set_color(self, hex_str: str):
-        c = QColor((hex_str or "").strip())
-        if c.isValid() and c.hsvHueF() >= 0:
-            self._hue = c.hsvHueF()
-            self.update()
-
-    # ── geometri yardımcıları ────────────────────────────────────────────────
-    def _ring_rect(self) -> QRectF:
-        m = self._RING / 2 + 3
-        return QRectF(self.rect()).adjusted(m, m, -m, -m)
-
-    def _hue_from_pos(self, pos: QPointF) -> float:
-        c  = QRectF(self.rect()).center()
-        dx = pos.x() - c.x()
-        dy = c.y() - pos.y()          # ekran y'si aşağı — matematiksel eksene çevir
-        ang = math.atan2(dy, dx)      # [-π, π], saat yönünün tersi
-        return (ang / (2 * math.pi)) % 1.0
-
-    # ── çizim ────────────────────────────────────────────────────────────────
-    def paintEvent(self, _):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect   = self._ring_rect()
-        center = rect.center()
-
-        grad = QConicalGradient(center, 0)
-        for i in range(0, 361, 20):
-            grad.setColorAt(i / 360.0, QColor.fromHsvF((i % 360) / 360.0, 1.0, 1.0))
-        p.setPen(QPen(QBrush(grad), self._RING))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawEllipse(rect)
-
-        # merkez önizleme dairesi
-        preview = QColor.fromHsvF(self._hue, 1.0, 1.0)
-        inner   = rect.adjusted(28, 28, -28, -28)
-        p.setPen(QPen(qcol(C.BORDER_B), 1))
-        p.setBrush(QBrush(preview))
-        p.drawEllipse(inner)
-
-        # sürüklenen tutamaç
-        r   = rect.width() / 2
-        ang = self._hue * 2 * math.pi
-        hx  = center.x() + r * math.cos(ang)
-        hy  = center.y() - r * math.sin(ang)
-        p.setPen(QPen(QColor(C.BG), 2))
-        p.setBrush(QBrush(QColor("#ffffff")))
-        p.drawEllipse(QPointF(hx, hy), 7.0, 7.0)
-
-    # ── fare ─────────────────────────────────────────────────────────────────
-    def mousePressEvent(self, e):
-        self._drag = True
-        self._hue  = self._hue_from_pos(e.position())
-        self.update()
-        self.hue_picked.emit(self.color())
-
-    def mouseMoveEvent(self, e):
-        if self._drag:
-            self._hue = self._hue_from_pos(e.position())
-            self.update()
-            self.hue_picked.emit(self.color())
-
-    def mouseReleaseEvent(self, e):
-        if self._drag:
-            self._drag = False
-            self.hue_committed.emit(self.color())
-
-
 class CustomizeOverlay(QWidget):
-    """Floating overlay — change assistant name, user name and UI colour."""
+    """Minimal preferences sheet: identity and system appearance only."""
 
-    saved = pyqtSignal(str, str, str)   # assistant_name, user_name, ui_color
+    saved = pyqtSignal(str, str, str)
     theme_saved = pyqtSignal(str)
-    _OW, _OH = 400, 530
+    _OW, _OH = 420, 300
 
     def __init__(self, assistant_name="EDITH", user_name="",
                  ui_color=DEFAULT_UI_COLOR, theme_preference="system", parent=None):
@@ -3025,58 +2934,54 @@ class CustomizeOverlay(QWidget):
         self.setStyleSheet(f"""
             CustomizeOverlay {{
                 background: {C.SHEET};
-                border: 1px solid {C.BORDER_B};
-                border-radius: 18px;
+                border: 0;
+                border-radius: 20px;
             }}
         """)
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(28, 22, 28, 22)
-        lay.setSpacing(10)
+        lay.setContentsMargins(24, 20, 24, 22)
+        lay.setSpacing(12)
 
-        def _lbl(txt, fs=9, bold=False, color=C.PRI, align=Qt.AlignmentFlag.AlignCenter):
-            w = QLabel(txt); w.setAlignment(align)
-            w.setFont(QFont(FONT_MAIN, fs,
-                            QFont.Weight.Bold if bold else QFont.Weight.Normal))
-            w.setStyleSheet(f"color: {color}; background: transparent;")
-            return w
-
-        _fs = (f"QLineEdit {{ background: {C.INPUT}; color: {C.TEXT}; "
-               f"border: 1px solid {C.BORDER}; border-radius: 9px; padding: 6px 10px; }}"
-               f"QLineEdit:focus {{ border: 1px solid {C.PRI}; }}")
-
-        title_row = QHBoxLayout()
-        settings_icon = QLabel()
-        settings_icon.setPixmap(svg_icon("settings", C.PRI).pixmap(QSize(22, 22)))
-        title_row.addWidget(settings_icon)
-        title_row.addWidget(_lbl("PREFERENCES", 13, True), 1)
+        header = QHBoxLayout()
+        icon_lbl = QLabel()
+        icon_lbl.setPixmap(svg_icon("settings", C.PRI).pixmap(QSize(22, 22)))
+        header.addWidget(icon_lbl)
+        title = QLabel("PREFERENCES")
+        title.setFont(QFont(FONT_MAIN, 13, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
+        header.addWidget(title, 1)
         self._close_btn = QPushButton()
         self._close_btn.setAccessibleName("Close preferences")
         self._close_btn.setToolTip("Close")
         self._close_btn.setIcon(svg_icon("x", C.TEXT_DIM))
         self._close_btn.setIconSize(QSize(18, 18))
-        self._close_btn.setFixedSize(36, 36)
-        self._close_btn.setStyleSheet(f"QPushButton {{ background:{C.PANEL2}; border:1px solid {C.BORDER}; border-radius:11px; }} QPushButton:hover {{ background:{C.DANGER_BG}; border-color:{C.RED}; }}")
+        self._close_btn.setFixedSize(38, 38)
+        self._close_btn.setStyleSheet(f"""
+            QPushButton {{ background: {C.PANEL2}; border: 0; border-radius: 13px; }}
+            QPushButton:hover {{ background: {C.DANGER_BG}; }}
+        """)
         self._close_btn.clicked.connect(self._cancel)
-        title_row.addWidget(self._close_btn)
-        lay.addLayout(title_row)
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
-        lay.addWidget(sep)
+        header.addWidget(self._close_btn)
+        lay.addLayout(header)
 
-        # Assistant display identity is intentionally fixed and unbranded.
-        lay.addSpacing(4)
-        lay.addWidget(_lbl("YOUR NAME (Optional)", 8,
-                            color=C.TEXT_DIM, align=Qt.AlignmentFlag.AlignLeft))
+        def _label(text: str):
+            w = QLabel(text.upper())
+            w.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+            w.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+            return w
+
+        lay.addWidget(_label("Your name (optional)"))
         self._user_input = QLineEdit(user_name)
         self._user_input.setPlaceholderText("Your name")
-        self._user_input.setFont(QFont(FONT_MAIN, 10))
-        self._user_input.setFixedHeight(34)
-        self._user_input.setStyleSheet(_fs)
+        self._user_input.setFixedHeight(42)
+        self._user_input.setStyleSheet(f"""
+            QLineEdit {{ background: {C.INPUT}; color: {C.TEXT}; border: 0;
+                         border-radius: 11px; padding: 8px 12px; }}
+            QLineEdit:focus {{ background: {C.PANEL2}; }}
+        """)
         lay.addWidget(self._user_input)
 
-        lay.addSpacing(4)
-        lay.addWidget(_lbl("APPEARANCE", 8, color=C.TEXT_DIM,
-                           align=Qt.AlignmentFlag.AlignLeft))
+        lay.addWidget(_label("Appearance"))
         self._initial_theme = str(theme_preference or "system").lower()
         if self._initial_theme not in {"system", "dark", "light"}:
             self._initial_theme = "system"
@@ -3087,138 +2992,59 @@ class CustomizeOverlay(QWidget):
         self._theme_picker.addItem("Light", "light")
         self._theme_picker.setCurrentIndex(("system", "dark", "light").index(self._sel_theme))
         self._theme_picker.setAccessibleName("EDITH appearance theme")
+        self._theme_picker.setFixedHeight(42)
         self._theme_picker.setStyleSheet(f"""
-            QComboBox {{ background: {C.INPUT}; color: {C.TEXT}; border: 1px solid {C.BORDER};
-                         border-radius: 9px; padding: 5px 10px; }}
-            QComboBox:hover, QComboBox:focus {{ border-color: {C.PRI}; }}
-            QComboBox QAbstractItemView {{ background: {C.SHEET}; color: {C.TEXT};
-                                           selection-background-color: {C.HOVER}; }}
+            QComboBox {{ background: {C.INPUT}; color: {C.TEXT}; border: 0;
+                         border-radius: 11px; padding: 8px 12px; }}
+            QComboBox:focus {{ background: {C.PANEL2}; }}
+            QComboBox QAbstractItemView {{ background: {C.PANEL}; color: {C.TEXT};
+                                           border: 0; selection-background-color: {C.PRI_GHO}; }}
         """)
         self._theme_picker.currentIndexChanged.connect(self._on_theme_changed)
         lay.addWidget(self._theme_picker)
 
-        # ── UI colour — renk çarkı ───────────────────────────────────────────
-        lay.addSpacing(4)
-        clr_hdr = QHBoxLayout()
-        clr_hdr.addWidget(_lbl("UI COLOUR THEME", 8,
-                               color=C.TEXT_DIM, align=Qt.AlignmentFlag.AlignLeft))
-        clr_hdr.addStretch()
-        df_btn = QPushButton("DEFAULT")
-        df_btn.setFixedSize(64, 20)
-        df_btn.setFont(QFont(FONT_MAIN, 7, QFont.Weight.Bold))
-        df_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        df_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; color: {C.TEXT_MED};
-                border: 1px solid {C.BORDER}; border-radius: 3px;
-            }}
-            QPushButton:hover {{ color: {C.TEXT}; border-color: {C.BORDER_B}; }}
+        note = QLabel("Accent colours are managed by EDITH's system theme.")
+        note.setFont(QFont(FONT_MAIN, 8))
+        note.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        lay.addWidget(note)
+        lay.addStretch(1)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        cancel = QPushButton("CANCEL")
+        cancel.setFixedHeight(40)
+        cancel.setStyleSheet(f"""
+            QPushButton {{ background: {C.PANEL2}; color: {C.TEXT_MED}; border: 0;
+                           border-radius: 11px; padding: 0 16px; }}
+            QPushButton:hover {{ background: {C.HOVER}; }}
         """)
-        df_btn.clicked.connect(lambda: self._set_color(DEFAULT_UI_COLOR))
-        clr_hdr.addWidget(df_btn)
-        lay.addLayout(clr_hdr)
-
-        self._initial_color = (ui_color or DEFAULT_UI_COLOR).strip().lower()
-        self._sel_color     = self._initial_color
-        self.on_preview     = None   # callable(hex) — canlı önizleme; MainWindow bağlar
-
-        self._wheel = HueWheel(self._sel_color)
-        wheel_row = QHBoxLayout()
-        wheel_row.addStretch(); wheel_row.addWidget(self._wheel); wheel_row.addStretch()
-        lay.addLayout(wheel_row)
-        self._wheel.hue_picked.connect(self._on_wheel_pick)
-        self._wheel.hue_committed.connect(self._on_wheel_commit)
-
-        self._hex_input = QLineEdit(self._sel_color)
-        self._hex_input.setPlaceholderText("#A5B4FC")
-        self._hex_input.setFont(QFont(FONT_MONO, 10))
-        self._hex_input.setFixedHeight(30)
-        self._hex_input.setStyleSheet(_fs)
-        self._hex_input.textEdited.connect(self._on_hex_edited)
-        lay.addWidget(self._hex_input)
-
-        lay.addSpacing(6)
-        btn_row = QHBoxLayout(); btn_row.setSpacing(8)
-
-        save_btn = QPushButton("▸  APPLY CHANGES")
-        save_btn.setFixedHeight(36)
-        save_btn.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
-        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        save_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; color: {C.PRI};
-                border: 1px solid {C.PRI_DIM}; border-radius: 4px;
-            }}
-            QPushButton:hover {{ background: {C.PRI_GHO}; border: 1px solid {C.PRI}; }}
+        cancel.clicked.connect(self._cancel)
+        save = QPushButton("SAVE CHANGES")
+        save.setFixedHeight(40)
+        save.setStyleSheet(f"""
+            QPushButton {{ background: {C.PRI}; color: {C.DARK}; border: 0;
+                           border-radius: 11px; padding: 0 18px; font-weight: 700; }}
+            QPushButton:hover {{ background: {C.PRI_DIM}; }}
         """)
-        save_btn.clicked.connect(self._save)
-        btn_row.addWidget(save_btn)
+        save.clicked.connect(self._save)
+        buttons.addWidget(cancel)
+        buttons.addWidget(save)
+        lay.addLayout(buttons)
 
-        cancel_btn = QPushButton("CANCEL")
-        cancel_btn.setFixedHeight(36)
-        cancel_btn.setFont(QFont(FONT_MAIN, 9))
-        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; color: {C.TEXT_MED};
-                border: 1px solid {C.BORDER}; border-radius: 4px;
-            }}
-            QPushButton:hover {{ color: {C.TEXT}; border-color: {C.BORDER_B}; }}
-        """)
-        cancel_btn.clicked.connect(self._cancel)
-        btn_row.addWidget(cancel_btn)
-        lay.addLayout(btn_row)
-
-    # ── renk akışı ───────────────────────────────────────────────────────────
-    def _set_color(self, hx: str, update_wheel: bool = True, preview: bool = True):
-        """Seçili rengi günceller; hex kutusu + çark senkron kalır, tema canlı önizlenir."""
-        self._sel_color = hx.strip().lower()
-        self._hex_input.blockSignals(True)
-        self._hex_input.setText(self._sel_color)
-        self._hex_input.blockSignals(False)
-        if update_wheel:
-            self._wheel.set_color(self._sel_color)
-        if preview and self.on_preview:
-            self.on_preview(self._sel_color)
-
-    def _on_wheel_pick(self, hx: str):
-        # Sürükleme sırasında: hex kutusunu güncelle, temayı henüz uygulama
-        self._sel_color = hx
-        self._hex_input.blockSignals(True)
-        self._hex_input.setText(hx)
-        self._hex_input.blockSignals(False)
-
-    def _on_wheel_commit(self, hx: str):
-        # Tutamaç bırakıldı → tüm arayüzü canlı önizle
-        self._set_color(hx, update_wheel=False)
-
-    def _on_hex_edited(self, text: str):
-        t = text.strip().lower()
-        if t.startswith("#") and len(t) == 7:
-            try:
-                int(t[1:], 16)
-            except ValueError:
-                return
-            self._set_color(t, update_wheel=True, preview=True)
+        self.on_theme_preview = None
 
     def _cancel(self):
-        # Önizleme uygulandıysa açılıştaki renge geri dön
         if getattr(self, "on_theme_preview", None):
             self.on_theme_preview(None)
-        if self.on_preview and self._sel_color != self._initial_color:
-            self.on_preview(self._initial_color)
         self.hide()
 
     def _save(self):
-        name = "EDITH"
-        user = self._user_input.text().strip()
-        self.saved.emit(name, user, self._sel_color or DEFAULT_UI_COLOR)
+        self.saved.emit("EDITH", self._user_input.text().strip(), "")
         self.theme_saved.emit(self._sel_theme)
         self.hide()
 
     def _on_theme_changed(self, index: int):
-        value = self._theme_picker.itemData(index)
-        self._sel_theme = str(value or "system")
+        self._sel_theme = str(self._theme_picker.itemData(index) or "system")
         if getattr(self, "on_theme_preview", None):
             self.on_theme_preview(self._sel_theme)
 
@@ -4041,11 +3867,9 @@ class MainWindow(QMainWindow):
         self._display_name = _display
 
         # Keep the new default theme when an older installation saved the old cyan default.
-        _ui_color = (_cfg.get("ui_color") or "").strip()
-        if _ui_color.lower() in {"#00e5ff", "#61dff5"}:
-            _ui_color = DEFAULT_UI_COLOR
-        self._ui_accent = _ui_color if _ui_color and _ui_color.lower() != DEFAULT_UI_COLOR else DEFAULT_UI_COLOR
-        apply_ui_theme(self._resolved_theme(), self._ui_accent)
+        self._ui_accent = DEFAULT_UI_COLOR
+        # Appearance follows the system palette; manual accent editing is intentionally unavailable.
+        apply_ui_theme(self._resolved_theme())
         apply_dark_theme(QApplication.instance(), C)
 
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowTitleHint
@@ -4072,7 +3896,7 @@ class MainWindow(QMainWindow):
         self._current_file: str | None = None
         self._remote_overlay: RemoteKeyOverlay | None = None
         self._customize_overlay: CustomizeOverlay | None = None
-        self._api_key_overlay: ApiKeyOverlay | None = None
+        self._api_key_overlay: ApiProviderWorkspace | None = None
         self._voice_mode = str(_cfg.get("voice_mode") or "female").lower()
         if self._voice_mode not in {"female", "male"}:
             self._voice_mode = "female"
@@ -4249,7 +4073,7 @@ class MainWindow(QMainWindow):
     def _render_theme(self, preference: str | None = None) -> None:
         """Repaint native widgets in place without changing their geometry."""
         old = current_palette()
-        apply_ui_theme(self._resolved_theme(preference), self._ui_accent)
+        apply_ui_theme(self._resolved_theme(preference))
         retheme_all_widgets(old, current_palette())
         self.setWindowIcon(svg_icon("edith-app", C.PRI))
 
@@ -5221,8 +5045,10 @@ class MainWindow(QMainWindow):
         self._motion_btn.toggled.connect(self._toggle_reduced_motion)
         lay.addWidget(self._motion_btn)
 
-        key_btn = QPushButton("KEY  GEMINI API KEY")
-        key_btn.setFixedHeight(30)
+        key_btn = QPushButton("API PROVIDERS")
+        _set_theme_icon(key_btn, "key", "PRI")
+        key_btn.setIconSize(QSize(15, 15))
+        key_btn.setFixedHeight(32)
         key_btn.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
         key_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         key_btn.setStyleSheet(_BTN_STYLE_DIM)
@@ -5312,26 +5138,30 @@ class MainWindow(QMainWindow):
             """)
 
     def _open_api_key_settings(self):
-        current = get_gemini_api_key(API_FILE) or ""
         if self._api_key_overlay:
             self._api_key_overlay.hide()
         cw = self.centralWidget()
-        ov = ApiKeyOverlay(str(current or ""), parent=cw)
-        ov.saved.connect(self._on_api_key_saved)
+        ov = ApiProviderWorkspace(parent=cw)
+        ov.voice_saved.connect(self._on_api_key_saved)
+        ov.settings_saved.connect(self._on_api_provider_saved)
+        width = min(ApiProviderWorkspace._OW, max(560, cw.width() - 24))
+        height = min(ApiProviderWorkspace._OH, max(440, cw.height() - 24))
         ov.setGeometry(
-            max(8, (cw.width() - ApiKeyOverlay._OW) // 2),
-            max(8, (cw.height() - ApiKeyOverlay._OH) // 2),
-            min(ApiKeyOverlay._OW, cw.width() - 16),
-            min(ApiKeyOverlay._OH, cw.height() - 16),
+            max(8, (cw.width() - width) // 2),
+            max(8, (cw.height() - height) // 2),
+            width, height,
         )
         ov.show()
         ov.raise_()
         self._api_key_overlay = ov
 
     def _on_api_key_saved(self):
-        self._log.append_log("SYS: Gemini API key saved after Live API validation.")
+        self._log.append_log("SYS: Voice API provider and key saved after a successful Live test.")
         if self.on_api_key_saved:
             self.on_api_key_saved()
+
+    def _on_api_provider_saved(self):
+        self._log.append_log("SYS: API provider settings saved after a successful connection test.")
 
     def _toggle_drawer(self, checked: bool):
         if checked:
@@ -5901,8 +5731,7 @@ class MainWindow(QMainWindow):
         ov = CustomizeOverlay(
             self._display_name,
             cfg.get("user_name", ""),
-            cfg.get("ui_color", "") or DEFAULT_UI_COLOR,
-            self._theme_preference,
+            theme_preference=self._theme_preference,
             parent=cw,
         )
         ow, oh = CustomizeOverlay._OW, CustomizeOverlay._OH
@@ -5912,7 +5741,6 @@ class MainWindow(QMainWindow):
             (cw.height() - oh) // 2,
             ow, oh,
         )
-        ov.on_preview = self._preview_ui_color
         ov.on_theme_preview = self._preview_theme_preference
         ov.saved.connect(self._apply_name_update)
         ov.theme_saved.connect(self._save_theme_preference)
@@ -5925,8 +5753,8 @@ class MainWindow(QMainWindow):
         if apply_ui_accent(hex_color):
             retheme_all_widgets(old, current_palette())
 
-    def _apply_name_update(self, name: str, user_name: str, ui_color: str = ""):
-        """Update all name/theme-dependent UI elements and persist to config."""
+    def _apply_name_update(self, name: str, user_name: str, _unused_color: str = ""):
+        """Update identity fields without exposing manual accent controls."""
         self._assistant_name = "EDITH"
         self._display_name = UI_BRAND
         display = self._display_name
@@ -5935,28 +5763,15 @@ class MainWindow(QMainWindow):
         self._sub_lbl.setText("PERSONAL ASSISTANT SYSTEM  •  VOICE  •  VISION")
         self._log._ai_name_lc = self._assistant_name.lower()
         self.hud._assistant_name = display
-
-        color_changed = False
-        if ui_color:
-            old = current_palette()
-            if apply_ui_accent(ui_color):
-                self._ui_accent = ui_color.strip().lower()
-                # Tüm arayüzü (paneller, butonlar, kenarlıklar, HUD) canlı boya
-                retheme_all_widgets(old, current_palette())
-                color_changed = old["PRI"] != C.PRI
-
         try:
             data = _read_full_config()
             data["assistant_name"] = self._assistant_name
             data["user_name"] = user_name.strip()
-            if ui_color:
-                data["ui_color"] = ui_color.strip().lower()
+            data.pop("ui_color", None)
             API_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
             self._log.append_log(f"SYS: Identity updated — {display}")
-            if color_changed:
-                self._log.append_log(f"SYS: UI colour applied — {ui_color}")
-        except Exception as e:
-            self._log.append_log(f"ERR: Config save failed — {e}")
+        except Exception as exc:
+            self._log.append_log(f"ERR: Config save failed — {type(exc).__name__}")
 
     def _open_plugin_manager(self):
         plugins = self.get_plugins() if self.get_plugins else []
