@@ -53,6 +53,33 @@ class AppPathTests(unittest.TestCase):
             self.assertEqual(target.read_text(encoding="utf-8"), '{"servers":[]}')
             self.assertEqual(target, appdata / "EDITH" / "config" / "mcp_servers.json")
 
+
+    def test_packaged_memory_and_rag_databases_use_user_writable_storage(self):
+        import importlib
+        from core import app_paths
+        import memory.memory_manager as memory_manager
+        import memory.rag_store as rag_store
+
+        with tempfile.TemporaryDirectory() as folder:
+            user_data = Path(folder) / "EDITH"
+            with (
+                patch.object(app_paths, "is_frozen", return_value=True),
+                patch.object(app_paths, "app_data_dir", return_value=user_data),
+            ):
+                importlib.reload(memory_manager)
+                importlib.reload(rag_store)
+                self.assertEqual(
+                    memory_manager.MEMORY_PATH,
+                    user_data / "memory" / "long_term.json",
+                )
+                self.assertEqual(
+                    rag_store.VECTOR_DB_PATH,
+                    user_data / "memory" / "vector_db",
+                )
+            # Restore module globals for the remaining source-checkout tests.
+            importlib.reload(memory_manager)
+            importlib.reload(rag_store)
+
     def test_existing_per_user_config_is_never_overwritten_by_legacy_copy(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
