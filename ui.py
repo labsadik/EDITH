@@ -3135,11 +3135,13 @@ class PluginManagerOverlay(QWidget):
     """Scrollable catalog for local agents, Home Assistant and configured MCP servers."""
 
     home_assistant_pair_finished = pyqtSignal(object)
+    wifi_scan_finished = pyqtSignal(object)
     _OW, _OH = 700, 640
 
     def __init__(self, plugins: list[dict], parent=None):
         super().__init__(parent)
         self.home_assistant_pair_finished.connect(self._on_home_assistant_pair_finished)
+        self.wifi_scan_finished.connect(self._on_wifi_scan_finished)
         _glass_shadow(self)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"""
@@ -3372,6 +3374,25 @@ class PluginManagerOverlay(QWidget):
             row.addWidget(connect)
 
         if kind != "mcp" and record.get("agent_id") == "smart_network" and valid:
+            scan = QPushButton("SCAN WI-FI")
+            scan.setFixedSize(88, 34)
+            scan.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+            scan.setCursor(Qt.CursorShape.PointingHandCursor)
+            scan.setStyleSheet(f"""
+                QPushButton {{
+                    background: {C.PRI_GHO}; color: {C.PRI};
+                    border: 1px solid {C.PRI_DIM}; border-radius: 9px; padding: 0 8px;
+                }}
+                QPushButton:hover {{ background: {C.HOVER}; border-color: {C.PRI}; }}
+                QPushButton:disabled {{ color: {C.TEXT_DIM}; background: {C.PANEL}; }}
+            """)
+            scan.setToolTip("Scan nearby Wi-Fi networks using every OS-visible wireless adapter")
+            scan.clicked.connect(
+                lambda _checked=False, button=scan, description=detail:
+                    self._scan_wifi_networks(button, description)
+            )
+            row.addWidget(scan)
+
             paired = bool(record.get("home_assistant_paired"))
             pair = QPushButton("UPDATE HA" if paired else "PAIR HA")
             pair.setFixedSize(86, 34)
@@ -3394,6 +3415,76 @@ class PluginManagerOverlay(QWidget):
             )
             row.addWidget(pair)
         return card
+
+    def _scan_wifi_networks(self, button: QPushButton, detail: QLabel) -> None:
+        """Run an OS-native Wi-Fi scan off the UI thread and display visible networks."""
+        button.setEnabled(False)
+        button.setText("SCANNING")
+
+        def scan_worker() -> None:
+            try:
+                from agents.smart_network import scan_wifi_networks
+                result = scan_wifi_networks()
+                if result.get("ok"):
+                    networks = result.get("networks") or []
+                    adapters = result.get("adapters") or []
+                    lines = [
+                        f"{str(item.get('ssid') or '(hidden network)')[:48]} · "
+                        f"{('signal ' + str(item.get('signal_percent')) + '%') if item.get('signal_percent') is not None else 'signal N/A'} · "
+                        f"{('channel ' + str(item.get('channel'))) if item.get('channel') is not None else 'channel N/A'} · "
+                        f"{str(item.get('bssid') or 'BSSID N/A')}"
+                        for item in networks[:12]
+                    ]
+                    message = (
+                        f"Wi-Fi scan completed · {len(networks)} network(s) · "
+                        f"{len(adapters)} adapter(s)."
+                    )
+                    if lines:
+                        message += "\n" + "\n".join(lines)
+                    elif not networks:
+                        message += " No visible SSIDs were reported by the OS."
+                    ok = True
+                else:
+                    message = "Wi-Fi scan unavailable: " + str(
+                        result.get("error") or "The operating system did not return a scan result."
+                    )[:700]
+                    ok = False
+                payload = {
+                    "ok": ok, "message": message, "button": button, "detail": detail,
+                }
+            except Exception as exc:
+                payload = {
+                    "ok": False,
+                    "message": f"Wi-Fi scan failed: {type(exc).__name__}: {str(exc)[:240]}",
+                    "button": button, "detail": detail,
+                }
+            try:
+                self.wifi_scan_finished.emit(payload)
+            except RuntimeError:
+                pass
+
+        threading.Thread(
+            target=scan_worker, daemon=True, name="edith-wifi-scan"
+        ).start()
+
+    def _on_wifi_scan_finished(self, result: dict) -> None:
+        button = result.get("button")
+        detail = result.get("detail")
+        ok = bool(result.get("ok"))
+        try:
+            if button is not None:
+                button.setEnabled(True)
+                button.setText("SCAN WI-FI" if ok else "RETRY SCAN")
+                button.setToolTip(str(result.get("message") or ""))
+            if detail is not None:
+                detail.setText(str(result.get("message") or "Wi-Fi scan finished")[:1800])
+                detail.setToolTip(str(result.get("message") or ""))
+                detail.setStyleSheet(
+                    f"color: {C.GREEN if ok else C.RED}; background: transparent;"
+                )
+        except RuntimeError:
+            # The user may close the Plugins overlay while the scan is running.
+            pass
 
     def _pair_home_assistant(self, record: dict, button: QPushButton, detail: QLabel) -> None:
         """Verify the user's Home Assistant token before persisting it off the UI thread."""
