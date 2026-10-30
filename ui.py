@@ -3132,12 +3132,14 @@ class MCPConnectionDialog(QDialog):
 
 
 class PluginManagerOverlay(QWidget):
-    """Scrollable, card-based catalog for Python tools and configured MCP servers."""
+    """Scrollable catalog for local agents, Home Assistant and configured MCP servers."""
 
+    home_assistant_pair_finished = pyqtSignal(object)
     _OW, _OH = 700, 640
 
     def __init__(self, plugins: list[dict], parent=None):
         super().__init__(parent)
+        self.home_assistant_pair_finished.connect(self._on_home_assistant_pair_finished)
         _glass_shadow(self)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"""
@@ -3368,7 +3370,107 @@ class PluginManagerOverlay(QWidget):
             connect.setToolTip("Configure endpoint, access token and test the MCP connection")
             connect.clicked.connect(lambda _checked=False, item=record: self._connect(item))
             row.addWidget(connect)
+
+        if kind != "mcp" and record.get("agent_id") == "smart_network" and valid:
+            paired = bool(record.get("home_assistant_paired"))
+            pair = QPushButton("UPDATE HA" if paired else "PAIR HA")
+            pair.setFixedSize(86, 34)
+            pair.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+            pair.setCursor(Qt.CursorShape.PointingHandCursor)
+            pair.setStyleSheet(f"""
+                QPushButton {{
+                    background: {C.PRI_GHO}; color: {C.PRI};
+                    border: 1px solid {C.PRI_DIM}; border-radius: 9px; padding: 0 8px;
+                }}
+                QPushButton:hover {{ background: {C.HOVER}; border-color: {C.PRI}; }}
+                QPushButton:disabled {{ color: {C.TEXT_DIM}; background: {C.PANEL}; }}
+            """)
+            pair.setToolTip(
+                "Verify your Home Assistant URL and long-lived token, then save the token securely"
+            )
+            pair.clicked.connect(
+                lambda _checked=False, item=record, button=pair, description=detail:
+                    self._pair_home_assistant(item, button, description)
+            )
+            row.addWidget(pair)
         return card
+
+    def _pair_home_assistant(self, record: dict, button: QPushButton, detail: QLabel) -> None:
+        """Verify the user's Home Assistant token before persisting it off the UI thread."""
+        default_url = str(record.get("home_assistant_url") or "http://homeassistant.local:8123")
+        url, accepted = QInputDialog.getText(
+            self, "Pair Home Assistant",
+            "Home Assistant URL (for example http://homeassistant.local:8123):",
+            QLineEdit.EchoMode.Normal, default_url,
+        )
+        if not accepted or not url.strip():
+            return
+        token, accepted = QInputDialog.getText(
+            self, "Pair Home Assistant",
+            "Long-lived access token (input is hidden):",
+            QLineEdit.EchoMode.Password, "",
+        )
+        if not accepted or not token.strip():
+            return
+
+        button.setEnabled(False)
+        button.setText("TESTING")
+        detail.setText("Home Assistant: checking API access before saving credentials…")
+
+        def pair_worker() -> None:
+            try:
+                from agents.smart_network import configure_home_assistant, test_home_assistant_connection
+                test_home_assistant_connection(url, token, timeout=5.0)
+                saved = configure_home_assistant(url, token)
+                storage = str(saved.get("token_storage") or "unknown")
+                message = (
+                    "Home Assistant paired · token stored in OS keychain."
+                    if storage in {"keyring", "migrated"}
+                    else "Home Assistant paired, but OS keychain is unavailable; token uses the local config fallback."
+                )
+                result = {
+                    "ok": True, "message": message, "storage": storage,
+                    "url": str(saved.get("url") or url).strip(),
+                    "button": button, "detail": detail, "record": record,
+                }
+            except Exception as exc:
+                safe_error = str(exc).replace(token, "[hidden]")[:240]
+                result = {
+                    "ok": False,
+                    "message": f"Home Assistant pairing failed: {type(exc).__name__}: {safe_error}",
+                    "button": button, "detail": detail, "record": record,
+                }
+            try:
+                self.home_assistant_pair_finished.emit(result)
+            except RuntimeError:
+                pass
+
+        threading.Thread(
+            target=pair_worker, daemon=True, name="edith-home-assistant-pair"
+        ).start()
+
+    def _on_home_assistant_pair_finished(self, result: dict) -> None:
+        button = result.get("button")
+        detail = result.get("detail")
+        record = result.get("record")
+        ok = bool(result.get("ok"))
+        if ok and isinstance(record, dict):
+            record["home_assistant_paired"] = True
+            record["home_assistant_url"] = result.get("url", "")
+        try:
+            if button is not None:
+                button.setEnabled(True)
+                button.setText("UPDATE HA" if ok else "RETRY HA")
+                button.setToolTip(str(result.get("message") or ""))
+            if detail is not None:
+                detail.setText(str(result.get("message") or "Home Assistant pairing result"))
+                detail.setToolTip(str(result.get("message") or ""))
+                detail.setStyleSheet(
+                    f"color: {C.GREEN if ok else C.RED}; background: transparent;"
+                )
+        except RuntimeError:
+            # The user may have closed the Plugins overlay while the test was running.
+            pass
 
     def _connect(self, record: dict):
         dialog = MCPConnectionDialog(record, self)
