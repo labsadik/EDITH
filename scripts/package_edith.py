@@ -43,10 +43,22 @@ args = [
     "--distpath", str(dist),
     "--workpath", str(ROOT / "build" / "pyinstaller"),
     "--specpath", str(ROOT / "build"),
-    "--icon", str(ROOT / "config" / "assistant.ico"),
 ]
 if WINDOWS:
-    args += ["--version-file", str(ROOT / "installer" / "windows" / "version_info.txt")]
+    args += [
+        "--icon", str(ROOT / "config" / "assistant.ico"),
+        "--version-file", str(ROOT / "installer" / "windows" / "version_info.txt"),
+    ]
+elif sys.platform == "darwin":
+    from PIL import Image
+    icon_file = ROOT / "build" / "edith.icns"
+    icon_file.parent.mkdir(parents=True, exist_ok=True)
+    with Image.open(ROOT / "config" / "assistant.ico") as source_icon:
+        source_icon.convert("RGBA").save(
+            icon_file, format="ICNS",
+            sizes=[(16, 16), (32, 32), (64, 64), (128, 128), (256, 256), (512, 512)],
+        )
+    args += ["--icon", str(icon_file)]
 for source, destination in data:
     args += ["--add-data", f"{ROOT / source}{sep}{destination}"]
 args += ["--add-binary", f"{SANDBOX}{sep}sandbox-rs/target/release"]
