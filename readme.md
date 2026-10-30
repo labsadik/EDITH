@@ -38,6 +38,8 @@ These are separate responsibilities, not two competing text brains. A generic Op
 
 The app adapts to the current operating system and exposes structured capability results. Unsupported sensors, OS features, permissions or hardware are reported as unavailable instead of being fabricated.
 
+The current maintained repository is **WorkRCS/EDITH_v1**. Older setup notes or links may still refer to the legacy `Upgrade_Autonomous.git` repository; use this repository URL for new clones and updates: https://github.com/WorkRCS/EDITH_v1.
+
 ## Features
 
 ### Desktop assistant and interaction
