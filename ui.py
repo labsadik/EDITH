@@ -3419,9 +3419,8 @@ class PluginManagerOverlay(QWidget):
 
         def pair_worker() -> None:
             try:
-                from agents.smart_network import configure_home_assistant, test_home_assistant_connection
-                test_home_assistant_connection(url, token, timeout=5.0)
-                saved = configure_home_assistant(url, token)
+                from agents.smart_network import pair_home_assistant
+                saved = pair_home_assistant(url, token, timeout=5.0)
                 storage = str(saved.get("token_storage") or "unknown")
                 message = (
                     "Home Assistant paired · token stored in OS keychain."
