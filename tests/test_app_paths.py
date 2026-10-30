@@ -33,6 +33,26 @@ class AppPathTests(unittest.TestCase):
             self.assertEqual(target.read_text(encoding="utf-8"), legacy.read_text(encoding="utf-8"))
             self.assertTrue(legacy.is_file(), "Migration must not delete the legacy installation copy")
 
+
+    def test_packaged_config_templates_are_copied_into_user_data(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            bundle = root / "bundle"
+            template = bundle / "config" / "mcp_servers.json"
+            template.parent.mkdir(parents=True)
+            template.write_text('{"servers":[]}', encoding="utf-8")
+            appdata = root / "AppData"
+            with (
+                patch.object(app_paths, "is_frozen", return_value=True),
+                patch.object(app_paths, "resource_dir", return_value=bundle),
+                patch.object(app_paths, "install_dir", return_value=root / "Program Files" / "EDITH"),
+                patch.object(app_paths.platform, "system", return_value="Windows"),
+                patch.dict(os.environ, {"APPDATA": str(appdata)}),
+            ):
+                target = app_paths.writable_config_path("mcp_servers.json")
+            self.assertEqual(target.read_text(encoding="utf-8"), '{"servers":[]}')
+            self.assertEqual(target, appdata / "EDITH" / "config" / "mcp_servers.json")
+
     def test_existing_per_user_config_is_never_overwritten_by_legacy_copy(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
