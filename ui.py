@@ -41,6 +41,7 @@ from core.dark_theme import apply_dark_theme
 from core.secrets import get_gemini_api_key, save_gemini_api_key, get_config_secret, save_config_secret
 from core.theme_service import SystemThemeMonitor, normalise_theme
 from core.app_paths import config_path, resource_dir
+from core.modal_backdrop import ModalBackdrop
 
 def _base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -2722,6 +2723,7 @@ class ApiProviderWorkspace(QWidget):
 
 class SetupOverlay(QWidget):
     done = pyqtSignal(str, str)
+    _OW, _OH = 520, 430
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -2753,8 +2755,8 @@ class SetupOverlay(QWidget):
             w.setStyleSheet(f"color: {color}; background: transparent;")
             return w
 
-        layout.addWidget(_lbl("◈  INITIALISATION REQUIRED", 14, True))
-        layout.addWidget(_lbl("Configure your assistant before first boot.", 9, color=C.TEXT_MED))
+        layout.addWidget(_lbl("EDITH  /  FIRST-TIME SETUP", 14, True))
+        layout.addWidget(_lbl("Add your Gemini Live key and confirm this device platform.", 9, color=C.TEXT_MED))
         layout.addSpacing(6)
 
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
@@ -2765,7 +2767,7 @@ class SetupOverlay(QWidget):
                                align=Qt.AlignmentFlag.AlignLeft))
         self._key_input = QLineEdit()
         self._key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self._key_input.setPlaceholderText("AIza...")
+        self._key_input.setPlaceholderText("Paste your Gemini API key")
         self._key_input.setFont(QFont(FONT_MONO, 10))
         self._key_input.setFixedHeight(36)
         self._key_input.setStyleSheet(f"""
@@ -2782,10 +2784,10 @@ class SetupOverlay(QWidget):
         sep2.setStyleSheet(f"color: {C.BORDER};"); layout.addWidget(sep2)
         layout.addSpacing(4)
 
-        layout.addWidget(_lbl("OPERATING SYSTEM", 8, color=C.TEXT_DIM,
+        layout.addWidget(_lbl("DEVICE / OPERATING SYSTEM", 8, color=C.TEXT_DIM,
                                align=Qt.AlignmentFlag.AlignLeft))
         det_name = {"windows": "Windows", "mac": "macOS", "linux": "Linux"}[detected]
-        layout.addWidget(_lbl(f"Auto-detected: {det_name}", 8, color=C.ACC2,
+        layout.addWidget(_lbl(f"Detected platform: {det_name} · choose the profile for this device", 8, color=C.ACC2,
                                align=Qt.AlignmentFlag.AlignLeft))
 
         os_row = QHBoxLayout(); os_row.setSpacing(8)
@@ -2802,7 +2804,7 @@ class SetupOverlay(QWidget):
         self._sel(detected)
         layout.addSpacing(12)
 
-        init_btn = QPushButton("▸  INITIALISE SYSTEMS")
+        init_btn = QPushButton("SAVE KEY  &  INITIALISE EDITH")
         init_btn.setFont(QFont(FONT_MAIN, 10, QFont.Weight.Bold))
         init_btn.setFixedHeight(38)
         init_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -4180,6 +4182,7 @@ class MainWindow(QMainWindow):
         QApplication.clipboard().dataChanged.connect(self._on_clipboard_changed)
 
         self._overlay: SetupOverlay | None = None
+        self._setup_backdrop: ModalBackdrop | None = None
         self._ready = self._check_config()
         if not self._ready:
             self._show_setup()
@@ -4667,13 +4670,17 @@ class MainWindow(QMainWindow):
             return
         self._adjust_side_panels()
         cw = self.centralWidget()
+        if self._setup_backdrop and self._setup_backdrop.isVisible():
+            self._setup_backdrop.setGeometry(cw.rect())
         if self._overlay and self._overlay.isVisible():
-            ow, oh = 460, 390
+            ow = min(SetupOverlay._OW, max(360, cw.width() - 32))
+            oh = min(SetupOverlay._OH, max(340, cw.height() - 32))
             self._overlay.setGeometry(
-                (cw.width()  - ow) // 2,
+                (cw.width() - ow) // 2,
                 (cw.height() - oh) // 2,
                 ow, oh,
             )
+            self._overlay.raise_()
         if self._remote_overlay and self._remote_overlay.isVisible():
             ow, oh = RemoteKeyOverlay._OW, RemoteKeyOverlay._OH
             self._remote_overlay.setGeometry(
@@ -6165,16 +6172,31 @@ class MainWindow(QMainWindow):
             return False
 
     def _show_setup(self):
-        ov = SetupOverlay(self.centralWidget())
         cw = self.centralWidget()
-        ow, oh = 460, 390
+        if self._setup_backdrop:
+            self._setup_backdrop.hide()
+            self._setup_backdrop.deleteLater()
+
+        # The snapshot is taken before either overlay is shown, so the full
+        # EDITH dashboard is blurred and dimmed behind the focused setup card.
+        backdrop = ModalBackdrop(cw, blur_radius=22, tint="rgba(3, 7, 15, 196)")
+        backdrop.setGeometry(cw.rect())
+        backdrop.show()
+        backdrop.raise_()
+        self._setup_backdrop = backdrop
+
+        ov = SetupOverlay(cw)
+        width = min(SetupOverlay._OW, max(360, cw.width() - 32))
+        height = min(SetupOverlay._OH, max(340, cw.height() - 32))
         ov.setGeometry(
-            (cw.width()  - ow) // 2,
-            (cw.height() - oh) // 2,
-            ow, oh,
+            (cw.width() - width) // 2,
+            (cw.height() - height) // 2,
+            width, height,
         )
         ov.done.connect(self._on_setup_done)
         ov.show()
+        ov.raise_()
+        ov._key_input.setFocus()
         self._overlay = ov
 
     def _on_setup_done(self, key: str, os_name: str):
@@ -6190,7 +6212,12 @@ class MainWindow(QMainWindow):
         self._ready = True
         if self._overlay:
             self._overlay.hide()
+            self._overlay.deleteLater()
             self._overlay = None
+        if self._setup_backdrop:
+            self._setup_backdrop.hide()
+            self._setup_backdrop.deleteLater()
+            self._setup_backdrop = None
         self._apply_state("LISTENING")
         self._assistant_name = "EDITH"
         self._display_name = UI_BRAND
