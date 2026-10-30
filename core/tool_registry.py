@@ -47,7 +47,7 @@ class ToolRegistry:
     """
 
     _READ_ONLY_BUILTINS = frozenset({
-        "web_search", "system_status", "performance_metrics", "task_history",
+        "web_search", "system_status", "performance_metrics", "task_history", "device_security", "smart_network",
     })
     _RETRYABLE_READS = frozenset({"web_search", "system_status", "performance_metrics"})
 
