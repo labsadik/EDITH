@@ -239,9 +239,9 @@ Code for {file_path}:"""
 def _sandbox_output(receipt) -> str:
     output = (receipt.stdout or "").strip()
     if receipt.stderr:
-        output = (output + "\\n[stderr]\\n" + receipt.stderr.strip()).strip()
+        output = (output + "\n[stderr]\n" + receipt.stderr.strip()).strip()
     if receipt.returncode != 0:
-        return f"Execution failed (exit {receipt.returncode}).\\n{output[-10000:]}"
+        return f"Execution failed (exit {receipt.returncode}).\n{output[-10000:]}"
     return output[-10000:] or "Command completed with no output."
 
 
@@ -253,7 +253,7 @@ def _install_dependencies(
         return "No external dependencies."
     # Dependency names are data, not shell fragments or pip option arguments.
     package_pattern = re.compile(
-        r"^[A-Za-z0-9][A-Za-z0-9_.-]*(?:\\[[A-Za-z0-9_,.-]+\\])?(?:(?:===|==|!=|~=|>=|<=|>|<)[A-Za-z0-9.*+!-]+)?$"
+        r"^[A-Za-z0-9][A-Za-z0-9_.-]*(?:\[[A-Za-z0-9_,.-]+\])?(?:(?:===|==|!=|~=|>=|<=|>|<)[A-Za-z0-9.*+!-]+)?$"
     )
     if any(
         not isinstance(item, str) or not package_pattern.fullmatch(item.strip())
