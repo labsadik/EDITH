@@ -1,0 +1,48 @@
+name: Local Rust sandbox
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "sandbox-rs/**"
+      - "core/sandbox_runner.py"
+      - "actions/dev_agent.py"
+      - "actions/code_helper.py"
+      - "actions/desktop.py"
+      - ".github/workflows/rust-sandbox.yml"
+  push:
+    branches: [main, backend/versioned-agents-foundation]
+    paths:
+      - "sandbox-rs/**"
+      - ".github/workflows/rust-sandbox.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  rust-sandbox:
+    name: Rust sandbox (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --manifest-path sandbox-rs/Cargo.toml --all -- --check
+      - name: Compile sandbox helper
+        run: cargo check --manifest-path sandbox-rs/Cargo.toml
+      - name: Build release helper
+        run: cargo build --release --manifest-path sandbox-rs/Cargo.toml
+      - name: Check native binary version (Unix)
+        if: runner.os != 'Windows'
+        run: ./sandbox-rs/target/release/edith-sandbox --version
+      - name: Check native binary version (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./sandbox-rs/target/release/edith-sandbox.exe --version
