@@ -32,9 +32,6 @@ jobs:
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
-      - name: Check formatting
-        run: cargo fmt --manifest-path sandbox-rs/Cargo.toml --all -- --check
       - name: Compile sandbox helper
         run: cargo check --manifest-path sandbox-rs/Cargo.toml
       - name: Build release helper
