@@ -82,6 +82,7 @@ class HomeAssistantSetupTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertFalse(result["connected"])
         self.assertTrue(result["needs_pairing"])
+        self.assertIn("PAIR HA", result["setup"])
         self.assertIn("configure_home_assistant.py", result["setup"])
         request.assert_not_called()
 
