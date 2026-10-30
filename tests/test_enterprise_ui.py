@@ -74,21 +74,33 @@ class WorkspaceTests(unittest.TestCase):
         catalog.deleteLater()
         self.app.processEvents()
 
-    def test_api_settings_exposes_voice_brain_and_realtime_search(self):
-        from unittest.mock import patch
-        from PyQt6.QtWidgets import QScrollArea
-        from ui import ApiKeyOverlay
+    def test_api_provider_workspace_has_four_test_gated_tabs(self):
+        from PyQt6.QtWidgets import QTabWidget, QPushButton
+        from ui import ApiProviderWorkspace
 
-        with patch.object(ApiKeyOverlay, "_probe_local_connection", lambda *_args: None):
-            overlay = ApiKeyOverlay("voice-key-placeholder", parent=self.window.centralWidget())
-        self.assertEqual(overlay._voice_provider.currentData(), "gemini_live")
-        self.assertGreaterEqual(overlay._brain_panel._provider.count(), 4)
-        self.assertEqual(overlay._search_provider.count(), 4)
-        self.assertEqual(overlay._search_provider.accessibleName(), "Real-time search provider")
-        self.assertEqual(overlay._close_btn.accessibleName(), "Close API settings")
-        self.assertIsNotNone(overlay.findChild(QScrollArea))
+        overlay = ApiProviderWorkspace(parent=self.window.centralWidget())
+        self.assertIsInstance(overlay._tabs, QTabWidget)
+        self.assertEqual([overlay._tabs.tabText(i) for i in range(overlay._tabs.count())],
+                         ["VOICE", "MAIN BRAIN", "POWERFUL BRAIN", "REAL-TIME SEARCH"])
+        self.assertEqual(overlay._voice._provider.currentData(), "gemini_live")
+        self.assertEqual(overlay._main_brain._provider.count(), 6)
+        self.assertEqual(overlay._powerful_brain._provider.count(), 6)
+        self.assertEqual(overlay._search._provider.count(), 4)
+        for panel in (overlay._voice, overlay._main_brain, overlay._powerful_brain, overlay._search):
+            self.assertFalse(panel._save_btn.isEnabled())
+        self.assertTrue(any(button.accessibleName() == "Close API Providers"
+                            for button in overlay.findChildren(QPushButton)))
         overlay.deleteLater()
         self.app.processEvents()
+
+    def test_preferences_no_longer_exposes_manual_colour_adjustments(self):
+        self.window._open_customize()
+        panel = self.window._customize_overlay
+        self.assertFalse(hasattr(panel, "_wheel"))
+        self.assertFalse(hasattr(panel, "_hex_input"))
+        self.assertTrue(hasattr(panel, "_theme_picker"))
+        panel._cancel()
+        self.assertFalse(panel.isVisible())
 
     def test_remove_attachment_clears_all_selection_state(self):
         window = self.window
@@ -155,11 +167,13 @@ class WorkspaceTests(unittest.TestCase):
         window._on_cam_stream(False)
         self.assertEqual(window._hud_cam_stack.currentIndex(), 0)
 
-    def test_original_theme_preview_cancels_without_persistence(self):
+    def test_theme_preview_cancels_without_persistence(self):
         original = self.ui.current_palette()
         self.window._open_customize()
         panel = self.window._customize_overlay
-        panel._set_color('#a0458c')
+        panel._theme_picker.setCurrentIndex(2)
+        self.app.processEvents()
+        self.assertEqual(self.ui.C.BG, self.ui._THEME_DEFAULTS["light"]["BG"])
         self.window._escape_action()
         self.assertFalse(panel.isVisible())
         self.assertEqual({k:v.lower() for k,v in original.items()},
