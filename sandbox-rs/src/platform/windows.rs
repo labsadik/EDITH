@@ -164,7 +164,7 @@ fn safe_environment(options: &Options, temp: &Path) -> Vec<u16> {
     for key in ["SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "PROCESSOR_ARCHITECTURE", "NUMBER_OF_PROCESSORS", "PROGRAMFILES", "PROGRAMFILES(X86)"] {
         if let Ok(value) = std::env::var(key) { values.insert(key.to_string(), value); }
     }
-        .unwrap_or_else(|_| r"C:\Windows".to_string());
+    let system_root = values.get("SYSTEMROOT").or_else(|| values.get("WINDIR")).cloned().unwrap_or_else(|| r"C:\Windows".to_string());
     values.insert("SYSTEMROOT".into(), system_root.clone());
     values.insert("WINDIR".into(), system_root.clone());
     values.insert("COMSPEC".into(), format!(r"{system_root}\System32\cmd.exe"));
