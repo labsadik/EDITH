@@ -150,6 +150,27 @@ class SpeechPlayer:
         except queue.Full:
             pass  # Only diagnostics are bounded/dropped; never PCM.
 
+    def _open_stream(self):
+        """Prefer low output latency, but respect drivers that only support their default."""
+        options = {
+            "samplerate": SAMPLE_RATE, "channels": 1,
+            "dtype": "int16", "blocksize": 0,
+        }
+        try:
+            return self.stream_factory(**options, latency="low")
+        except Exception as low_error:
+            try:
+                stream = self.stream_factory(**options)
+            except Exception as default_error:
+                raise RuntimeError(
+                    "Audio device rejected both low-latency and default stream modes "
+                    f"({type(low_error).__name__}; {type(default_error).__name__})"
+                ) from default_error
+            self._event(
+                "AUDIO: This driver does not support low-latency mode; using its default buffer."
+            )
+            return stream
+
     def start(self):
         self._thread.start()
 
@@ -164,8 +185,7 @@ class SpeechPlayer:
                 stream = None
                 started = False
                 try:
-                    stream = self.stream_factory(samplerate=SAMPLE_RATE, channels=1,
-                                                 dtype='int16', blocksize=0, latency='low')
+                    stream = self._open_stream()
                     if unavailable:
                         self.buffer.clear()  # Do not replay old speech after device recovery.
                         self._event('AUDIO: Speaker available again; stale output was not replayed.')
