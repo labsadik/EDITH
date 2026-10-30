@@ -67,7 +67,6 @@ python -m pip install -r requirements.txt
 
 rustc --version
 cargo --version
-cargo fmt --manifest-path sandbox-rs/Cargo.toml --all -- --check
 cargo check --manifest-path sandbox-rs/Cargo.toml
 cargo build --release --manifest-path sandbox-rs/Cargo.toml
 .\sandbox-rs\target\release\edith-sandbox.exe --version
@@ -102,7 +101,6 @@ python -m pip install -r requirements.txt
 rustc --version
 cargo --version
 bwrap --version
-cargo fmt --manifest-path sandbox-rs/Cargo.toml --all -- --check
 cargo check --manifest-path sandbox-rs/Cargo.toml
 cargo build --release --manifest-path sandbox-rs/Cargo.toml
 ./sandbox-rs/target/release/edith-sandbox --version
@@ -133,7 +131,6 @@ python -m pip install -r requirements.txt
 rustc --version
 cargo --version
 command -v sandbox-exec
-cargo fmt --manifest-path sandbox-rs/Cargo.toml --all -- --check
 cargo check --manifest-path sandbox-rs/Cargo.toml
 cargo build --release --manifest-path sandbox-rs/Cargo.toml
 ./sandbox-rs/target/release/edith-sandbox --version
