@@ -63,7 +63,7 @@ class WorkspaceTests(unittest.TestCase):
              "description": "Local tool", "valid": True, "enabled": True},
         ], parent=self.window.centralWidget())
         self.assertEqual(len(catalog.findChildren(QScrollArea)), 1)
-        self.assertEqual(len(catalog.findChildren(QFrame)), 2)
+        self.assertEqual(len(catalog.findChildren(QFrame, "PluginCard")), 2)
         catalog.deleteLater()
         self.app.processEvents()
 
