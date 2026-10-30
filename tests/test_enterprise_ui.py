@@ -42,7 +42,7 @@ class WorkspaceTests(unittest.TestCase):
 
 
     def test_modern_workspace_surfaces_and_provider_panels(self):
-        from PyQt6.QtWidgets import QFrame, QScrollArea, QTabWidget
+        from PyQt6.QtWidgets import QFrame, QScrollArea, QTabWidget, QPushButton
         from ui import PluginManagerOverlay, ProviderSettingsOverlay
 
         self.assertIn("border-radius: 18px", self.window._left_panel.styleSheet())
@@ -69,10 +69,8 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(len(catalog.findChildren(QFrame, "PluginCard")), 2)
         self.assertEqual(len(catalog._mcp_tab.findChildren(QFrame, "PluginCard")), 1)
         self.assertEqual(len(catalog._agents_tab.findChildren(QFrame, "PluginCard")), 1)
-        self.assertTrue(catalog.findChild(__import__("PyQt6.QtWidgets", fromlist=["QPushButton"]).QPushButton,
-                                          ""))
-        self.assertEqual(catalog.findChildren(__import__("PyQt6.QtWidgets", fromlist=["QPushButton"]).QPushButton)[0].accessibleName(),
-                         "Close Plugins manager")
+        self.assertTrue(any(button.accessibleName() == "Close Plugins manager"
+                                for button in catalog.findChildren(QPushButton)))
         catalog.deleteLater()
         self.app.processEvents()
 
