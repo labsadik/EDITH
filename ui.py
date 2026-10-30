@@ -1893,6 +1893,29 @@ class _ApiTabBase(QWidget):
             QLabel {{ background: transparent; }}
         """)
 
+    def _create_scroll_form(self) -> QVBoxLayout:
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet(f"""
+            QScrollArea {{ background: transparent; border: 0; }}
+            QScrollBar:vertical {{ background: transparent; width: 7px; margin: 4px 0; }}
+            QScrollBar::handle:vertical {{ background: {C.BORDER_B}; border-radius: 3px; min-height: 26px; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+        """)
+        body = QWidget()
+        body.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(20, 20, 20, 18)
+        layout.setSpacing(12)
+        scroll.setWidget(body)
+        root.addWidget(scroll, 1)
+        return layout
+
     @staticmethod
     def _field_style() -> str:
         return f"""
@@ -1976,9 +1999,7 @@ class _ProviderProfileTab(_ApiTabBase):
         self._loading_models = False
         self._key_revealed = False
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 18)
-        layout.setSpacing(12)
+        layout = self._create_scroll_form()
 
         title_row = QHBoxLayout()
         icon = QLabel()
@@ -2775,7 +2796,7 @@ class SetupOverlay(QWidget):
         sep.setStyleSheet(f"color: {C.BORDER};"); layout.addWidget(sep)
         layout.addSpacing(4)
 
-        layout.addWidget(_lbl("GEMINI API KEY", 8, color=C.TEXT_DIM,
+        layout.addWidget(_lbl("VOICE API KEY", 8, color=C.TEXT_DIM,
                                align=Qt.AlignmentFlag.AlignLeft))
         self._key_input = QLineEdit()
         self._key_input.setEchoMode(QLineEdit.EchoMode.Password)
