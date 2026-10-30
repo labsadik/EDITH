@@ -159,6 +159,15 @@ class SpeechPlayer:
         try:
             return self.stream_factory(**options, latency="low")
         except Exception as low_error:
+            # Only negotiate the driver's default buffer when the low-latency
+            # setting itself is rejected. A disconnected/missing device must
+            # remain unavailable so the caller clears stale speech immediately.
+            low_latency_rejected = (
+                isinstance(low_error, (TypeError, ValueError))
+                or "latency" in str(low_error).casefold()
+            )
+            if not low_latency_rejected:
+                raise
             try:
                 stream = self.stream_factory(**options)
             except Exception as default_error:
