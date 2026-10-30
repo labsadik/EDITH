@@ -8,6 +8,7 @@ import platform
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -262,9 +263,22 @@ def scan_wifi_networks() -> dict[str, Any]:
                 "error": "No WLAN interface is exposed by Windows. Check that the USB Wi-Fi dongle driver is installed and the WLAN AutoConfig service is running.",
             }
         for name in names[:8]:
+            request = _run_fixed(
+                ["netsh", "wlan", "scan", "interface=" + name], timeout=5.0
+            )
+            if not request.get("available"):
+                adapters.append({
+                    "name": name, "available": False, "network_count": 0,
+                    "error": request.get("reason") or request.get("output")
+                             or "Windows WLAN scan request was rejected for this adapter.",
+                })
+                continue
+            # Windows schedules a driver scan asynchronously. Give the WLAN
+            # service a short window to refresh its visible-network cache.
+            time.sleep(1.25)
             scan = _run_fixed(
                 ["netsh", "wlan", "show", "networks", "mode=bssid", "interface=" + name],
-                timeout=8.0,
+                timeout=5.0,
             )
             rows = _parse_windows_wifi_networks(str(scan.get("output") or ""), name)
             adapters.append({
