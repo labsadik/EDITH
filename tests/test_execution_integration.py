@@ -1,5 +1,6 @@
 """Step 7 integration contracts for the shared, confirmed execution layer."""
 import asyncio
+import subprocess
 import sys
 import tempfile
 import threading
