@@ -147,6 +147,22 @@ fn is_windows_system_directory(path: &Path) -> bool {
     normalize_windows_path(path) == normalize_windows_path(&system)
 }
 
+fn win32_path(path: &Path) -> PathBuf {
+    // Keep filesystem/ACL operations on canonical paths, but pass ordinary
+    // DOS/UNC paths to CreateProcess and child environment variables. cmd.exe
+    // treats a \\?\ current directory as an unsupported UNC working directory.
+    let value = path.to_string_lossy().replace('/', "\\");
+    if let Some(rest) = value.strip_prefix("\\\\?\\UNC\\") {
+        PathBuf::from(format!("\\\\{rest}"))
+    } else if let Some(rest) = value.strip_prefix("\\\\?\\") {
+        PathBuf::from(rest)
+    } else if let Some(rest) = value.strip_prefix("\\\\.\\") {
+        PathBuf::from(rest)
+    } else {
+        PathBuf::from(value.as_ref())
+    }
+}
+
 #[cfg(test)]
 mod path_tests {
     use super::*;
@@ -171,6 +187,18 @@ mod path_tests {
             normalize_windows_path(regular),
             normalize_windows_path(differently_cased)
         );
+    }
+
+    #[test]
+    fn process_path_strips_extended_length_prefix() {
+        let extended = Path::new(r"\\?\D:\work\project");
+        assert_eq!(win32_path(extended), PathBuf::from(r"D:\work\project"));
+    }
+
+    #[test]
+    fn process_path_converts_extended_unc_prefix() {
+        let extended = Path::new(r"\\?\UNC\server\share\project");
+        assert_eq!(win32_path(extended), PathBuf::from(r"\\server\share\project"));
     }
 }
 
@@ -203,6 +231,8 @@ fn quote_arg(value: &str) -> String {
 }
 
 fn safe_environment(options: &Options, temp: &Path) -> Vec<u16> {
+    let workspace = win32_path(&options.workspace);
+    let temp = win32_path(temp);
     let mut values: BTreeMap<String, String> = BTreeMap::new();
     for key in [
         "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT",
@@ -222,20 +252,20 @@ fn safe_environment(options: &Options, temp: &Path) -> Vec<u16> {
     values.insert("WINDIR".into(), system_root.clone());
     values.insert("COMSPEC".into(), format!(r"{system_root}\System32\cmd.exe"));
     let mut path_dirs = vec![PathBuf::from(format!(r"{system_root}\System32"))];
-    path_dirs.extend(options.path_dirs.iter().cloned());
-    path_dirs.push(options.workspace.join(".venv/Scripts"));
-    path_dirs.push(options.workspace.clone());
+    path_dirs.extend(options.path_dirs.iter().map(|path| win32_path(path)));
+    path_dirs.push(workspace.join(".venv/Scripts"));
+    path_dirs.push(workspace.clone());
     values.insert(
         "PATH".into(),
         std::env::join_paths(path_dirs).unwrap_or_default().to_string_lossy().to_string(),
     );
-    values.insert("USERPROFILE".into(), options.workspace.join(".edith-home").to_string_lossy().to_string());
-    values.insert("HOMEDRIVE".into(), options.workspace.to_string_lossy().chars().take(2).collect());
-    values.insert("HOMEPATH".into(), options.workspace.join(".edith-home").to_string_lossy().to_string());
+    values.insert("USERPROFILE".into(), workspace.join(".edith-home").to_string_lossy().to_string());
+    values.insert("HOMEDRIVE".into(), workspace.to_string_lossy().chars().take(2).collect());
+    values.insert("HOMEPATH".into(), workspace.join(".edith-home").to_string_lossy().to_string());
     values.insert("TEMP".into(), temp.to_string_lossy().to_string());
     values.insert("TMP".into(), temp.to_string_lossy().to_string());
-    values.insert("APPDATA".into(), options.workspace.join(".edith-appdata").to_string_lossy().to_string());
-    values.insert("LOCALAPPDATA".into(), options.workspace.join(".edith-local").to_string_lossy().to_string());
+    values.insert("APPDATA".into(), workspace.join(".edith-appdata").to_string_lossy().to_string());
+    values.insert("LOCALAPPDATA".into(), workspace.join(".edith-local").to_string_lossy().to_string());
     values.insert("PYTHONDONTWRITEBYTECODE".into(), "1".into());
     values.insert("PYTHONUNBUFFERED".into(), "1".into());
     values.insert("PYTHONNOUSERSITE".into(), "1".into());
@@ -283,6 +313,7 @@ pub fn run(options: &Options) -> Result<i32, String> {
                 .map(|dir| dir.join(&options.program)).find(|p| p.is_file())
                 .ok_or_else(|| format!("Sandbox executable not found: {}", options.program.display()))?
         };
+        let app = win32_path(&app);
         if !app.is_file() { return Err(format!("Sandbox executable does not exist: {}", app.display())); }
         if !app.starts_with(workspace) && !is_windows_system_directory(app.parent().unwrap_or(Path::new(""))) {
             grant_path(app.parent().ok_or("Executable has no parent directory")?, sid, false)?;
@@ -315,7 +346,8 @@ pub fn run(options: &Options) -> Result<i32, String> {
         let command_line = std::iter::once(app.to_string_lossy().to_string()).chain(options.args.iter().cloned()).map(|arg| quote_arg(&arg)).collect::<Vec<_>>().join(" ");
         let app_wide: Vec<u16> = app.as_os_str().encode_wide().chain(Some(0)).collect();
         let mut command_wide: Vec<u16> = command_line.encode_utf16().chain(Some(0)).collect();
-        let mut cwd: Vec<u16> = workspace.as_os_str().encode_wide().chain(Some(0)).collect();
+        let cwd_path = win32_path(workspace);
+        let mut cwd: Vec<u16> = cwd_path.as_os_str().encode_wide().chain(Some(0)).collect();
         let mut env_block = safe_environment(options, &temp);
         let mut startup: StartupInfoExW = unsafe { zeroed() };
         startup.StartupInfo.cb = size_of::<StartupInfoExW>() as u32;
