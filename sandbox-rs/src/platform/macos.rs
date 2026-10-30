@@ -10,6 +10,11 @@ fn profile_path(path: &str) -> String {
 }
 
 pub fn run(options: &Options) -> Result<i32, String> {
+    if options.network {
+        return Err(
+            "Internet-enabled macOS sandbox runs are blocked until a restricted egress proxy/firewall backend is installed. No process was started.".into()
+        );
+    }
     let workspace = options.workspace.to_string_lossy().to_string();
     let home = options.workspace.join(".edith-home");
     let temp = options.workspace.join(".edith-tmp");
@@ -35,9 +40,6 @@ pub fn run(options: &Options) -> Result<i32, String> {
         if Path::new(value.as_ref()).exists() {
             rules.push(format!("(allow file-read* (subpath \"{}\"))", profile_path(&value)));
         }
-    }
-    if options.network {
-        rules.push("(allow network-outbound)".to_string());
     }
     // Keep the policy outside the writable project tree, so sandboxed code
     // cannot loosen its own restrictions by editing the profile after launch.
