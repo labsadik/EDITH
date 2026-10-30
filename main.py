@@ -106,14 +106,17 @@ from core.agent_reliability import (
     assess_action_evidence, format_task_history,
 )
 
+from core.app_paths import config_path, resource_dir
+
+
 def get_base_dir():
     if getattr(sys, "frozen", False):
         return Path(sys.executable).parent
     return Path(__file__).resolve().parent
 
 BASE_DIR        = get_base_dir()
-API_CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
-PROMPT_PATH     = BASE_DIR / "core" / "prompt.txt"
+API_CONFIG_PATH = config_path()
+PROMPT_PATH     = resource_dir() / "core" / "prompt.txt"
 LIVE_MODEL          = "models/gemini-2.5-flash-native-audio-preview-12-2025"
 
 
