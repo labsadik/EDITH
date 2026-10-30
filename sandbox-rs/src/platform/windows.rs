@@ -6,8 +6,6 @@ use std::mem::{size_of, zeroed};
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::ptr::{null, null_mut};
-use std::thread;
-use std::time::Duration;
 use crate::Options;
 
 type Handle = *mut c_void;
@@ -152,7 +150,7 @@ fn quote_arg(value: &str) -> String {
     let mut out = String::from("\"");
     let mut slashes = 0usize;
     for ch in value.chars() {
-        if ch == '\\\\' { slashes += 1; continue; }
+        if ch == '\\' { slashes += 1; continue; }
         if ch == '"' { out.push_str(&"\\\\".repeat(slashes * 2 + 1)); out.push('"'); slashes = 0; continue; }
         out.push_str(&"\\\\".repeat(slashes)); slashes = 0; out.push(ch);
     }
@@ -195,7 +193,7 @@ fn safe_environment(options: &Options, temp: &Path) -> Vec<u16> {
     block
 }
 
-fn make_job() -> Result<Handle, String> {
+fn make_job(timeout: u64) -> Result<Handle, String> {
     let job = unsafe { CreateJobObjectW(null_mut(), null()) };
     if job.is_null() { return Err(format!("CreateJobObjectW failed: {}", std::io::Error::last_os_error())); }
     let mut info: JobExtendedLimitInformation = unsafe { zeroed() };
@@ -258,7 +256,7 @@ pub fn run(options: &Options) -> Result<i32, String> {
             return Err(format!("Could not apply AppContainer capability boundary: {}", std::io::Error::last_os_error()));
         }
         let command_line = std::iter::once(app.to_string_lossy().to_string()).chain(options.args.iter().cloned()).map(|arg| quote_arg(&arg)).collect::<Vec<_>>().join(" ");
-        let mut app_wide: Vec<u16> = app.as_os_str().encode_wide().chain(Some(0)).collect();
+        let app_wide: Vec<u16> = app.as_os_str().encode_wide().chain(Some(0)).collect();
         let mut command_wide: Vec<u16> = command_line.encode_utf16().chain(Some(0)).collect();
         let mut cwd: Vec<u16> = workspace.as_os_str().encode_wide().chain(Some(0)).collect();
         let mut env_block = safe_environment(options, &temp);
@@ -273,7 +271,7 @@ pub fn run(options: &Options) -> Result<i32, String> {
         let created = unsafe { CreateProcessW(app_wide.as_ptr(), command_wide.as_mut_ptr(), null_mut(), null_mut(), 1, EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT, env_block.as_mut_ptr().cast(), cwd.as_mut_ptr(), (&mut startup as *mut StartupInfoExW).cast(), &mut process) };
         unsafe { DeleteProcThreadAttributeList(attributes); if !internet_sid.is_null() { LocalFree(internet_sid); } }
         check_win(created, "CreateProcessW(AppContainer)")?;
-        let job = match make_job() {
+        let job = match make_job(options.timeout) {
             Ok(value) => value,
             Err(error) => { unsafe { TerminateProcess(process.hProcess, 125); CloseHandle(process.hThread); CloseHandle(process.hProcess); } return Err(error); }
         };
