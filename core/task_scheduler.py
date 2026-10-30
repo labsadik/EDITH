@@ -25,6 +25,8 @@ def parallel_read_only(name: str, arguments: Mapping[str, Any] | None = None) ->
     action = str(args.get("action") or "").strip().lower()
     if name in _READ_ONLY_TOOLS:
         return True
+    if name == "project_manager":
+        return action in {"status", "list"}
     if name == "file_controller":
         return action in _READ_ONLY_FILE_ACTIONS
     if name == "open_app":
