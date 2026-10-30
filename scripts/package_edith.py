@@ -67,13 +67,19 @@ args += ["--add-binary", f"{SANDBOX}{sep}sandbox-rs/target/release"]
 # Keep importlib/plugin-discovered modules and Qt WebEngine runtime inside the
 # distributable. Per-user credentials are deliberately never bundled.
 for package in (
-    "PyQt6", "google.genai", "langchain_core", "langchain_text_splitters",
+    "google.genai", "langchain_core", "langchain_text_splitters",
     "langgraph", "lancedb", "paho.mqtt", "actions", "agents", "core",
     "dashboard", "memory", "plugins", "edith", "tools",
 ):
     args += ["--collect-all", package]
 args += [
     "--hidden-import", "google.genai.types",
+    "--hidden-import", "PyQt6.QtCore",
+    "--hidden-import", "PyQt6.QtGui",
+    "--hidden-import", "PyQt6.QtWidgets",
+    "--hidden-import", "PyQt6.QtMultimedia",
+    "--hidden-import", "PyQt6.QtNetwork",
+    "--hidden-import", "PyQt6.QtSvg",
     "--hidden-import", "PyQt6.QtWebEngineCore",
     "--hidden-import", "PyQt6.QtWebEngineWidgets",
     "--hidden-import", "sounddevice",
