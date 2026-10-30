@@ -8,7 +8,6 @@ import json
 import re
 import time
 import tempfile
-import shutil
 from pathlib import Path
 
 
