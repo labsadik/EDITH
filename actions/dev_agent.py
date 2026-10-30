@@ -574,6 +574,25 @@ def _build_project(
     auto_installs = 0  
 
     for attempt in range(1, MAX_FIX_ATTEMPTS + 1):
+        # DevSecOps review runs locally before every generated-code execution,
+        # including after repair attempts. A critical credential finding blocks run.
+        from agents.devsecops import scan_project, format_report
+        try:
+            security_report = scan_project(project_dir)
+            security_text = format_report(security_report)
+            log(security_text)
+        except Exception as exc:
+            return (
+                "DevSecOps review failed; project execution was blocked. "
+                f"{type(exc).__name__}: {exc}"
+            )
+        if security_report["counts"]["critical"]:
+            return (
+                "DevSecOps blocked project execution because critical security "
+                "findings remain. Review the local report and remove the exposed "
+                "credential/private-key pattern before asking EDITH to run this project.\\n"
+                + security_text
+            )
         log(f"Running project (attempt {attempt}/{MAX_FIX_ATTEMPTS})...")
         last_output = _run_project(run_command, project_dir, timeout, sandbox_python)
         log(f"Output preview: {last_output[:150]}")
