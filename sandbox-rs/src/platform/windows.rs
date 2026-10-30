@@ -161,10 +161,20 @@ fn quote_arg(value: &str) -> String {
 
 fn safe_environment(options: &Options, temp: &Path) -> Vec<u16> {
     let mut values: BTreeMap<String, String> = BTreeMap::new();
-    for key in ["SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "PROCESSOR_ARCHITECTURE", "NUMBER_OF_PROCESSORS", "PROGRAMFILES", "PROGRAMFILES(X86)"] {
-        if let Ok(value) = std::env::var(key) { values.insert(key.to_string(), value); }
+    for key in [
+        "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT",
+        "PROCESSOR_ARCHITECTURE", "NUMBER_OF_PROCESSORS",
+        "PROGRAMFILES", "PROGRAMFILES(X86)",
+    ] {
+        if let Ok(value) = std::env::var(key) {
+            values.insert(key.to_string(), value);
+        }
     }
-    let system_root = values.get("SYSTEMROOT").or_else(|| values.get("WINDIR")).cloned().unwrap_or_else(|| r"C:\Windows".to_string());
+    let system_root = values
+        .get("SYSTEMROOT")
+        .or_else(|| values.get("WINDIR"))
+        .cloned()
+        .unwrap_or_else(|| r"C:\Windows".to_string());
     values.insert("SYSTEMROOT".into(), system_root.clone());
     values.insert("WINDIR".into(), system_root.clone());
     values.insert("COMSPEC".into(), format!(r"{system_root}\System32\cmd.exe"));
@@ -172,7 +182,10 @@ fn safe_environment(options: &Options, temp: &Path) -> Vec<u16> {
     path_dirs.extend(options.path_dirs.iter().cloned());
     path_dirs.push(options.workspace.join(".venv/Scripts"));
     path_dirs.push(options.workspace.clone());
-    values.insert("PATH".into(), std::env::join_paths(path_dirs).unwrap_or_default().to_string_lossy().to_string());
+    values.insert(
+        "PATH".into(),
+        std::env::join_paths(path_dirs).unwrap_or_default().to_string_lossy().to_string(),
+    );
     values.insert("USERPROFILE".into(), options.workspace.join(".edith-home").to_string_lossy().to_string());
     values.insert("HOMEDRIVE".into(), options.workspace.to_string_lossy().chars().take(2).collect());
     values.insert("HOMEPATH".into(), options.workspace.join(".edith-home").to_string_lossy().to_string());
