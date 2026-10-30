@@ -199,7 +199,7 @@ fn make_job(timeout: u64) -> Result<Handle, String> {
     let mut info: JobExtendedLimitInformation = unsafe { zeroed() };
     info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_ACTIVE_PROCESS | JOB_OBJECT_LIMIT_PROCESS_MEMORY | JOB_OBJECT_LIMIT_JOB_MEMORY | JOB_OBJECT_LIMIT_PROCESS_TIME;
     info.BasicLimitInformation.ActiveProcessLimit = 64;
-    info.BasicLimitInformation.PerProcessUserTimeLimit = (options.timeout.min(3600) as i64) * 10_000_000;
+    info.BasicLimitInformation.PerProcessUserTimeLimit = (timeout.min(3600) as i64) * 10_000_000;
     info.ProcessMemoryLimit = 2 * 1024 * 1024 * 1024usize;
     info.JobMemoryLimit = 4 * 1024 * 1024 * 1024usize;
     let ok = unsafe { SetInformationJobObject(job, JOB_OBJECT_EXTENDED_LIMIT_INFORMATION, (&mut info as *mut JobExtendedLimitInformation).cast(), size_of::<JobExtendedLimitInformation>() as u32) };
