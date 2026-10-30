@@ -52,7 +52,7 @@ def _gemini_client():
                 isinstance(part, str) for part in contents
             ):
                 return SimpleNamespace(text=call_brain_text(
-                    "\\n\\n".join(contents), workload="file_workspace"
+                    "\n\n".join(contents), workload="file_workspace"
                 ))
             # Multimodal analysis/transcription remains on the dedicated Gemini
             # media path; text-only reasoning is centralized on Powerful Brain.
