@@ -354,6 +354,10 @@ class HudCanvas(QWidget):
     def shutdown(self) -> None:
         """Release animation timers and multimedia resources before widget teardown."""
         self._tmr.stop()
+        try:
+            self._video.frame_ready.disconnect(self.update)
+        except (TypeError, RuntimeError):
+            pass
         self._video.shutdown()
 
     def set_input_level(self, level: float, source: str = "PC") -> None:
