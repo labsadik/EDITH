@@ -83,7 +83,7 @@ class AgentRegistryTests(unittest.TestCase):
 
             by_id = {record["agent_id"]: record for record in records}
             self.assertEqual(set(by_id), {agent["id"] for agent in expected})
-            self.assertIn("v1.0.0", by_id["smart_network"]["name"])
+            self.assertIn(f"v{agent_registry.get_agent('smart_network')['version']}", by_id["smart_network"]["name"])
             self.assertTrue(all(record["valid"] for record in records))
             self.assertTrue(all(record["kind"] == "agent" for record in records))
 

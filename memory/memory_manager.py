@@ -16,6 +16,8 @@ import tempfile
 import re
 from typing import Any
 
+from core.app_paths import app_data_dir, is_frozen
+
 
 def get_base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -23,7 +25,7 @@ def get_base_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-BASE_DIR = get_base_dir()
+BASE_DIR = app_data_dir() if is_frozen() else get_base_dir()
 MEMORY_PATH = BASE_DIR / "memory" / "long_term.json"
 _lock = RLock()
 MAX_VALUE_LENGTH = 380

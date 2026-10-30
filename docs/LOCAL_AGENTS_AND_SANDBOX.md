@@ -17,13 +17,22 @@ Built-in agents are versioned in `agents/manifest.json`. Ask EDITH **"list agent
 | DevSecOps Security | 1.0.0 | Offline static scan for exposed credential patterns, private keys, unsafe dynamic code, deserialization and shell/TLS/YAML risks. Runs before each generated-project execution. |
 | Project Manager | 1.0.0 | Creates project plans, milestones and locally persisted task status. |
 | Device Security | 1.0.0 | Read-only local OS security posture and hardware/platform diagnostics where available. |
-| Smart Network | 1.0.0 | Read-only network-interface and OS neighbor-cache inventory. It does not probe the LAN or control devices. |
+| Smart Network | 2.1.0 | OS-native Wi-Fi scan across visible wireless adapters, passive OS neighbour inventory, Home Assistant pairing and confirmed/allowlisted smart-home operations. |
 | Research | 1.0.0 | Search, news, research and comparison actions. |
 | Browser & Computer Control | 1.0.0 | Existing browser, visible desktop and app actions, subject to OS permissions. |
 | File & Workspace | 1.0.0 | Local file/workspace actions and document/media processing. |
 | System Monitor | 1.0.0 | OS telemetry, platform and hardware inventory. |
 
 The manifest is the version source of truth. A version is the shipped agent implementation version, not a promise that every capability is supported on every OS. Agent enable/disable state is local.
+
+### Current Smart Network capabilities
+
+Smart Network v2.1.0 exposes a dedicated `wifi_scan` action. Windows enumerates each WLAN interface visible to the OS and issues a native scan request per interface, including supported USB Wi-Fi dongles whose drivers register as WLAN adapters. Linux uses NetworkManager `nmcli` with a rescan; macOS uses the airport scan utility when available. Results may include SSID, BSSID, signal, channel, authentication and radio type.
+
+Wi-Fi scanning only reads OS-reported nearby access-point beacon information; it does not join networks, test passwords or perform packet injection. Local neighbour discovery is a different passive operation and reports entries already known to the OS. A missing driver, WLAN service, NetworkManager or platform scan utility is reported as unavailable with an actionable reason.
+
+The Plugins → Agents → Smart Network card includes **SCAN WI-FI** and **PAIR HA / UPDATE HA** controls. Home Assistant pairing first verifies the URL and long-lived token against `/api/config`; it saves credentials only after a successful response. Tokens use the OS keychain when available and the UI labels the local-config fallback otherwise. Home Assistant writes remain restricted by the service allowlist and require local confirmation. MQTT publishing is also treated as a state-changing action and requires local confirmation.
+
 
 ## Rust sandbox
 

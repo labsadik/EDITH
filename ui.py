@@ -40,15 +40,17 @@ from core.video_visual import LoopingVideo, draw_blended_video
 from core.dark_theme import apply_dark_theme
 from core.secrets import get_gemini_api_key, save_gemini_api_key, get_config_secret, save_config_secret
 from core.theme_service import SystemThemeMonitor, normalise_theme
+from core.app_paths import config_path, resource_dir
+from core.modal_backdrop import ModalBackdrop
 
 def _base_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).parent
     return Path(__file__).resolve().parent
 
-BASE_DIR   = _base_dir()
-CONFIG_DIR = BASE_DIR / "config"
-API_FILE   = CONFIG_DIR / "api_keys.json"
+BASE_DIR   = resource_dir()
+API_FILE   = config_path()
+CONFIG_DIR = API_FILE.parent
 
 # Modern Font Families
 FONT_MAIN = "Segoe UI" if platform.system() == "Windows" else "Helvetica Neue"
@@ -353,6 +355,10 @@ class HudCanvas(QWidget):
     def shutdown(self) -> None:
         """Release animation timers and multimedia resources before widget teardown."""
         self._tmr.stop()
+        try:
+            self._video.frame_ready.disconnect(self.update)
+        except (TypeError, RuntimeError):
+            pass
         self._video.shutdown()
 
     def set_input_level(self, level: float, source: str = "PC") -> None:
@@ -2717,6 +2723,7 @@ class ApiProviderWorkspace(QWidget):
 
 class SetupOverlay(QWidget):
     done = pyqtSignal(str, str)
+    _OW, _OH = 520, 430
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -2748,8 +2755,8 @@ class SetupOverlay(QWidget):
             w.setStyleSheet(f"color: {color}; background: transparent;")
             return w
 
-        layout.addWidget(_lbl("◈  INITIALISATION REQUIRED", 14, True))
-        layout.addWidget(_lbl("Configure your assistant before first boot.", 9, color=C.TEXT_MED))
+        layout.addWidget(_lbl("EDITH  /  FIRST-TIME SETUP", 14, True))
+        layout.addWidget(_lbl("Add your Gemini Live key and confirm this device platform.", 9, color=C.TEXT_MED))
         layout.addSpacing(6)
 
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
@@ -2760,7 +2767,7 @@ class SetupOverlay(QWidget):
                                align=Qt.AlignmentFlag.AlignLeft))
         self._key_input = QLineEdit()
         self._key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self._key_input.setPlaceholderText("AIza...")
+        self._key_input.setPlaceholderText("Paste your Gemini API key")
         self._key_input.setFont(QFont(FONT_MONO, 10))
         self._key_input.setFixedHeight(36)
         self._key_input.setStyleSheet(f"""
@@ -2777,10 +2784,10 @@ class SetupOverlay(QWidget):
         sep2.setStyleSheet(f"color: {C.BORDER};"); layout.addWidget(sep2)
         layout.addSpacing(4)
 
-        layout.addWidget(_lbl("OPERATING SYSTEM", 8, color=C.TEXT_DIM,
+        layout.addWidget(_lbl("DEVICE / OPERATING SYSTEM", 8, color=C.TEXT_DIM,
                                align=Qt.AlignmentFlag.AlignLeft))
         det_name = {"windows": "Windows", "mac": "macOS", "linux": "Linux"}[detected]
-        layout.addWidget(_lbl(f"Auto-detected: {det_name}", 8, color=C.ACC2,
+        layout.addWidget(_lbl(f"Detected platform: {det_name} · choose the profile for this device", 8, color=C.ACC2,
                                align=Qt.AlignmentFlag.AlignLeft))
 
         os_row = QHBoxLayout(); os_row.setSpacing(8)
@@ -2797,7 +2804,7 @@ class SetupOverlay(QWidget):
         self._sel(detected)
         layout.addSpacing(12)
 
-        init_btn = QPushButton("▸  INITIALISE SYSTEMS")
+        init_btn = QPushButton("SAVE KEY  &  INITIALISE EDITH")
         init_btn.setFont(QFont(FONT_MAIN, 10, QFont.Weight.Bold))
         init_btn.setFixedHeight(38)
         init_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -3127,12 +3134,16 @@ class MCPConnectionDialog(QDialog):
 
 
 class PluginManagerOverlay(QWidget):
-    """Scrollable, card-based catalog for Python tools and configured MCP servers."""
+    """Scrollable catalog for local agents, Home Assistant and configured MCP servers."""
 
+    home_assistant_pair_finished = pyqtSignal(object)
+    wifi_scan_finished = pyqtSignal(object)
     _OW, _OH = 700, 640
 
     def __init__(self, plugins: list[dict], parent=None):
         super().__init__(parent)
+        self.home_assistant_pair_finished.connect(self._on_home_assistant_pair_finished)
+        self.wifi_scan_finished.connect(self._on_wifi_scan_finished)
         _glass_shadow(self)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"""
@@ -3363,7 +3374,195 @@ class PluginManagerOverlay(QWidget):
             connect.setToolTip("Configure endpoint, access token and test the MCP connection")
             connect.clicked.connect(lambda _checked=False, item=record: self._connect(item))
             row.addWidget(connect)
+
+        if kind != "mcp" and record.get("agent_id") == "smart_network" and valid:
+            scan = QPushButton("SCAN WI-FI")
+            scan.setFixedSize(88, 34)
+            scan.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+            scan.setCursor(Qt.CursorShape.PointingHandCursor)
+            scan.setStyleSheet(f"""
+                QPushButton {{
+                    background: {C.PRI_GHO}; color: {C.PRI};
+                    border: 1px solid {C.PRI_DIM}; border-radius: 9px; padding: 0 8px;
+                }}
+                QPushButton:hover {{ background: {C.HOVER}; border-color: {C.PRI}; }}
+                QPushButton:disabled {{ color: {C.TEXT_DIM}; background: {C.PANEL}; }}
+            """)
+            scan.setToolTip("Scan nearby Wi-Fi networks using every OS-visible wireless adapter")
+            scan.clicked.connect(
+                lambda _checked=False, button=scan, description=detail:
+                    self._scan_wifi_networks(button, description)
+            )
+            row.addWidget(scan)
+
+            paired = bool(record.get("home_assistant_paired"))
+            pair = QPushButton("UPDATE HA" if paired else "PAIR HA")
+            pair.setFixedSize(86, 34)
+            pair.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+            pair.setCursor(Qt.CursorShape.PointingHandCursor)
+            pair.setStyleSheet(f"""
+                QPushButton {{
+                    background: {C.PRI_GHO}; color: {C.PRI};
+                    border: 1px solid {C.PRI_DIM}; border-radius: 9px; padding: 0 8px;
+                }}
+                QPushButton:hover {{ background: {C.HOVER}; border-color: {C.PRI}; }}
+                QPushButton:disabled {{ color: {C.TEXT_DIM}; background: {C.PANEL}; }}
+            """)
+            pair.setToolTip(
+                "Verify your Home Assistant URL and long-lived token, then save the token securely"
+            )
+            pair.clicked.connect(
+                lambda _checked=False, item=record, button=pair, description=detail:
+                    self._pair_home_assistant(item, button, description)
+            )
+            row.addWidget(pair)
         return card
+
+    def _scan_wifi_networks(self, button: QPushButton, detail: QLabel) -> None:
+        """Run an OS-native Wi-Fi scan off the UI thread and display visible networks."""
+        button.setEnabled(False)
+        button.setText("SCANNING")
+
+        def scan_worker() -> None:
+            try:
+                from agents.smart_network import scan_wifi_networks
+                result = scan_wifi_networks()
+                if result.get("ok"):
+                    networks = result.get("networks") or []
+                    adapters = result.get("adapters") or []
+                    lines = [
+                        f"{str(item.get('ssid') or '(hidden network)')[:48]} · "
+                        f"{('signal ' + str(item.get('signal_percent')) + '%') if item.get('signal_percent') is not None else 'signal N/A'} · "
+                        f"{('channel ' + str(item.get('channel'))) if item.get('channel') is not None else 'channel N/A'} · "
+                        f"{str(item.get('bssid') or 'BSSID N/A')}"
+                        for item in networks[:12]
+                    ]
+                    message = (
+                        f"Wi-Fi scan completed · {len(networks)} network(s) · "
+                        f"{len(adapters)} adapter(s)."
+                    )
+                    if lines:
+                        message += "\n" + "\n".join(lines)
+                    elif not networks:
+                        message += " No visible SSIDs were reported by the OS."
+                    ok = True
+                else:
+                    message = "Wi-Fi scan unavailable: " + str(
+                        result.get("error") or "The operating system did not return a scan result."
+                    )[:700]
+                    ok = False
+                payload = {
+                    "ok": ok, "message": message, "button": button, "detail": detail,
+                }
+            except Exception as exc:
+                payload = {
+                    "ok": False,
+                    "message": f"Wi-Fi scan failed: {type(exc).__name__}: {str(exc)[:240]}",
+                    "button": button, "detail": detail,
+                }
+            try:
+                self.wifi_scan_finished.emit(payload)
+            except RuntimeError:
+                pass
+
+        threading.Thread(
+            target=scan_worker, daemon=True, name="edith-wifi-scan"
+        ).start()
+
+    def _on_wifi_scan_finished(self, result: dict) -> None:
+        button = result.get("button")
+        detail = result.get("detail")
+        ok = bool(result.get("ok"))
+        try:
+            if button is not None:
+                button.setEnabled(True)
+                button.setText("SCAN WI-FI" if ok else "RETRY SCAN")
+                button.setToolTip(str(result.get("message") or ""))
+            if detail is not None:
+                detail.setText(str(result.get("message") or "Wi-Fi scan finished")[:1800])
+                detail.setToolTip(str(result.get("message") or ""))
+                detail.setStyleSheet(
+                    f"color: {C.GREEN if ok else C.RED}; background: transparent;"
+                )
+        except RuntimeError:
+            # The user may close the Plugins overlay while the scan is running.
+            pass
+
+    def _pair_home_assistant(self, record: dict, button: QPushButton, detail: QLabel) -> None:
+        """Verify the user's Home Assistant token before persisting it off the UI thread."""
+        default_url = str(record.get("home_assistant_url") or "http://homeassistant.local:8123")
+        url, accepted = QInputDialog.getText(
+            self, "Pair Home Assistant",
+            "Home Assistant URL (for example http://homeassistant.local:8123):",
+            QLineEdit.EchoMode.Normal, default_url,
+        )
+        if not accepted or not url.strip():
+            return
+        token, accepted = QInputDialog.getText(
+            self, "Pair Home Assistant",
+            "Long-lived access token (input is hidden):",
+            QLineEdit.EchoMode.Password, "",
+        )
+        if not accepted or not token.strip():
+            return
+
+        button.setEnabled(False)
+        button.setText("TESTING")
+        detail.setText("Home Assistant: checking API access before saving credentials…")
+
+        def pair_worker() -> None:
+            try:
+                from agents.smart_network import pair_home_assistant
+                saved = pair_home_assistant(url, token, timeout=5.0)
+                storage = str(saved.get("token_storage") or "unknown")
+                message = (
+                    "Home Assistant paired · token stored in OS keychain."
+                    if storage in {"keyring", "migrated"}
+                    else "Home Assistant paired, but OS keychain is unavailable; token uses the local config fallback."
+                )
+                result = {
+                    "ok": True, "message": message, "storage": storage,
+                    "url": str(saved.get("url") or url).strip(),
+                    "button": button, "detail": detail, "record": record,
+                }
+            except Exception as exc:
+                safe_error = str(exc).replace(token, "[hidden]")[:240]
+                result = {
+                    "ok": False,
+                    "message": f"Home Assistant pairing failed: {type(exc).__name__}: {safe_error}",
+                    "button": button, "detail": detail, "record": record,
+                }
+            try:
+                self.home_assistant_pair_finished.emit(result)
+            except RuntimeError:
+                pass
+
+        threading.Thread(
+            target=pair_worker, daemon=True, name="edith-home-assistant-pair"
+        ).start()
+
+    def _on_home_assistant_pair_finished(self, result: dict) -> None:
+        button = result.get("button")
+        detail = result.get("detail")
+        record = result.get("record")
+        ok = bool(result.get("ok"))
+        if ok and isinstance(record, dict):
+            record["home_assistant_paired"] = True
+            record["home_assistant_url"] = result.get("url", "")
+        try:
+            if button is not None:
+                button.setEnabled(True)
+                button.setText("UPDATE HA" if ok else "RETRY HA")
+                button.setToolTip(str(result.get("message") or ""))
+            if detail is not None:
+                detail.setText(str(result.get("message") or "Home Assistant pairing result"))
+                detail.setToolTip(str(result.get("message") or ""))
+                detail.setStyleSheet(
+                    f"color: {C.GREEN if ok else C.RED}; background: transparent;"
+                )
+        except RuntimeError:
+            # The user may have closed the Plugins overlay while the test was running.
+            pass
 
     def _connect(self, record: dict):
         dialog = MCPConnectionDialog(record, self)
@@ -3983,9 +4182,11 @@ class MainWindow(QMainWindow):
         QApplication.clipboard().dataChanged.connect(self._on_clipboard_changed)
 
         self._overlay: SetupOverlay | None = None
+        self._setup_backdrop: ModalBackdrop | None = None
         self._ready = self._check_config()
         if not self._ready:
-            self._show_setup()
+            # Let the main window paint once before capturing the blurred modal backdrop.
+            QTimer.singleShot(120, self._show_setup)
 
         sc_mute = QShortcut(QKeySequence("F4"), self)
         sc_mute.activated.connect(self._toggle_mute)
@@ -4067,6 +4268,10 @@ class MainWindow(QMainWindow):
 
 
     def _escape_action(self):
+        if self._overlay and self._overlay.isVisible():
+            # First-run setup is mandatory: Escape must not dismiss the modal.
+            self._overlay._key_input.setFocus()
+            return
         for attr in ('_customize_overlay', '_remote_overlay', '_api_key_overlay', '_plugin_manager_overlay'):
             panel = getattr(self, attr, None)
             if panel and panel.isVisible():
@@ -4451,6 +4656,8 @@ class MainWindow(QMainWindow):
             self._log.append_log(f"ERR: Shortcut failed — {e}")
 
     def _toggle_fullscreen(self):
+        if self._overlay and self._overlay.isVisible():
+            return
         if self.isFullScreen():
             self.showNormal()
         else:
@@ -4470,13 +4677,17 @@ class MainWindow(QMainWindow):
             return
         self._adjust_side_panels()
         cw = self.centralWidget()
+        if self._setup_backdrop and self._setup_backdrop.isVisible():
+            self._setup_backdrop.setGeometry(cw.rect())
         if self._overlay and self._overlay.isVisible():
-            ow, oh = 460, 390
+            ow = min(SetupOverlay._OW, max(360, cw.width() - 32))
+            oh = min(SetupOverlay._OH, max(340, cw.height() - 32))
             self._overlay.setGeometry(
-                (cw.width()  - ow) // 2,
+                (cw.width() - ow) // 2,
                 (cw.height() - oh) // 2,
                 ow, oh,
             )
+            self._overlay.raise_()
         if self._remote_overlay and self._remote_overlay.isVisible():
             ow, oh = RemoteKeyOverlay._OW, RemoteKeyOverlay._OH
             self._remote_overlay.setGeometry(
@@ -5204,6 +5415,9 @@ class MainWindow(QMainWindow):
         return row
 
     def _focus_command_input(self) -> None:
+        if self._overlay and self._overlay.isVisible():
+            self._overlay._key_input.setFocus()
+            return
         self._input.setFocus(Qt.FocusReason.ShortcutFocusReason)
         self._input.selectAll()
 
@@ -5846,6 +6060,8 @@ class MainWindow(QMainWindow):
             self.on_interrupt()
 
     def _toggle_mute(self):
+        if self._overlay and self._overlay.isVisible():
+            return
         self._muted = not self._muted
         self.hud.muted = self._muted
         self.hud.clear_input_level()
@@ -5968,16 +6184,31 @@ class MainWindow(QMainWindow):
             return False
 
     def _show_setup(self):
-        ov = SetupOverlay(self.centralWidget())
         cw = self.centralWidget()
-        ow, oh = 460, 390
+        if self._setup_backdrop:
+            self._setup_backdrop.hide()
+            self._setup_backdrop.deleteLater()
+
+        # The snapshot is taken before either overlay is shown, so the full
+        # EDITH dashboard is blurred and dimmed behind the focused setup card.
+        backdrop = ModalBackdrop(cw, blur_radius=22, tint="rgba(3, 7, 15, 196)")
+        backdrop.setGeometry(cw.rect())
+        backdrop.show()
+        backdrop.raise_()
+        self._setup_backdrop = backdrop
+
+        ov = SetupOverlay(cw)
+        width = min(SetupOverlay._OW, max(360, cw.width() - 32))
+        height = min(SetupOverlay._OH, max(340, cw.height() - 32))
         ov.setGeometry(
-            (cw.width()  - ow) // 2,
-            (cw.height() - oh) // 2,
-            ow, oh,
+            (cw.width() - width) // 2,
+            (cw.height() - height) // 2,
+            width, height,
         )
         ov.done.connect(self._on_setup_done)
         ov.show()
+        ov.raise_()
+        ov._key_input.setFocus()
         self._overlay = ov
 
     def _on_setup_done(self, key: str, os_name: str):
@@ -5993,7 +6224,12 @@ class MainWindow(QMainWindow):
         self._ready = True
         if self._overlay:
             self._overlay.hide()
+            self._overlay.deleteLater()
             self._overlay = None
+        if self._setup_backdrop:
+            self._setup_backdrop.hide()
+            self._setup_backdrop.deleteLater()
+            self._setup_backdrop = None
         self._apply_state("LISTENING")
         self._assistant_name = "EDITH"
         self._display_name = UI_BRAND

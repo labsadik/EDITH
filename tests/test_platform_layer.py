@@ -150,7 +150,7 @@ class TelemetryTests(unittest.TestCase):
             self.assertLess(time.monotonic()-start,.05)
         finally:release.set();service.stop()
     def test_qt_metric_update_has_no_hardware_calls(self):
-        tree=ast.parse((Path(__file__).resolve().parents[1]/'ui.py').read_text())
+        tree=ast.parse((Path(__file__).resolve().parents[1]/'ui.py').read_text(encoding='utf-8'))
         method=next(n for n in ast.walk(tree) if isinstance(n,ast.FunctionDef) and n.name=='_update_metrics')
         calls=[ast.unparse(n.func) for n in ast.walk(method) if isinstance(n,ast.Call)]
         self.assertFalse(any(x.startswith(('psutil.','subprocess.')) for x in calls))

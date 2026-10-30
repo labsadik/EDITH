@@ -9,8 +9,14 @@ from typing import Any
 
 import requests
 
+from core.app_paths import app_data_dir, is_frozen
+
 BASE_DIR = Path(__file__).resolve().parent.parent
-VECTOR_DB_PATH = Path(os.environ.get("EDITH_VECTOR_DB", str(BASE_DIR / "memory" / "vector_db")))
+_DEFAULT_VECTOR_DB = (
+    app_data_dir() / "memory" / "vector_db"
+    if is_frozen() else BASE_DIR / "memory" / "vector_db"
+)
+VECTOR_DB_PATH = Path(os.environ.get("EDITH_VECTOR_DB", str(_DEFAULT_VECTOR_DB)))
 EMBEDDING_URL = os.environ.get("EDITH_EMBEDDING_URL", "http://127.0.0.1:11434").rstrip("/")
 EMBEDDING_MODEL = os.environ.get("EDITH_EMBEDDING_MODEL", "nomic-embed-text")
 TABLE_NAME = "knowledge_chunks"

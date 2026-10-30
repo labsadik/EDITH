@@ -12,11 +12,14 @@ import asyncio
 import base64
 import hashlib
 import re
+import shutil
 import secrets
 import socket
 import string
 import time
 from pathlib import Path
+
+from core.app_paths import app_data_dir, config_path, is_frozen
 
 _DEPS_OK = False
 try:
@@ -44,12 +47,12 @@ MAX_UPLOAD_MB = 500
 def _make_uploads_dir() -> Path:
     """Create or safely migrate the EDITH uploads directory when needed."""
     from core.branding import prepare_uploads_dir
-    return prepare_uploads_dir(base_dir=BASE_DIR)
+    return prepare_uploads_dir(base_dir=app_data_dir() if is_frozen() else BASE_DIR)
 
 
 def _get_gemini_key() -> str | None:
     from core.secrets import get_gemini_api_key
-    return get_gemini_api_key(BASE_DIR / "config" / "api_keys.json")
+    return get_gemini_api_key(config_path())
 
 _KEY_CHARS = [c for c in (string.ascii_uppercase + string.digits)
               if c not in ('O', 'I', 'L', '0', '1')]
@@ -347,7 +350,14 @@ def _local_ip() -> str:
 
 def _certificate_paths() -> tuple[Path, Path]:
     """Use EDITH certificate names, preserving an existing paired identity."""
-    certs = BASE_DIR / "config" / "certs"
+    certs = config_path().parent / "certs"
+    legacy_certs = BASE_DIR / "config" / "certs"
+    if not certs.exists() and legacy_certs.is_dir() and legacy_certs.resolve() != certs.resolve():
+        certs.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copytree(legacy_certs, certs)
+        except OSError as exc:
+            print(f"[EDITH] Dashboard certificate migration deferred: {type(exc).__name__}")
     key_p, crt_p = certs / "edith.key", certs / "edith.crt"
     if key_p.exists() and crt_p.exists():
         return key_p, crt_p
@@ -381,7 +391,7 @@ def _ensure_certs() -> bool:
     Returns True when a usable pair exists afterwards; False leaves the caller on
     plain HTTP, which still works — the QR code simply encodes http:// instead.
     """
-    certs = BASE_DIR / "config" / "certs"
+    certs = config_path().parent / "certs"
     key_p, crt_p = _certificate_paths()
     if key_p.exists() and crt_p.exists():
         return True
@@ -495,7 +505,7 @@ class DashboardServer:
 
     @staticmethod
     def _ssl_enabled() -> bool:
-        certs = BASE_DIR / "config" / "certs"
+        certs = config_path().parent / "certs"
         return all(p.exists() for p in _certificate_paths())
 
     def get_url(self) -> str:

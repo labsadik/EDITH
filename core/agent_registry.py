@@ -9,9 +9,11 @@ import threading
 from pathlib import Path
 from typing import Any, Callable
 
-ROOT = Path(__file__).resolve().parents[1]
+from core.app_paths import resource_dir, writable_config_path
+
+ROOT = resource_dir()
 MANIFEST_PATH = ROOT / "agents" / "manifest.json"
-CONFIG_PATH = ROOT / "config" / "agents.json"
+CONFIG_PATH = writable_config_path("agents.json")
 _LOCK = threading.RLock()
 _AGENT_ID = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
 
@@ -145,7 +147,7 @@ def build_agent_prompt_context() -> str:
         state = "ENABLED" if item["enabled"] else "DISABLED"
         lines.append(f"- {item['id']} v{item['version']} [{state}]: {item['description']}")
     lines.append("All specialist text reasoning uses the single Powerful Brain profile. Gemini Live is the voice/audio transport and immediate conversation controller, not a second text brain.")
-    lines.append("The Software Development and DevOps agent runs generated project commands only through the local Rust sandbox. The separate DevSecOps agent performs offline static checks before generated-project execution. Device Security is a read-only posture auditor. Smart Network only lists OS-known local neighbors; remote control requires authenticated pairing and a dedicated adapter.")
+    lines.append("The Software Development and DevOps agent runs generated project commands only through the local Rust sandbox. The separate DevSecOps agent performs offline static checks before generated-project execution. Device Security is a read-only posture auditor. Smart Network can scan nearby Wi-Fi SSIDs through OS-visible adapters and list OS-known LAN neighbors; Home Assistant/MQTT entity control requires authenticated owner pairing, and writes always require local confirmation.")
     return "\n".join(lines)
 
 

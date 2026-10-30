@@ -112,6 +112,30 @@ class SpeechPlayerTests(unittest.TestCase):
         if not player.stopped.wait(1):
             raise AssertionError('Audio writer did not terminate')
 
+    def test_driver_without_low_latency_mode_falls_back_to_default_without_losing_speech(self):
+        data = b"fallback speech" * 1000
+        buffer = SpeechBuffer()
+        buffer.put_nowait(data)
+        buffer.finish_turn()
+        stream = FakeStream()
+        calls = []
+        def factory(**options):
+            calls.append(dict(options))
+            if "latency" in options:
+                raise ValueError("low latency unsupported")
+            return stream
+        player = SpeechPlayer(buffer, factory, retry_seconds=.01)
+        self.addCleanup(lambda: self.stop_player(player))
+        player.start()
+        self.assertTrue(stream.drained.wait(1))
+        self.assertEqual(b"".join(stream.written), data)
+        self.assertEqual(calls[0]["latency"], "low")
+        self.assertNotIn("latency", calls[1])
+        messages = []
+        while not player.events.empty():
+            messages.append(player.events.get_nowait())
+        self.assertTrue(any("default buffer" in message for message in messages))
+
     def test_long_turn_and_underflow_never_skip_or_replay_pcm(self):
         data = bytes(range(256)) * 2000
         buffer = SpeechBuffer()
@@ -125,7 +149,9 @@ class SpeechPlayerTests(unittest.TestCase):
         self.assertGreater(player.snapshot()['prefill_bytes'], PREFILL_BYTES)
         self.assertEqual(self.kwargs['samplerate'], 24000)
         self.assertEqual(self.kwargs['blocksize'], 0)
-        self.assertEqual(self.kwargs['latency'], 'high')
+        self.assertEqual(self.kwargs['latency'], 'low')
+        self.assertEqual(PREFILL_BYTES, 2880)  # 60 ms at 24 kHz mono PCM16
+        self.assertEqual(MAX_PREFILL_BYTES, 14400)  # 300 ms hard ceiling
 
     def test_jitter_keeps_pending_tail_and_playback_state_until_turn_finishes(self):
         buffer = SpeechBuffer()

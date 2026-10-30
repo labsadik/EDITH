@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+import html
 import json
 import re
 from urllib.parse import quote
 
 from PyQt6.QtCore import QUrl
-from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLineEdit, QPushButton, QVBoxLayout
+from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout
 
 
 def normalize_web_url(value: str) -> QUrl:
@@ -40,6 +41,26 @@ def normalize_web_url(value: str) -> QUrl:
     return url
 
 
+
+
+def browser_start_page_html(message: str = "Enter a website or search above to get started.") -> str:
+    """Non-empty, local landing/error surface so a newly opened browser is never a blank window."""
+    safe_message = html.escape(str(message or "")[:500])
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EDITH Browser</title>
+<style>
+:root {{ color-scheme: dark; font-family: 'Segoe UI',sans-serif; }}
+body {{ margin:0; min-height:100vh; display:grid; place-items:center; color:#edf1fb;
+background: radial-gradient(ellipse at 50% 25%,#242b43 0,#111827 58%,#0b101a 100%); }}
+main {{ width:min(620px,82vw); text-align:center; }}
+.mark {{ color:#b39afb; font-size:13px; letter-spacing:.24em; font-weight:700; }}
+h1 {{ font-size:clamp(30px,5vw,48px); margin:12px 0; }}
+p {{ color:#aeb9ce; line-height:1.6; }}
+small {{ color:#8491a8; }}
+</style></head><body><main><div class="mark">NEURON INTELLIGENCE</div>
+<h1>EDITH Browser</h1><p>{safe_message}</p><small>Private browser profile · Navigation and page actions stay visible here</small>
+</main></body></html>"""
 
 
 def build_embedded_browser_script(action: str, arguments: dict | None = None) -> str:
@@ -141,7 +162,7 @@ class EmbeddedBrowserDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         try:
-            from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
+            from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings
             from PyQt6.QtWebEngineWidgets import QWebEngineView
         except ImportError as exc:
             raise RuntimeError("Install PyQt6-WebEngine to use the embedded browser") from exc
@@ -177,10 +198,21 @@ class EmbeddedBrowserDialog(QDialog):
         toolbar.addWidget(self._reload)
         toolbar.addWidget(self._address, 1)
         toolbar.addWidget(self._go)
+        self._status = QLabel("EDITH browser ready")
+        self._status.setMinimumWidth(130)
+        self._status.setStyleSheet("color:#96A4B7; padding:0 6px;")
+        toolbar.addWidget(self._status)
         root.addLayout(toolbar)
 
         self._view = QWebEngineView(self)
-        self._view.setPage(QWebEnginePage(self._profile, self._view))
+        self._view.setMinimumSize(320, 240)
+        self._view.setStyleSheet("background:#0b101a;")
+        self._page = QWebEnginePage(self._profile, self._view)
+        self._view.setPage(self._page)
+        settings = self._page.settings()
+        settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalStorageEnabled, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, False)
         root.addWidget(self._view, 1)
         self._back.clicked.connect(self._view.back)
         self._forward.clicked.connect(self._view.forward)
@@ -189,14 +221,47 @@ class EmbeddedBrowserDialog(QDialog):
         self._address.returnPressed.connect(self._navigate_from_address)
         self._view.urlChanged.connect(self._update_address)
         self._view.titleChanged.connect(self.setWindowTitle)
-        self._view.loadFinished.connect(self._update_navigation_state)
+        self._showing_fallback = False
+        self._last_requested_url = "about:blank"
+        self._view.loadStarted.connect(lambda: self._status.setText("Loading page…"))
+        self._view.loadFinished.connect(self._on_load_finished)
         self._update_navigation_state(False)
 
     def navigate(self, target: str) -> None:
-        self._view.setUrl(normalize_web_url(target))
+        url = normalize_web_url(target)
+        self.showNormal()
         self.show()
         self.raise_()
         self.activateWindow()
+        self._last_requested_url = url.toString()
+        self._showing_fallback = False
+        self._address.setText(self._last_requested_url)
+        if self._last_requested_url == "about:blank":
+            self._status.setText("Start page")
+            self._view.setHtml(browser_start_page_html())
+        else:
+            self._status.setText("Loading page…")
+            self._view.setUrl(url)
+
+    def _on_load_finished(self, ok: bool) -> None:
+        self._update_navigation_state(ok)
+        if ok:
+            self._showing_fallback = False
+            if not self._status.text().startswith("Start"):
+                self._status.setText("Page ready")
+            return
+        if self._showing_fallback:
+            self._status.setText("Page could not be rendered")
+            return
+        failed_url = self._last_requested_url
+        if failed_url == "about:blank":
+            self._status.setText("Start page")
+            return
+        self._showing_fallback = True
+        self._status.setText("Navigation failed · diagnostics shown")
+        self._view.setHtml(browser_start_page_html(
+            f"EDITH could not load {failed_url}. Check the network or address, then use Reload to try again."
+        ))
 
     def execute_action(self, action: str, arguments: dict | None, callback) -> None:
         """Run only the allowlisted embedded-browser operations on the Qt thread."""

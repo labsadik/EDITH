@@ -12,9 +12,11 @@ import socket
 import ssl
 from pathlib import Path
 from typing import Any
+
+from core.app_paths import config_path
 from urllib.parse import urlsplit
 
-_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "api_keys.json"
+_CONFIG_PATH = config_path()
 _TOPIC = re.compile(r"^[A-Za-z0-9_./ -]{1,240}$")
 _MAX_PAYLOAD = 4096
 

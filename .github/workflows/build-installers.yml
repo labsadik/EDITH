@@ -1,0 +1,118 @@
+name: Build EDITH installers
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/installer-provider-browser-smart-home-2026]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Keep only the newest run for this PR/branch; superseded queued builds waste
+# Windows/macOS runners and make feedback look permanently stuck.
+concurrency:
+  group: edith-${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  windows-installer:
+    name: Windows x64 setup EXE
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install application dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+      - name: Build native OS sandbox
+        run: cargo build --release --manifest-path sandbox-rs/Cargo.toml
+      - name: Package EDITH desktop application
+        run: python scripts/package_edith.py
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+      - name: Build setup executable
+        shell: pwsh
+        run: ./scripts/build_windows_installer.ps1 -SkipAppBuild -NoInstall
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EDITH-Windows-x64-Setup
+          path: dist/installer/EDITH-Setup-*-x64.exe
+          if-no-files-found: error
+          retention-days: 30
+
+  macos-package:
+    name: macOS app DMG
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install application dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt pyinstaller
+      - name: Build native OS sandbox
+        run: cargo build --release --manifest-path sandbox-rs/Cargo.toml
+      - name: Build EDITH app bundle
+        run: python scripts/package_edith.py
+      - name: Build macOS Installer package with license page
+        run: |
+          version="$(cat VERSION)"
+          cp LICENSE installer/macos/LICENSE
+          pkgbuild --component dist/EDITH.app --install-location /Applications \
+            --identifier com.workrcs.edith --version "$version" \
+            "dist/EDITH-component.pkg"
+          productbuild --distribution installer/macos/distribution.xml \
+            --resources installer/macos --package-path dist --version "$version" \
+            "dist/EDITH-macOS.pkg"
+      - name: Create optional DMG containing the Installer package
+        run: |
+          mkdir -p dist/dmg
+          cp dist/EDITH-macOS.pkg dist/dmg/
+          hdiutil create -volname "EDITH — Neuron Intelligence" -srcfolder dist/dmg -ov -format UDZO "dist/EDITH-macOS.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EDITH-macOS-PKG
+          path: dist/EDITH-macOS.pkg
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EDITH-macOS-DMG
+          path: dist/EDITH-macOS.dmg
+          if-no-files-found: error
+          retention-days: 30
+
+  linux-package:
+    name: Linux x64 tarball
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install system Qt and audio libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libegl1 libopengl0 libxkbcommon-x11-0 libpulse0 libasound2t64
+      - name: Install application dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt pyinstaller
+      - name: Build native OS sandbox
+        run: cargo build --release --manifest-path sandbox-rs/Cargo.toml
+      - name: Build EDITH bundle
+        run: python scripts/package_edith.py
+      - name: Archive Linux app
+        run: tar -czf "dist/EDITH-Linux-x64.tar.gz" -C dist EDITH
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EDITH-Linux-x64
+          path: dist/EDITH-Linux-x64.tar.gz
+          if-no-files-found: error
+          retention-days: 30

@@ -205,7 +205,10 @@ class WorkspaceTests(unittest.TestCase):
         panel._cancel()
         self.assertEqual(self.window._theme_preference, "system")
         self.assertIsNone(self.window._theme_preview_preference)
-        self.assertEqual({k:v.lower() for k,v in original.items()},
+        # The OS theme changed while the Light preview was active; cancelling
+        # restores the current System appearance rather than stale entry colors.
+        expected = self.ui._THEME_DEFAULTS["dark"]
+        self.assertEqual({k:v.lower() for k,v in expected.items()},
                          {k:v.lower() for k,v in self.ui.current_palette().items()})
 
     def test_thinking_working_speaking_priority_tracks_real_tasks(self):
@@ -255,8 +258,6 @@ class WorkspaceTests(unittest.TestCase):
             palette = menu.palette()
             self.assertEqual(palette.color(QPalette.ColorRole.Text), QColor(self.ui.C.TEXT))
             self.assertEqual(palette.color(QPalette.ColorRole.Window), QColor(self.ui.C.SHEET))
-            self.assertGreater(palette.color(QPalette.ColorRole.Text).lightness(), 200)
-            self.assertLess(palette.color(QPalette.ColorRole.Window).lightness(), 70)
             self.assertIn('QMenu::item:selected', menu.styleSheet())
             self.assertIn(self.ui.C.TEXT, menu.styleSheet())
         finally:

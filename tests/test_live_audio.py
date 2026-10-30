@@ -23,7 +23,7 @@ class LiveAudioPartsTests(unittest.TestCase):
         self.assertEqual(response_pcm(NS(server_content=None)),b'')
     def test_automation_imports_are_deferred_until_after_qt_creation(self):
         source=Path(__file__).resolve().parents[1]/'main.py'
-        tree=ast.parse(source.read_text())
+        tree=ast.parse(source.read_text(encoding="utf-8"))
         self.assertFalse(any(isinstance(n,ast.ImportFrom) and str(n.module).startswith('actions.') for n in tree.body))
         load=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='_load_action_modules')
         self.assertTrue(any(isinstance(n,ast.ImportFrom) and str(n.module).startswith('actions.') for n in load.body))

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from core.hardware_check import audio_compatibility, desktop_compatibility, report
 from core.audio_meter import pcm16_level
-from core.narration_audio import SpeechBuffer, SpeechPlayer
+from core.narration_audio import SpeechBuffer, SpeechPlayer, WRITE_BYTES
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -170,7 +170,9 @@ class AudioHardwareRecoveryTests(unittest.IsolatedAsyncioTestCase):
             task.cancel()
             with self.assertRaises(asyncio.CancelledError):
                 await task
-        self.assertEqual(written, [chunk])
+        self.assertEqual(b"".join(written), chunk)
+        self.assertGreater(len(written), 1)
+        self.assertTrue(all(0 < len(part) <= WRITE_BYTES and len(part) % 2 == 0 for part in written))
         self.assertIn(pcm16_level(chunk), levels)
         self.assertEqual(levels[-1], 0)
         self.assertEqual(speaking[:2], [True, False])

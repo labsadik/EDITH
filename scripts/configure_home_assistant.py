@@ -3,14 +3,14 @@ from __future__ import annotations
 
 import getpass
 
-from agents.smart_network import configure_home_assistant
+from agents.smart_network import pair_home_assistant
 
 
 def main() -> int:
     url = input("Home Assistant URL (for example http://homeassistant.local:8123): ").strip()
     token = getpass.getpass("Long-lived access token (hidden): ").strip()
     try:
-        result = configure_home_assistant(url, token)
+        result = pair_home_assistant(url, token, timeout=5.0)
     except Exception as exc:
         print(f"Pairing failed: {type(exc).__name__}: {exc}")
         return 1

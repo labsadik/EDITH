@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Callable, Generator
 
 import requests
+from core.app_paths import config_path
 from core.provider_registry import load_provider_settings, provider_api_key
 
 # Matches a sentence boundary: [.!?] followed by whitespace, or a blank line.
@@ -40,7 +41,7 @@ def get_base_dir() -> Path:
 
 
 BASE_DIR    = get_base_dir()
-CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
+CONFIG_PATH = config_path()
 
 _DEFAULTS = {
     "llm_url":      "http://localhost:11434",

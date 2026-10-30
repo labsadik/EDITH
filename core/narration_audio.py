@@ -12,9 +12,9 @@ from core.audio_meter import pcm16_level
 
 SAMPLE_RATE = 24000
 BYTES_PER_SECOND = SAMPLE_RATE * 2  # mono PCM16
-WRITE_BYTES = BYTES_PER_SECOND // 20  # 50 ms, never a whole narration in one write
-PREFILL_BYTES = BYTES_PER_SECOND * 150 // 1000
-MAX_PREFILL_BYTES = BYTES_PER_SECOND * 500 // 1000
+WRITE_BYTES = BYTES_PER_SECOND // 50  # 20 ms, never a whole narration in one write
+PREFILL_BYTES = BYTES_PER_SECOND * 60 // 1000
+MAX_PREFILL_BYTES = BYTES_PER_SECOND * 300 // 1000
 
 
 class PlaybackReset(Exception):
@@ -150,6 +150,36 @@ class SpeechPlayer:
         except queue.Full:
             pass  # Only diagnostics are bounded/dropped; never PCM.
 
+    def _open_stream(self):
+        """Prefer low output latency, but respect drivers that only support their default."""
+        options = {
+            "samplerate": SAMPLE_RATE, "channels": 1,
+            "dtype": "int16", "blocksize": 0,
+        }
+        try:
+            return self.stream_factory(**options, latency="low")
+        except Exception as low_error:
+            # Only negotiate the driver's default buffer when the low-latency
+            # setting itself is rejected. A disconnected/missing device must
+            # remain unavailable so the caller clears stale speech immediately.
+            low_latency_rejected = (
+                isinstance(low_error, (TypeError, ValueError))
+                or "latency" in str(low_error).casefold()
+            )
+            if not low_latency_rejected:
+                raise
+            try:
+                stream = self.stream_factory(**options)
+            except Exception as default_error:
+                raise RuntimeError(
+                    "Audio device rejected both low-latency and default stream modes "
+                    f"({type(low_error).__name__}; {type(default_error).__name__})"
+                ) from default_error
+            self._event(
+                "AUDIO: This driver does not support low-latency mode; using its default buffer."
+            )
+            return stream
+
     def start(self):
         self._thread.start()
 
@@ -164,8 +194,7 @@ class SpeechPlayer:
                 stream = None
                 started = False
                 try:
-                    stream = self.stream_factory(samplerate=SAMPLE_RATE, channels=1,
-                                                 dtype='int16', blocksize=0, latency='high')
+                    stream = self._open_stream()
                     if unavailable:
                         self.buffer.clear()  # Do not replay old speech after device recovery.
                         self._event('AUDIO: Speaker available again; stale output was not replayed.')

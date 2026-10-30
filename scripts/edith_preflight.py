@@ -10,7 +10,13 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / "config" / "api_keys.json"
+# Running `python scripts/edith_preflight.py` sets sys.path[0] to scripts/,
+# not the repository root. Add the project root before any package imports.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from core.app_paths import config_path
+
+CONFIG = config_path()
 PRESETS = {"female": "Kore", "male": "Orus"}
 
 
@@ -31,6 +37,10 @@ def main():
     parser.add_argument("--live-voice-test", action="store_true")
     parser.add_argument("--record-mic-test", action="store_true")
     parser.add_argument("--speaker-test", action="store_true")
+    parser.add_argument(
+        "--test-powerful-brain", action="store_true",
+        help="send one real minimal request through the configured Powerful Brain provider",
+    )
     parser.add_argument("--seconds", type=float, default=2.0)
     args = parser.parse_args()
     warnings = [0, 0]
@@ -54,6 +64,25 @@ def main():
                           ("key-present" if key else "no-key"))
         return "; ".join(result)
     check("Brain profiles", providers, warnings)
+
+    if args.test_powerful_brain:
+        def powerful_brain_probe():
+            from core.provider_registry import (
+                load_provider_settings, provider_api_key, probe_provider,
+            )
+            settings = load_provider_settings(CONFIG, "powerful")
+            key = provider_api_key(settings["provider"], CONFIG, "powerful")
+            result = probe_provider(
+                settings["provider"], settings["url"], settings["model"],
+                api_key=key, timeout=25.0,
+            )
+            if not result.get("ok"):
+                raise RuntimeError(result.get("error") or "Provider inference failed")
+            return (
+                f"{settings['provider']}/{settings['model']} responded in "
+                f"{result.get('latency_ms', 0)} ms"
+            )
+        check("Powerful Brain live inference", powerful_brain_probe, warnings)
 
     def voice():
         mode = str(config.get("voice_mode") or "female").lower()
@@ -113,8 +142,9 @@ def main():
 
     def home_assistant():
         from agents.smart_network import _ha_credentials
-        if not _ha_credentials(required=False):
-            raise RuntimeError("Home Assistant is not paired")
+        credentials = _ha_credentials(required=False)
+        if not credentials:
+            return "not paired; pairing is optional and local network discovery remains available"
         return "paired URL/token configured (token hidden)"
     check("Home Assistant", home_assistant, warnings, True)
 

@@ -106,14 +106,17 @@ from core.agent_reliability import (
     assess_action_evidence, format_task_history,
 )
 
+from core.app_paths import config_path, resource_dir
+
+
 def get_base_dir():
     if getattr(sys, "frozen", False):
         return Path(sys.executable).parent
     return Path(__file__).resolve().parent
 
 BASE_DIR        = get_base_dir()
-API_CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
-PROMPT_PATH     = BASE_DIR / "core" / "prompt.txt"
+API_CONFIG_PATH = config_path()
+PROMPT_PATH     = resource_dir() / "core" / "prompt.txt"
 LIVE_MODEL          = "models/gemini-2.5-flash-native-audio-preview-12-2025"
 
 
@@ -653,9 +656,9 @@ TOOL_DECLARATIONS = [
     },
     {
         "name": "smart_network",
-        "description": "Lists OS-known LAN neighbors without scanning; reads or controls paired Home Assistant entities; and reads/publishes only exact MQTT topics paired locally by the owner. All smart-device writes require local confirmation. Never scan, log in to or control unpaired devices or unapproved topics.",
+        "description": "Use action=wifi_scan to scan nearby Wi-Fi SSIDs/BSSIDs on every OS-visible Wi-Fi adapter, including supported USB Wi-Fi dongles. Use action=discover for OS-known LAN neighbors and interface inventory. Home Assistant entity reads/controls require an owner-paired instance; MQTT uses only exact locally paired topics. Writes require local confirmation. Wi-Fi scanning does not join networks or test passwords.",
         "parameters": {"type": "OBJECT", "properties": {
-            "action": {"type": "STRING", "enum": ["discover", "status", "entities", "read", "control", "mqtt_status", "mqtt_read", "mqtt_publish"]},
+            "action": {"type": "STRING", "enum": ["discover", "wifi_scan", "status", "entities", "read", "control", "mqtt_status", "mqtt_read", "mqtt_publish"]},
             "entity_id": {"type": "STRING", "description": "Exact paired Home Assistant entity id such as light.living_room."},
             "service": {"type": "STRING", "description": "Allowlisted service such as light.turn_on, switch.turn_off, climate.set_temperature."},
             "service_data": {"type": "OBJECT", "properties": {
@@ -917,13 +920,36 @@ class EdithLive:
             print(f"[PluginSay] {e}")
 
     def _list_plugin_manager_items(self) -> list[dict]:
-        """Combine configured plugins/MCP servers with the versioned local agents."""
+        """Combine configured plugins/MCP servers with local agents and HA pairing state."""
         from core.agent_registry import plugin_manager_records
+        try:
+            from agents.smart_network import _ha_credentials, _config_path
+            credentials = _ha_credentials(required=False)
+            config_path = _config_path()
+            try:
+                config = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+            except Exception:
+                config = {}
+            home_assistant_url = str(
+                config.get("home_assistant_url")
+                or (credentials[0] if credentials else "")
+            )
+        except Exception:
+            credentials = None
+            home_assistant_url = ""
 
-        return [
-            *self._plugin_registry.list_for_ui(),
-            *plugin_manager_records(self._on_agent_registry_changed),
-        ]
+        agents = plugin_manager_records(self._on_agent_registry_changed)
+        for item in agents:
+            if item.get("agent_id") == "smart_network":
+                item["home_assistant_paired"] = credentials is not None
+                item["home_assistant_url"] = home_assistant_url
+                item["description"] = (
+                    "Wi-Fi scanning and local network discovery are available. "
+                    + ("Home Assistant credentials are configured; use UPDATE HA to verify or replace them."
+                       if credentials else
+                       "Home Assistant is not paired yet; use PAIR HA to verify the URL/token and enable smart-home entity reads and controls.")
+                )
+        return [*self._plugin_registry.list_for_ui(), *agents]
 
     def _on_agent_registry_changed(self, item: dict) -> None:
         """Persisted agent toggles from Qt must reconfigure Live on its own loop."""
@@ -2252,7 +2278,7 @@ class EdithLive:
                 await asyncio.sleep(.025)
         finally:
             player.stop()
-            # Normal PortAudio writes are 50 ms. Bound teardown if a driver hangs.
+            # Low-latency PCM writes are 20 ms. Bound teardown if a driver hangs.
             for _ in range(40):
                 if player.stopped.is_set():
                     break
