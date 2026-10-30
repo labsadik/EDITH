@@ -199,6 +199,56 @@ def discover_local_devices() -> dict[str, Any]:
 
 def _home_assistant(action: str, entity_id: str = "", service: str = "",
                     service_data: dict | None = None) -> dict[str, Any]:
+    """Validate requested operations before checking pairing or making network calls."""
+    action = str(action or "").strip().lower()
+    if action not in {"status", "entities", "read", "control"}:
+        raise ValueError("Use action discover, status, entities, read or control")
+
+    domain = service_name = ""
+    data = dict(service_data or {})
+    if action in {"read", "control"}:
+        if not _ENTITY.fullmatch(str(entity_id or "")):
+            raise ValueError("Specify an exact Home Assistant entity_id, for example light.living_room")
+
+    if action == "control":
+        domain, separator, service_name = str(service or "").partition(".")
+        if not separator or not service_name:
+            raise ValueError("Specify an allowed service such as light.turn_on")
+        if domain not in _ALLOWED_SERVICES or service_name not in _ALLOWED_SERVICES[domain]:
+            raise ValueError("This Home Assistant service is not in EDITH's write allowlist")
+        if entity_id.split(".", 1)[0] != domain:
+            raise ValueError("Service domain must match the selected entity")
+        unexpected = set(data) - _ALLOWED_SERVICE_DATA
+        if unexpected:
+            raise ValueError("Unsupported service_data fields: " + ", ".join(sorted(unexpected)))
+        ranges = {
+            "brightness": (0, 255),
+            "brightness_pct": (0, 100),
+            "color_temp": (1, 500),
+            "color_temp_kelvin": (1000, 12000),
+            "position": (0, 100),
+            "tilt_position": (0, 100),
+            "transition": (0, 3600),
+        }
+        for key, (minimum, maximum) in ranges.items():
+            if key in data:
+                value = data[key]
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not minimum <= value <= maximum:
+                    raise ValueError(f"{key} must be numeric between {minimum} and {maximum}")
+        if "temperature" in data:
+            try:
+                temperature = float(data["temperature"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError("temperature must be numeric") from exc
+            if not 5 <= temperature <= 35:
+                raise ValueError("temperature must be between 5 and 35 C")
+            data["temperature"] = temperature
+        if "hvac_mode" in data and data["hvac_mode"] not in {
+            "off", "heat", "cool", "auto", "heat_cool", "dry", "fan_only"
+        }:
+            raise ValueError("hvac_mode is not in EDITH's allowed mode list")
+
+    # All validation is complete. Only then resolve credentials / pairing.
     try:
         credentials = _ha_credentials(required=False)
     except (RuntimeError, OSError, ValueError) as exc:
@@ -220,64 +270,32 @@ def _home_assistant(action: str, entity_id: str = "", service: str = "",
                      "EDITH_HOME_ASSISTANT_URL and EDITH_HOME_ASSISTANT_TOKEN. "
                      "The token is stored in the OS keychain when available.",
         }
+
     if action == "status":
         _ha_request("GET", "config")
-        return {"connected": True, "provider": "Home Assistant", "read_control": True, "write_control": True}
+        return {"ok": True, "connected": True, "provider": "Home Assistant",
+                "read_control": True, "write_control": True}
     if action == "entities":
         items = _ha_request("GET", "states")
-        return {"count": len(items), "entities": [
+        return {"ok": True, "count": len(items), "entities": [
             {"entity_id": item.get("entity_id"), "state": item.get("state"),
              "name": (item.get("attributes") or {}).get("friendly_name")}
             for item in items if isinstance(item, dict)
         ]}
-    if action not in {"read", "control"}:
-        raise ValueError("Use action discover, status, entities, read or control")
-    if not _ENTITY.fullmatch(str(entity_id or "")):
-        raise ValueError("Specify an exact Home Assistant entity_id, for example light.living_room")
     if action == "read":
         state = _ha_request("GET", f"states/{entity_id}")
-        return {"entity_id": state.get("entity_id"), "state": state.get("state"),
-                "attributes": state.get("attributes") or {}}
+        return {"ok": True, "entity_id": state.get("entity_id"),
+                "state": state.get("state"), "attributes": state.get("attributes") or {}}
 
-    domain, _, service_name = str(service or "").partition(".")
-    if not service_name:
-        raise ValueError("Specify an allowed service such as light.turn_on")
-    if domain not in _ALLOWED_SERVICES or service_name not in _ALLOWED_SERVICES[domain]:
-        raise ValueError("This Home Assistant service is not in EDITH's write allowlist")
-    if entity_id.split(".", 1)[0] != domain:
-        raise ValueError("Service domain must match the selected entity")
-    data = dict(service_data or {})
-    unexpected = set(data) - _ALLOWED_SERVICE_DATA
-    if unexpected:
-        raise ValueError("Unsupported service_data fields: " + ", ".join(sorted(unexpected)))
-    ranges = {
-        "brightness": (0, 255),
-        "brightness_pct": (0, 100),
-        "color_temp": (1, 500),
-        "color_temp_kelvin": (1000, 12000),
-        "position": (0, 100),
-        "tilt_position": (0, 100),
-        "transition": (0, 3600),
-    }
-    for key, (minimum, maximum) in ranges.items():
-        if key in data:
-            value = data[key]
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not minimum <= value <= maximum:
-                raise ValueError(f"{key} must be numeric between {minimum} and {maximum}")
-    if "temperature" in data:
-        try:
-            temperature = float(data["temperature"])
-        except (TypeError, ValueError) as exc:
-            raise ValueError("temperature must be numeric") from exc
-        if not 5 <= temperature <= 35:
-            raise ValueError("temperature must be between 5 and 35 C")
-        data["temperature"] = temperature
-    if "hvac_mode" in data and data["hvac_mode"] not in {"off", "heat", "cool", "auto", "heat_cool", "dry", "fan_only"}:
-        raise ValueError("hvac_mode is not in EDITH's allowed mode list")
+    # Re-read the entity immediately before write to confirm it still exists and
+    # its domain matches; local confirmation is enforced by the outer dispatcher.
     state = _ha_request("GET", f"states/{entity_id}")
+    if not isinstance(state, dict) or state.get("entity_id") != entity_id:
+        raise RuntimeError("Home Assistant did not return the selected entity")
     data["entity_id"] = entity_id
     result = _ha_request("POST", f"services/{domain}/{service_name}", payload=data)
-    return {"ok": True, "entity_id": entity_id, "service": f"{domain}.{service_name}", "result": result}
+    return {"ok": True, "entity_id": entity_id, "service": f"{domain}.{service_name}",
+            "result": result}
 
 
 def run_smart_network(
