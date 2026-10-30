@@ -70,9 +70,21 @@ def ensure_sandbox_ready() -> Path:
 
 def ensure_project_venv(project_dir: str | Path) -> Path:
     """Create an isolated project virtual environment before sandboxed builds."""
-    root = Path(project_dir).expanduser().resolve()
+    requested_root = Path(project_dir).expanduser()
+    if requested_root.is_symlink() or (
+        hasattr(requested_root, "is_junction") and requested_root.is_junction()
+    ):
+        raise SandboxUnavailable("Project workspace is a symlink/junction; refusing to create or use a venv outside the workspace.")
+    root = requested_root.resolve()
     root.mkdir(parents=True, exist_ok=True)
     target = root / ".venv"
+    if target.is_symlink() or (
+        hasattr(target, "is_junction") and target.is_junction()
+    ):
+        raise SandboxUnavailable("Project .venv is a symlink/junction; refusing to use an external runtime.")
+    resolved_target = target.resolve()
+    if resolved_target != root and root not in resolved_target.parents:
+        raise SandboxUnavailable("Project .venv resolves outside the workspace.")
     python = target / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     if not python.is_file():
         venv.EnvBuilder(
@@ -134,7 +146,12 @@ def run_sandboxed(
     """Run exact argv with workspace-only writes, clean child env and bounded time."""
     if not argv:
         raise ValueError("Sandbox command cannot be empty")
-    root = Path(workspace).expanduser().resolve()
+    requested_root = Path(workspace).expanduser()
+    if requested_root.is_symlink() or (
+        hasattr(requested_root, "is_junction") and requested_root.is_junction()
+    ):
+        raise ValueError("Sandbox workspace cannot be a symlink/junction.")
+    root = requested_root.resolve()
     if not root.is_dir():
         raise ValueError("Sandbox workspace must be an existing directory")
     binary = ensure_sandbox_ready()
@@ -192,7 +209,12 @@ def run_project_command(
     network: bool = False, python_executable: str | Path | None = None,
 ) -> str:
     """Run a project command in the OS sandbox; there is no host-shell fallback."""
-    root = Path(workspace).expanduser().resolve()
+    requested_root = Path(workspace).expanduser()
+    if requested_root.is_symlink() or (
+        hasattr(requested_root, "is_junction") and requested_root.is_junction()
+    ):
+        return "Execution failed: sandbox workspace is a symlink/junction."
+    root = requested_root.resolve()
     if os.name == "nt":
         shell = Path(os.environ.get("WINDIR", r"C:\\Windows")) / "System32" / "cmd.exe"
         argv = [str(shell), "/d", "/s", "/c", command]
