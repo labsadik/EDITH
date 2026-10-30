@@ -379,7 +379,10 @@ def test_home_assistant_connection(url: str, token: str, timeout: float = 5.0) -
         if response.status_code in {401, 403}:
             raise RuntimeError("Home Assistant rejected this token. Create a new long-lived access token and retry.")
         response.raise_for_status()
-        payload = response.json()
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise RuntimeError("Home Assistant did not return valid JSON from /api/config.") from exc
         if not isinstance(payload, dict):
             raise RuntimeError("Home Assistant returned an invalid API configuration response.")
     except requests.Timeout as exc:
@@ -390,12 +393,19 @@ def test_home_assistant_connection(url: str, token: str, timeout: float = 5.0) -
         raise RuntimeError(f"Home Assistant API returned HTTP {getattr(exc.response, 'status_code', 'error')}.") from exc
     except requests.RequestException as exc:
         raise RuntimeError(f"Home Assistant connection test failed: {type(exc).__name__}.") from exc
-    except ValueError as exc:
-        if "JSON" in str(exc):
-            raise RuntimeError("Home Assistant did not return valid JSON from /api/config.") from exc
-        raise
     return {"ok": True, "connected": True, "provider": "Home Assistant",
             "message": "Home Assistant credentials verified; ready to pair."}
+
+
+def pair_home_assistant(url: str, token: str, timeout: float = 5.0) -> dict[str, Any]:
+    """Verify connectivity/authentication before saving a Home Assistant pairing."""
+    verification = test_home_assistant_connection(url, token, timeout=timeout)
+    saved = configure_home_assistant(url, token)
+    return {
+        **saved,
+        "verified": bool(verification.get("ok")),
+        "connected": bool(verification.get("connected")),
+    }
 
 
 def configure_home_assistant(url: str, token: str) -> dict[str, Any]:
