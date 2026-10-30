@@ -151,16 +151,59 @@ def format_project_status(value: list[dict[str, Any]] | dict[str, Any]) -> str:
             lines.append(f"  {task.get('task_id')} [{task.get('status')}] {task.get('milestone')}: {task.get('title')}")
     return "\n".join(lines)
 
+def _planning_error_message(exc: Exception) -> str:
+    """Turn provider/configuration failures into actionable user-facing feedback."""
+    detail = str(exc).lower()
+    if "ollama" in detail or "localhost:11434" in detail:
+        return (
+            "Project plan was NOT saved because Powerful Brain cannot reach Ollama. "
+            "Your log shows that Ollama is not installed or running. Either install Ollama, "
+            "start it with 'ollama serve', and download the configured model with "
+            "'ollama pull llama3.2', or open EDITH → Controls → API Providers → "
+            "POWERFUL BRAIN, select a provider you have credentials for, use Test, then Save. "
+            "Gemini Live voice being connected does not mean the text-reasoning Powerful Brain is configured."
+        )
+    if "api key" in detail or "credential" in detail or "unauthorized" in detail or "401" in detail:
+        return (
+            "Project plan was NOT saved because Powerful Brain authentication failed. "
+            "Open EDITH → Controls → API Providers → POWERFUL BRAIN, check the selected "
+            "provider and its API key, then use Test and Save. Do not paste API keys into chat."
+        )
+    return (
+        "Project plan was NOT saved because Powerful Brain could not complete the planning request. "
+        "Open EDITH → Controls → API Providers → POWERFUL BRAIN, verify the provider/model with "
+        "Test, then Save and retry. No project or task data was created."
+    )
+
+
 def run_project_manager(action: str, project_id: str = "", goal: str = "",
                         task_id: str = "", status: str = "", notes: str = "") -> str:
     action = str(action or "status").strip().lower()
     if action == "plan":
-        project = plan_project(goal, project_id)
+        try:
+            project = plan_project(goal, project_id)
+        except (RuntimeError, OSError) as exc:
+            return _planning_error_message(exc)
+        except ValueError as exc:
+            return f"Project plan was not saved: {exc}"
         return "Saved a new local project plan.\n" + format_project_status(project)
     if action in {"status", "list"}:
-        return format_project_status(get_project(project_id))
+        try:
+            return format_project_status(get_project(project_id))
+        except KeyError:
+            identifier = str(project_id or "").strip()
+            return (
+                f"No saved project named '{identifier}' was found. A previous plan may not have "
+                "completed, so there is no status to show. Configure and test Powerful Brain, "
+                "then run action=plan first."
+            )
+        except ValueError as exc:
+            return f"Cannot read project status: {exc}"
     if action in {"update", "complete", "start", "block"}:
         selected_status = {"complete": "completed", "start": "in_progress", "block": "blocked"}.get(action, status)
-        result = update_task(project_id, task_id, selected_status, notes)
+        try:
+            result = update_task(project_id, task_id, selected_status, notes)
+        except (KeyError, ValueError) as exc:
+            return f"Project task was not updated: {exc}"
         return f"Updated {result['project']} {task_id} to {selected_status}. Project status: {result['project_status']}."
     return "Use action=plan, status, list, update, complete, start or block."
