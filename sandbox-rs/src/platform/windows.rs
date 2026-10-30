@@ -120,39 +120,12 @@ fn grant_path(path: &Path, sid: Sid, writable: bool) -> Result<(), String> {
 }
 
 fn grant_tree(root: &Path, sid: Sid, writable: bool) -> Result<(), String> {
-    let mut pending = vec![root.to_path_buf()];
-    let mut visited = 0usize;
-    while let Some(path) = pending.pop() {
-        let metadata = std::fs::symlink_metadata(&path)
-            .map_err(|e| format!("Cannot inspect sandbox ACL path {}: {e}", path.display()))?;
-        let kind = metadata.file_type();
-        if kind.is_symlink() {
-            continue;
-        }
-        visited += 1;
-        if visited > 40000 {
-            return Err(format!("Sandbox ACL path {} exceeds the 40000-entry safety limit", root.display()));
-        }
-        let is_directory = kind.is_dir();
-        let permissions = if writable { FILE_ALL_ACCESS } else { GENERIC_READ | GENERIC_EXECUTE };
-        let inheritance = if is_directory { OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE } else { 0 };
-        grant_acl(&path, sid, permissions, inheritance)?;
-        if is_directory {
-            for entry in std::fs::read_dir(&path)
-                .map_err(|e| format!("Cannot enumerate sandbox directory {}: {e}", path.display()))?
-            {
-                let entry = entry.map_err(|e| format!("Cannot read sandbox directory entry: {e}"))?;
-                let child_type = entry.file_type()
-                    .map_err(|e| format!("Cannot inspect sandbox directory entry: {e}"))?;
-                // Do not follow symlinks/reparse-like directory entries outside the
-                // selected workspace or read-only runtime directory.
-                if !child_type.is_symlink() {
-                    pending.push(entry.path());
-                }
-            }
-        }
-    }
-    Ok(())
+    // An inheritable ACE on the workspace root applies to existing and new
+    // child files/directories without recursively rewriting ACLs on thousands
+    // of package files. Protected child DACLs remain inaccessible by design.
+    let permissions = if writable { FILE_ALL_ACCESS } else { GENERIC_READ | GENERIC_EXECUTE };
+    let inheritance = if root.is_dir() { OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE } else { 0 };
+    grant_acl(root, sid, permissions, inheritance)
 }
 
 fn is_windows_system_directory(path: &Path) -> bool {
