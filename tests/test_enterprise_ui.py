@@ -76,6 +76,7 @@ class WorkspaceTests(unittest.TestCase):
 
     def test_api_settings_exposes_voice_brain_and_realtime_search(self):
         from unittest.mock import patch
+        from PyQt6.QtWidgets import QScrollArea
         from ui import ApiKeyOverlay
 
         with patch.object(ApiKeyOverlay, "_probe_local_connection", lambda *_args: None):
