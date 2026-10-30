@@ -39,9 +39,10 @@ def _project_id(value: str) -> str:
     from pathlib import PureWindowsPath
     windows_path = PureWindowsPath(raw)
     if (
-        not raw or ".." in Path(raw).parts or ".." in windows_path.parts
+        not raw or "/" in raw or "\\" in raw
+        or ".." in Path(raw).parts or ".." in windows_path.parts
         or Path(raw).is_absolute() or windows_path.is_absolute()
-        or bool(windows_path.drive) or "/" in raw or "\\" in raw
+        or bool(windows_path.drive) or raw in {".", ".."}
     ):
         raise ValueError("Project id must be a simple local identifier, not a path.")
     slug = re.sub(r"[^a-z0-9_-]+", "-", raw.lower()).strip("-_")[:48]
