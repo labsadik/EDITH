@@ -152,7 +152,7 @@ def format_agent_catalog() -> str:
     for item in agents:
         lines.append(f"- {item['name']} · {item['id']} · v{item['version']} · {item['status']}")
         lines.append("  Capabilities: " + ", ".join(item["capabilities"]))
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 
 __all__ = [
