@@ -51,18 +51,24 @@ class LoopingVideo(QObject):
             self.player.play()
 
     def shutdown(self):
-        """Stop playback and detach the sink before Qt destroys multimedia objects."""
+        """Stop playback and defer-delete detached Qt Multimedia objects safely."""
         self.active = False
         player = self.player
         sink = getattr(self, "sink", None)
+        self.player = None
+        self.sink = None
         if player is None:
             return
+        # Prevent late decoder callbacks from reaching the HUD while the
+        # asynchronous Qt/FFmpeg backend is being dismantled.
         try:
+            player.blockSignals(True)
             player.stop()
         except RuntimeError:
             pass
         if sink is not None:
             try:
+                sink.blockSignals(True)
                 sink.videoFrameChanged.disconnect(self._receive_frame)
             except (TypeError, RuntimeError):
                 pass
@@ -74,8 +80,17 @@ class LoopingVideo(QObject):
             player.setSource(QUrl())
         except RuntimeError:
             pass
-        self.sink = None
-        self.player = None
+        # Do not let QObject parent destruction race the multimedia backend.
+        # Detach both objects and let the Qt event loop delete them after its
+        # stop/source-change events have been delivered.
+        for media_object in (sink, player):
+            if media_object is None:
+                continue
+            try:
+                media_object.setParent(None)
+                media_object.deleteLater()
+            except RuntimeError:
+                pass
 
 
 def draw_blended_video(painter, area, image, background):
