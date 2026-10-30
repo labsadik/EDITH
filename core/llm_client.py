@@ -366,7 +366,7 @@ def _text_from_content(value) -> str:
                 text = part.get("text") or part.get("content") or ""
                 if isinstance(text, str):
                     chunks.append(text)
-        return "\n".join(x.strip() for x in chunks if x and x.strip()).strip()
+        return " ".join(x.strip() for x in chunks if x and x.strip()).strip()
     if isinstance(value, dict):
         nested = value.get("text") or value.get("output_text") or value.get("content")
         if isinstance(nested, (str, list)):

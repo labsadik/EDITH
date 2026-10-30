@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from urllib.parse import quote
 
 from PyQt6.QtCore import QUrl
@@ -12,13 +13,29 @@ def normalize_web_url(value: str) -> QUrl:
     raw = str(value or "").strip()
     if not raw:
         return QUrl("about:blank")
-    if "://" not in raw and "." not in raw and " " in raw:
-        raw = "https://www.google.com/search?q=" + quote(raw)
+
+    # Reject dangerous schemes before QUrl.fromUserInput can reinterpret them
+    # as a search term or a host name.
+    if raw.lower() == "about:blank":
+        return QUrl("about:blank")
+    explicit_scheme = re.match(r"^([A-Za-z][A-Za-z0-9+.-]*):", raw)
+    if explicit_scheme:
+        scheme = explicit_scheme.group(1).lower()
+        if scheme not in {"http", "https"}:
+            raise ValueError("Embedded browser accepts only http, https or about:blank URLs")
+    elif "://" not in raw and "." not in raw and " " in raw:
+        encoded_query = quote(raw, safe="")
+        return QUrl.fromEncoded(
+            f"https://www.google.com/search?q={encoded_query}".encode("ascii")
+        )
     elif "://" not in raw:
         raw = "https://" + raw
+
     url = QUrl.fromUserInput(raw)
-    if url.scheme().lower() not in {"http", "https", "about"}:
+    if url.scheme().lower() not in {"http", "https"}:
         raise ValueError("Embedded browser accepts only http, https or about:blank URLs")
+    if not url.host():
+        raise ValueError("Enter a valid website address")
     return url
 
 

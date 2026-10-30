@@ -71,7 +71,7 @@ class ProviderRegressionTests(unittest.TestCase):
         with patch.object(providers.requests, "post", side_effect=[old_api, final]) as post:
             result = providers.probe_provider("ollama", "http://localhost:11434", "llama3")
         self.assertTrue(result["ok"])
-        self.assertFalse(post.call_args_list[0].kwargs["json"].get("think") is None)
+        self.assertIs(post.call_args_list[0].kwargs["json"].get("think"), False)
         self.assertNotIn("think", post.call_args_list[1].kwargs["json"])
 
     def test_anthropic_runtime_maps_tool_use_blocks_to_edith_tool_calls(self):

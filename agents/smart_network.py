@@ -181,7 +181,7 @@ def discover_local_devices() -> dict[str, Any]:
         "source": source, "devices": devices, "count": len(devices),
         "active_scan": False, "home_assistant_paired": ha_configured,
         "control_available": ha_configured,
-        "control_note": "Write actions are limited to authenticated Home Assistant entities and require local confirmation.",
+        "control_note": "Authenticated pairing with the user's Home Assistant account is required for read/write control; every write requires local confirmation.",
         "note": "Only OS-known neighbors are listed. No packets are sent to scan other hosts.",
     }
 
