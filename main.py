@@ -656,9 +656,9 @@ TOOL_DECLARATIONS = [
     },
     {
         "name": "smart_network",
-        "description": "Lists OS-known LAN neighbors without scanning; reads or controls paired Home Assistant entities; and reads/publishes only exact MQTT topics paired locally by the owner. All smart-device writes require local confirmation. Never scan, log in to or control unpaired devices or unapproved topics.",
+        "description": "Use action=wifi_scan to scan nearby Wi-Fi SSIDs/BSSIDs on every OS-visible Wi-Fi adapter, including supported USB Wi-Fi dongles. Use action=discover for OS-known LAN neighbors and interface inventory. Home Assistant entity reads/controls require an owner-paired instance; MQTT uses only exact locally paired topics. Writes require local confirmation. Wi-Fi scanning does not join networks or test passwords.",
         "parameters": {"type": "OBJECT", "properties": {
-            "action": {"type": "STRING", "enum": ["discover", "status", "entities", "read", "control", "mqtt_status", "mqtt_read", "mqtt_publish"]},
+            "action": {"type": "STRING", "enum": ["discover", "wifi_scan", "status", "entities", "read", "control", "mqtt_status", "mqtt_read", "mqtt_publish"]},
             "entity_id": {"type": "STRING", "description": "Exact paired Home Assistant entity id such as light.living_room."},
             "service": {"type": "STRING", "description": "Allowlisted service such as light.turn_on, switch.turn_off, climate.set_temperature."},
             "service_data": {"type": "OBJECT", "properties": {
