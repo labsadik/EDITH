@@ -11,7 +11,10 @@ from edith.platform.permissions import tool_tier
 class SmartNetworkHomeAssistantTests(unittest.TestCase):
     def test_paired_light_service_control_calls_authenticated_adapter(self):
         state = {"entity_id": "light.living_room", "state": "off", "attributes": {}}
-        with patch.object(smart_network, "_ha_request", side_effect=[state, [{"entity_id": "light.living_room"}]]) as request:
+        with (
+            patch.object(smart_network, "_ha_credentials", return_value=("http://ha.local:8123", "test-token")),
+            patch.object(smart_network, "_ha_request", side_effect=[state, [{"entity_id": "light.living_room"}]]) as request,
+        ):
             result = json.loads(smart_network.run_smart_network(
                 "control", "light.living_room", "light.turn_on", {"brightness_pct": 60}
             ))
