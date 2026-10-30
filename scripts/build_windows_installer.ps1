@@ -20,7 +20,7 @@ function Invoke-CheckedNative {
     & $Executable @Arguments
     $exitCode = $LASTEXITCODE
     if ($exitCode -ne 0) {
-        throw "Command failed with exit code $exitCode: $Executable"
+        throw ("Command failed with exit code {0}: {1}" -f $exitCode, $Executable)
     }
 }
 
@@ -32,14 +32,14 @@ function Find-InnoCompiler {
 
     $candidates = @()
     if ($env:LOCALAPPDATA) {
-        $candidates += Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe"
+        $candidates += (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe")
     }
     $programFilesX86 = [Environment]::GetFolderPath("ProgramFilesX86")
     if ($programFilesX86) {
-        $candidates += Join-Path $programFilesX86 "Inno Setup 6\ISCC.exe"
+        $candidates += (Join-Path $programFilesX86 "Inno Setup 6\ISCC.exe")
     }
     if ($env:ProgramFiles) {
-        $candidates += Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe"
+        $candidates += (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
     }
 
     foreach ($candidate in $candidates) {
