@@ -12,9 +12,9 @@ from core.audio_meter import pcm16_level
 
 SAMPLE_RATE = 24000
 BYTES_PER_SECOND = SAMPLE_RATE * 2  # mono PCM16
-WRITE_BYTES = BYTES_PER_SECOND // 20  # 50 ms, never a whole narration in one write
-PREFILL_BYTES = BYTES_PER_SECOND * 150 // 1000
-MAX_PREFILL_BYTES = BYTES_PER_SECOND * 500 // 1000
+WRITE_BYTES = BYTES_PER_SECOND // 50  # 20 ms, never a whole narration in one write
+PREFILL_BYTES = BYTES_PER_SECOND * 60 // 1000
+MAX_PREFILL_BYTES = BYTES_PER_SECOND * 300 // 1000
 
 
 class PlaybackReset(Exception):
@@ -165,7 +165,7 @@ class SpeechPlayer:
                 started = False
                 try:
                     stream = self.stream_factory(samplerate=SAMPLE_RATE, channels=1,
-                                                 dtype='int16', blocksize=0, latency='high')
+                                                 dtype='int16', blocksize=0, latency='low')
                     if unavailable:
                         self.buffer.clear()  # Do not replay old speech after device recovery.
                         self._event('AUDIO: Speaker available again; stale output was not replayed.')
