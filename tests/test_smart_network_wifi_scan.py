@@ -32,9 +32,9 @@ class WifiScanParserTests(unittest.TestCase):
     def test_windows_scan_keeps_each_adapter_and_each_bssid(self):
         with patch.object(smart_network.platform, "system", return_value="Windows"), \
              patch.object(smart_network, "_run_fixed", side_effect=[
-                 {"available": True, "output": "    Name : Wi-Fi USB\\n    Name : Wi-Fi 2"},
+                 {"available": True, "output": "    Name : Wi-Fi USB\n    Name : Wi-Fi 2"},
                  {"available": True, "output": WINDOWS_SCAN},
-                 {"available": True, "output": "SSID 1 : Second AP\\n  Authentication : WPA2-Personal\\n  Encryption : CCMP\\n  BSSID 1 : aa:bb:cc:dd:ee:04\\n    Signal : 90%\\n    Channel : 11"},
+                 {"available": True, "output": "SSID 1 : Second AP\n  Authentication : WPA2-Personal\n  Encryption : CCMP\n  BSSID 1 : aa:bb:cc:dd:ee:04\n    Signal : 90%\n    Channel : 11"},
              ]) as run:
             result = smart_network.scan_wifi_networks()
         self.assertTrue(result["ok"])
@@ -104,6 +104,13 @@ class WifiScanParserTests(unittest.TestCase):
         self.assertEqual(len(row), 1)
         self.assertEqual(row[0]["ssid"], "Coffee Shop")
         self.assertEqual(row[0]["rssi_dbm"], -51)
+
+    def test_smart_network_wifi_scan_action_uses_native_scanner(self):
+        expected = {"ok": True, "platform": "Windows", "networks": [], "count": 0}
+        with patch.object(smart_network, "scan_wifi_networks", return_value=expected) as scan:
+            result = smart_network.run_smart_network("wifi_scan")
+        self.assertEqual(__import__("json").loads(result), expected)
+        scan.assert_called_once_with()
 
     def test_unsupported_platform_is_explicit(self):
         with patch.object(smart_network.platform, "system", return_value="FreeBSD"):
