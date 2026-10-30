@@ -159,7 +159,7 @@ fn win32_path(path: &Path) -> PathBuf {
     } else if let Some(rest) = value.strip_prefix("\\\\.\\") {
         PathBuf::from(rest)
     } else {
-        PathBuf::from(value.as_ref())
+        PathBuf::from(value)
     }
 }
 
