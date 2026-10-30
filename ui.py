@@ -512,7 +512,7 @@ class MetricBar(QWidget):
         self._color = color
         self._value = 0.0       # 0–100
         self._text  = "--"
-        self.setFixedHeight(36)
+        self.setFixedHeight(42)
         self.setMinimumWidth(80)
 
     def set_value(self, pct: float, text: str):
@@ -531,8 +531,8 @@ class MetricBar(QWidget):
         p.setPen(QPen(qcol(C.GLASS_RIM), 1))
         p.drawLine(QPointF(9, 2), QPointF(W - 9, 2))
 
-        bar_h   = 4
-        bar_y   = H - bar_h - 5
+        bar_h   = 5
+        bar_y   = H - bar_h - 6
         bar_w   = W - 12
         bar_x   = 6
         fill_w  = int(bar_w * self._value / 100)
@@ -552,11 +552,11 @@ class MetricBar(QWidget):
             p.setBrush(QBrush(bar_col))
             p.drawRoundedRect(QRectF(bar_x, bar_y, fill_w, bar_h), 2, 2)
 
-        p.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+        p.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
         p.setPen(QPen(qcol(C.TEXT_DIM), 1))
         p.drawText(QRectF(8, 5, 50, 14), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self._label)
 
-        p.setFont(QFont(FONT_MONO, 9, QFont.Weight.Bold))
+        p.setFont(QFont(FONT_MONO, 10, QFont.Weight.Bold))
         p.setPen(QPen(qcol(C.TEXT_DIM) if self._text in {"--", "N/A"} else bar_col, 1))
         p.drawText(QRectF(0, 4, W - 6, 16), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, self._text)
 
@@ -4512,59 +4512,80 @@ class MainWindow(QMainWindow):
 
 
     def _build_header(self) -> QWidget:
+        """Build a calm, readable product header with clear brand hierarchy."""
         w = QWidget()
-        w.setFixedHeight(66)
-        w.setStyleSheet(
-            f"background: {C.HEADER}; "
-            f"border-bottom: 1px solid {C.BORDER};"
-        )
+        w.setObjectName("WorkspaceHeader")
+        w.setFixedHeight(74)
+        w.setStyleSheet(f"""
+            QWidget#WorkspaceHeader {{
+                background: {C.HEADER};
+                border-bottom: 1px solid {C.BORDER};
+            }}
+        """)
         lay = QHBoxLayout(w)
-        lay.setContentsMargins(20, 0, 22, 0)
+        lay.setContentsMargins(22, 0, 22, 0)
+        lay.setSpacing(14)
 
-        def _badge(txt, color=C.TEXT_MED):
-            l = QLabel(txt)
-            l.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
-            l.setStyleSheet(f"color: {color}; background: transparent;")
-            return l
+        brand = QVBoxLayout()
+        brand.setSpacing(2)
+        brand_title = QLabel("EDITH  /  WORKSPACE")
+        brand_title.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
+        brand_title.setStyleSheet(
+            f"color: {C.TEXT}; background: transparent; letter-spacing: 1px;"
+        )
+        brand_hint = QLabel("PERSONAL AI ASSISTANT")
+        brand_hint.setFont(QFont(FONT_MAIN, 7))
+        brand_hint.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        brand.addWidget(brand_title)
+        brand.addWidget(brand_hint)
+        lay.addLayout(brand)
 
-        lay.addWidget(_badge("EDITH SYSTEMS", C.PRI_DIM))
-        lay.addSpacing(12)
         self._drawer_btn = QPushButton()
         _set_theme_icon(self._drawer_btn, "settings", "PRI")
-        self._drawer_btn.setIconSize(QSize(17, 17))
-        self._drawer_btn.setFixedSize(28, 28)
+        self._drawer_btn.setIconSize(QSize(18, 18))
+        self._drawer_btn.setFixedSize(36, 36)
+        self._drawer_btn.setAccessibleName("Open workspace controls")
         self._drawer_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._drawer_btn.setToolTip("Settings & Controls")
+        self._drawer_btn.setToolTip("Settings and workspace controls")
         self._drawer_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {C.GLASS_CARD}; color: {C.TEXT_DIM};
-                border: 1px solid {C.BORDER}; border-radius: 9px;
+                border: 1px solid {C.BORDER}; border-radius: 11px;
             }}
-            QPushButton:hover {{ color: {C.PRI}; background: {C.HOVER}; border-color: {C.PRI_DIM}; }}
-            QPushButton:checked {{ color: {C.PRI}; border-color: {C.PRI}; background: {C.PRI_GHO}; }}
+            QPushButton:hover {{
+                color: {C.PRI}; background: {C.HOVER}; border-color: {C.PRI_DIM};
+            }}
+            QPushButton:checked {{
+                color: {C.PRI}; border-color: {C.PRI}; background: {C.PRI_GHO};
+            }}
         """)
         self._drawer_btn.setCheckable(True)
         self._drawer_btn.clicked.connect(self._toggle_drawer)
         lay.addWidget(self._drawer_btn)
-        lay.addStretch()
+        lay.addStretch(1)
 
-        mid = QVBoxLayout(); mid.setSpacing(0)
-        _disp = self._display_name
-        self._title_lbl = QLabel(_disp)
+        mid = QVBoxLayout()
+        mid.setSpacing(2)
+        self._title_lbl = QLabel(self._display_name)
         self._title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._title_lbl.setFont(QFont(FONT_MAIN, 16, QFont.Weight.Bold))
-        self._title_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+        self._title_lbl.setFont(QFont(FONT_MAIN, 19, QFont.Weight.Bold))
+        self._title_lbl.setStyleSheet(
+            f"color: {C.PRI}; background: transparent; letter-spacing: 1px;"
+        )
         mid.addWidget(self._title_lbl)
-        _sub_text = "PERSONAL ASSISTANT SYSTEM  •  VOICE  •  VISION"
-        self._sub_lbl = QLabel("PERSONAL AI WORKSPACE  •  VOICE  •  VISION  •  AUTOMATION")
+
+        self._sub_lbl = QLabel(
+            "PERSONAL AI WORKSPACE  ·  VOICE  ·  VISION  ·  AUTOMATION"
+        )
         self._sub_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._sub_lbl.setFont(QFont(FONT_MAIN, 8))
         self._sub_lbl.setStyleSheet(f"color: {C.PRI_DIM}; background: transparent;")
         mid.addWidget(self._sub_lbl)
-        lay.addLayout(mid)
-        lay.addStretch()
+        lay.addLayout(mid, stretch=2)
+        lay.addStretch(1)
 
-        right_col = QVBoxLayout(); right_col.setSpacing(0)
+        right_col = QVBoxLayout()
+        right_col.setSpacing(2)
         self._clock_lbl = QLabel("00:00:00")
         self._clock_lbl.setFont(QFont(FONT_MONO, 14, QFont.Weight.Bold))
         self._clock_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent;")
@@ -4578,79 +4599,98 @@ class MainWindow(QMainWindow):
         lay.addLayout(right_col)
         return w
 
+
     def _tick_clock(self):
         self._clock_lbl.setText(time.strftime("%H:%M:%S"))
         self._date_lbl.setText(time.strftime("%a %d %b %Y"))
 
     def _build_left_panel(self) -> QWidget:
+        """Show useful, real system telemetry in a compact health panel."""
         w = QWidget()
+        w.setObjectName("SystemHealthPanel")
         w.setFixedWidth(_LEFT_W)
-        w.setStyleSheet(f"background: {C.SIDEBAR}; border: 1px solid {C.BORDER}; border-radius: 18px;")
+        w.setStyleSheet(f"""
+            QWidget#SystemHealthPanel {{
+                background: {C.SIDEBAR};
+                border: 1px solid {C.BORDER};
+                border-radius: 18px;
+            }}
+        """)
         lay = QVBoxLayout(w)
-        lay.setContentsMargins(10, 12, 10, 12)
-        lay.setSpacing(8)
+        lay.setContentsMargins(14, 14, 14, 14)
+        lay.setSpacing(10)
 
-        hdr = QLabel("◈  SYSTEM OVERVIEW")
-        hdr.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
-        hdr.setStyleSheet(f"color: {C.PRI}; background: transparent; "
-                          f"border-bottom: 1px solid {C.BORDER}; padding-bottom: 6px;")
+        hdr = QLabel("SYSTEM HEALTH")
+        hdr.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
+        hdr.setStyleSheet(
+            f"color: {C.TEXT}; background: transparent; "
+            f"padding-bottom: 7px; border-bottom: 1px solid {C.BORDER}; "
+            "letter-spacing: 0.6px;"
+        )
         lay.addWidget(hdr)
-        lay.addSpacing(4)
+
+        hint = QLabel("Live resource usage")
+        hint.setFont(QFont(FONT_MAIN, 8))
+        hint.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        lay.addWidget(hint)
 
         self._bar_cpu = MetricBar("CPU", "PRI")
         self._bar_mem = MetricBar("MEM", "ACC2")
         self._bar_net = MetricBar("NET", "GREEN")
         self._bar_gpu = MetricBar("GPU", "ACC")
-        self._bar_tmp = MetricBar("TMP", "RED")
-
-        for bar in [self._bar_cpu, self._bar_mem, self._bar_net,
-                    self._bar_gpu, self._bar_tmp]:
+        self._bar_tmp = MetricBar("TEMP", "RED")
+        for bar in (self._bar_cpu, self._bar_mem, self._bar_net,
+                    self._bar_gpu, self._bar_tmp):
             lay.addWidget(bar)
 
-        lay.addSpacing(6)
-
-        info_panel = QWidget()
-        info_panel.setStyleSheet(
-            f"background: {C.GLASS_CARD}; border: 1px solid {C.BORDER}; border-radius: 11px;"
-        )
+        info_panel = QFrame()
+        info_panel.setObjectName("SystemDetailsCard")
+        info_panel.setStyleSheet(f"""
+            QFrame#SystemDetailsCard {{
+                background: {C.GLASS_CARD};
+                border: 1px solid {C.BORDER};
+                border-radius: 13px;
+            }}
+        """)
         ip_lay = QVBoxLayout(info_panel)
-        ip_lay.setContentsMargins(8, 6, 8, 6)
-        ip_lay.setSpacing(4)
+        ip_lay.setContentsMargins(11, 10, 11, 10)
+        ip_lay.setSpacing(7)
 
-        self._uptime_lbl = QLabel("UP  --:--")
+        self._uptime_lbl = QLabel("UPTIME  —")
         self._uptime_lbl.setFont(QFont(FONT_MONO, 8, QFont.Weight.Bold))
-        self._uptime_lbl.setStyleSheet(f"color: {C.GREEN}; background: transparent; border: none;")
+        self._uptime_lbl.setStyleSheet(
+            f"color: {C.GREEN}; background: transparent; border: none;"
+        )
         ip_lay.addWidget(self._uptime_lbl)
 
-        self._proc_lbl = QLabel("PROC  --")
+        self._proc_lbl = QLabel("PROCESSES  —")
         self._proc_lbl.setFont(QFont(FONT_MONO, 8))
-        self._proc_lbl.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent; border: none;")
+        self._proc_lbl.setStyleSheet(
+            f"color: {C.TEXT_MED}; background: transparent; border: none;"
+        )
         ip_lay.addWidget(self._proc_lbl)
 
-        os_name = {"Windows": "WIN", "Darwin": "macOS", "Linux": "LINUX"}.get(_OS, _OS.upper())
-        os_lbl = QLabel(f"OS  {os_name}")
+        os_name = {"Windows": "Windows", "Darwin": "macOS", "Linux": "Linux"}.get(
+            _OS, _OS
+        )
+        os_lbl = QLabel(f"PLATFORM  {os_name}")
         os_lbl.setFont(QFont(FONT_MONO, 8))
-        os_lbl.setStyleSheet(f"color: {C.ACC2}; background: transparent; border: none;")
+        os_lbl.setStyleSheet(
+            f"color: {C.ACC2}; background: transparent; border: none;"
+        )
         ip_lay.addWidget(os_lbl)
 
         lay.addWidget(info_panel)
-        lay.addStretch()
+        lay.addStretch(1)
 
-        for txt, col in [
-            ("AI CORE\nACTIVE",  C.GREEN),
-            ("SEC\nCLEARED",     C.PRI),
-            ("PROTOCOL\nXLIX",   C.TEXT_DIM),
-        ]:
-            lbl = QLabel(txt)
-            lbl.setFont(QFont(FONT_MAIN, 7, QFont.Weight.Bold))
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl.setStyleSheet(
-                f"color: {col}; background: {C.GLASS_CARD};"
-                f"border: 1px solid {C.BORDER}; border-radius: 9px; padding: 6px;"
-            )
-            lay.addWidget(lbl)
-
+        note = QLabel("Telemetry refreshes every 2 seconds")
+        note.setWordWrap(True)
+        note.setFont(QFont(FONT_MAIN, 7))
+        note.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        lay.addWidget(note)
         return w
+
+
     def _update_task_status(self, running: int, queued: int, completed: int) -> None:
         self._running_tasks = max(0, running)
         self._render_activity_state()
@@ -4709,16 +4749,21 @@ class MainWindow(QMainWindow):
 
     def _build_right_panel(self) -> QWidget:
         w = QWidget()
+        w.setObjectName("OperationsPanel")
         w.setFixedWidth(_RIGHT_W)
-        w.setStyleSheet(f"background: {C.SIDEBAR}; border: 1px solid {C.BORDER}; border-radius: 18px;")
+        w.setStyleSheet(f"QWidget#OperationsPanel {{ background: {C.SIDEBAR}; border: 1px solid {C.BORDER}; border-radius: 18px; }}")
         lay = QVBoxLayout(w)
-        lay.setContentsMargins(12, 12, 12, 12)
-        lay.setSpacing(10)
+        lay.setContentsMargins(14, 14, 14, 14)
+        lay.setSpacing(11)
 
         def _sec(txt):
-            l = QLabel(f"▸ {txt}")
-            l.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
-            l.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
+            l = QLabel(txt)
+            l.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
+            l.setStyleSheet(
+                f"color: {C.TEXT_MED}; background: transparent; "
+                f"padding: 2px 0 6px; border-bottom: 1px solid {C.BORDER}; "
+                "letter-spacing: 0.5px;"
+            )
             return l
 
         # Keep the existing EDITH panel; task state is a compact extension,
@@ -4733,9 +4778,9 @@ class MainWindow(QMainWindow):
         self._task_status_lbl.setToolTip("Live tasks: running and queued")
         tasks_row.addWidget(self._task_status_lbl, stretch=1)
 
-        self._cancel_queued_btn = QPushButton("CANCEL WAITING")
-        self._cancel_queued_btn.setFixedHeight(25)
-        self._cancel_queued_btn.setFont(QFont(FONT_MAIN, 7, QFont.Weight.Bold))
+        self._cancel_queued_btn = QPushButton("Cancel queued")
+        self._cancel_queued_btn.setFixedHeight(30)
+        self._cancel_queued_btn.setFont(QFont(FONT_MAIN, 8, QFont.Weight.DemiBold))
         self._cancel_queued_btn.setStyleSheet(f"""
             QPushButton {{
                 color: {C.TEXT_MED}; background: {C.GLASS_CARD};
@@ -4812,7 +4857,7 @@ class MainWindow(QMainWindow):
         self._task_details_panel.hide()
         lay.addWidget(self._task_details_panel)
 
-        lay.addWidget(_sec("ACTIVITY LOG"))
+        lay.addWidget(_sec("ACTIVITY"))
         self._log = LogWidget()
         lay.addWidget(self._log, stretch=1)
 
@@ -4820,13 +4865,15 @@ class MainWindow(QMainWindow):
         sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         lay.addWidget(sep)
 
-        lay.addWidget(_sec("FILE UPLOAD"))
+        lay.addWidget(_sec("ATTACHMENTS"))
         self._drop_zone = FileDropZone()
+        self._drop_zone.setAccessibleName("File attachment drop zone")
+        self._drop_zone.setToolTip("Drop a file here or click to browse for an attachment")
         self._drop_zone.file_selected.connect(self._on_file_selected)
         self._drop_zone.file_cleared.connect(self._clear_selected_file)
         lay.addWidget(self._drop_zone)
 
-        self._file_hint = QLabel("No file loaded — drop or click above to upload")
+        self._file_hint = QLabel("No attachment selected · Drop a file above or click to browse")
         self._file_hint.setFont(QFont(FONT_MAIN, 8))
         self._file_hint.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
         self._file_hint.setWordWrap(True)
@@ -4836,14 +4883,14 @@ class MainWindow(QMainWindow):
         sep2.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         lay.addWidget(sep2)
 
-        lay.addWidget(_sec("COMMAND INPUT"))
+        lay.addWidget(_sec("MESSAGE EDITH"))
         lay.addLayout(self._build_input_row())
 
-        self._interrupt_btn = QPushButton("INTERRUPT  [ESC]")
+        self._interrupt_btn = QPushButton("Stop response  ·  Esc")
         _set_theme_icon(self._interrupt_btn, "stop-circle", "MUTED_C")
         self._interrupt_btn.setIconSize(QSize(16, 16))
-        self._interrupt_btn.setFixedHeight(34)
-        self._interrupt_btn.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
+        self._interrupt_btn.setFixedHeight(38)
+        self._interrupt_btn.setFont(QFont(FONT_MAIN, 9, QFont.Weight.DemiBold))
         self._interrupt_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._interrupt_btn.setStyleSheet(f"""
             QPushButton {{
@@ -5357,42 +5404,50 @@ class MainWindow(QMainWindow):
 
     def _build_footer(self) -> QWidget:
         w = QWidget()
-        w.setFixedHeight(24)
-        w.setStyleSheet(f"background: {C.DARK}; border-top: 1px solid {C.BORDER};")
-        lay = QHBoxLayout(w); lay.setContentsMargins(16, 0, 16, 0)
+        w.setObjectName("WorkspaceFooter")
+        w.setFixedHeight(30)
+        w.setStyleSheet(
+            f"QWidget#WorkspaceFooter {{ background: {C.DARK}; "
+            f"border-top: 1px solid {C.BORDER}; }}"
+        )
+        lay = QHBoxLayout(w)
+        lay.setContentsMargins(16, 0, 16, 0)
+        lay.setSpacing(10)
 
-        def _fl(txt, color=C.TEXT_MED):
-            l = QLabel(txt); l.setFont(QFont(FONT_MAIN, 8))
-            l.setStyleSheet(f"color: {color}; background: transparent;")
-            return l
+        def _fl(txt, color=C.TEXT_MED, weight=QFont.Weight.Normal):
+            label = QLabel(txt)
+            label.setFont(QFont(FONT_MAIN, 8, weight))
+            label.setStyleSheet(f"color: {color}; background: transparent;")
+            return label
 
-        lay.addWidget(_fl("[F4] Mute  ·  [F11] Fullscreen"))
-        self._activity_lbl = _fl("INITIALISING", C.TEXT)
+        lay.addWidget(_fl("EDITH", C.PRI, QFont.Weight.Bold))
+        lay.addWidget(_fl("F4  Mute   ·   F11  Fullscreen", C.TEXT_DIM))
+
+        self._activity_lbl = _fl("INITIALISING", C.TEXT, QFont.Weight.DemiBold)
         self._activity_lbl.setAccessibleName("EDITH activity status")
         lay.addWidget(self._activity_lbl)
-        lay.addStretch()
-        # Compact always-visible microphone signal, even while camera replaces HUD.
+        lay.addStretch(1)
+
         self._mic_footer_bar = QProgressBar()
         self._mic_footer_bar.setRange(0, 100)
         self._mic_footer_bar.setValue(0)
         self._mic_footer_bar.setTextVisible(False)
-        self._mic_footer_bar.setFixedSize(64, 6)
+        self._mic_footer_bar.setFixedSize(72, 6)
         self._mic_footer_bar.setStyleSheet(f"""
-            QProgressBar {{ border: none; background: {C.PANEL2};
-                border-radius: 3px; }}
-            QProgressBar::chunk {{ background: {C.GREEN};
-                border-radius: 3px; }}
+            QProgressBar {{ border: none; background: {C.PANEL2}; border-radius: 3px; }}
+            QProgressBar::chunk {{ background: {C.GREEN}; border-radius: 3px; }}
         """)
         self._mic_footer_bar.setAccessibleName("Live microphone intensity meter")
         lay.addWidget(self._mic_footer_bar)
-        lay.addSpacing(7)
-        self._mic_footer_lbl = _fl("MIC  WAITING", C.ACC2)
+
+        self._mic_footer_lbl = _fl("MIC  WAITING", C.ACC2, QFont.Weight.DemiBold)
         self._mic_footer_lbl.setAccessibleName("Microphone capture status")
         self._mic_footer_lbl.setToolTip(
             "Shows captured audio intensity, not speech recognition or cloud delivery."
         )
         lay.addWidget(self._mic_footer_lbl)
         return w
+
 
     def _on_file_selected(self, path: str):
         self._current_file = path

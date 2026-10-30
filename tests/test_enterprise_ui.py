@@ -74,6 +74,21 @@ class WorkspaceTests(unittest.TestCase):
         catalog.deleteLater()
         self.app.processEvents()
 
+    def test_workspace_uses_clear_professional_panel_labels(self):
+        from PyQt6.QtWidgets import QLabel, QFrame
+
+        window = self.window
+        self.assertEqual(window._sub_lbl.text(),
+                         "PERSONAL AI WORKSPACE  ·  VOICE  ·  VISION  ·  AUTOMATION")
+        left_labels = [label.text() for label in window._left_panel.findChildren(QLabel)]
+        self.assertIn("SYSTEM HEALTH", left_labels)
+        self.assertTrue(window._left_panel.findChild(QFrame, "SystemDetailsCard"))
+        self.assertFalse(any("PROTOCOL" in label or "SEC CLEARED" in label
+                             for label in left_labels))
+        self.assertEqual(window._activity_lbl.accessibleName(), "EDITH activity status")
+        self.assertEqual(window._drop_zone.accessibleName(), "File attachment drop zone")
+        self.assertEqual(window._input.accessibleName(), "EDITH command input")
+
     def test_api_provider_workspace_has_three_test_gated_tabs(self):
         from PyQt6.QtWidgets import QTabWidget, QPushButton
         from ui import ApiProviderWorkspace
