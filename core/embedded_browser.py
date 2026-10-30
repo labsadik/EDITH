@@ -5,8 +5,6 @@ from pathlib import Path
 from urllib.parse import quote
 
 from PyQt6.QtCore import QUrl
-from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
-from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLineEdit, QPushButton, QVBoxLayout
 
 
@@ -29,6 +27,11 @@ class EmbeddedBrowserDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        try:
+            from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
+            from PyQt6.QtWebEngineWidgets import QWebEngineView
+        except ImportError as exc:
+            raise RuntimeError("Install PyQt6-WebEngine to use the embedded browser") from exc
         self.setWindowTitle("EDITH · Embedded Browser")
         self.resize(1120, 760)
         self.setMinimumSize(640, 420)

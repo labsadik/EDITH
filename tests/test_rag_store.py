@@ -1,4 +1,6 @@
-"""Unit tests for local vector indexing without requiring an Ollama daemon."""
+"""Unit tests for local vector indexing without an Ollama daemon."""
+import tempfile
+import unittest
 from pathlib import Path
 from unittest.mock import patch
 
@@ -22,8 +24,7 @@ class _Splitter:
         pass
 
     def split_documents(self, documents):
-        text = documents[0].page_content
-        return [_Chunk(text[:100], 0)]
+        return [_Chunk(documents[0].page_content[:100], 0)]
 
 
 class _Table:
@@ -35,12 +36,15 @@ class _Table:
 
     def search(self, _vector):
         table = self
+
         class Query:
             def limit(self, _limit):
                 return self
+
             def to_list(self):
                 return [{"text": row["text"], "source": row["source"], "_distance": 0.1}
                         for row in table.rows]
+
         return Query()
 
     def count_rows(self):
@@ -70,17 +74,23 @@ class _LanceDB:
         return self.db
 
 
-def test_index_text_uses_real_embedding_dimension_and_searches(tmp_path):
-    fake_db = _LanceDB()
-    dependencies = (fake_db, _Document, _Splitter)
-    with (
-        patch.object(rag_store, "_dependencies", return_value=dependencies),
-        patch.object(rag_store, "_embed", return_value=[[0.1, 0.2, 0.3]]),
-        patch.object(rag_store, "VECTOR_DB_PATH", tmp_path),
-    ):
-        result = rag_store.index_text("EDITH local knowledge", "test-note")
-        assert result["chunks_indexed"] == 1
-        assert len(fake_db.db.table.rows[0]["vector"]) == 3
-        found = rag_store.search_knowledge("EDITH", limit=3)
-        assert found[0]["source"] == "test-note"
-        assert rag_store.knowledge_stats()["chunks"] == 1
+class RagStoreTests(unittest.TestCase):
+    def test_index_text_uses_real_embedding_dimension_and_searches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fake_db = _LanceDB()
+            dependencies = (fake_db, _Document, _Splitter)
+            with (
+                patch.object(rag_store, "_dependencies", return_value=dependencies),
+                patch.object(rag_store, "_embed", return_value=[[0.1, 0.2, 0.3]]),
+                patch.object(rag_store, "VECTOR_DB_PATH", Path(directory)),
+            ):
+                result = rag_store.index_text("EDITH local knowledge", "test-note")
+                self.assertEqual(result["chunks_indexed"], 1)
+                self.assertEqual(len(fake_db.db.table.rows[0]["vector"]), 3)
+                found = rag_store.search_knowledge("EDITH", limit=3)
+                self.assertEqual(found[0]["source"], "test-note")
+                self.assertEqual(rag_store.knowledge_stats()["chunks"], 1)
+
+
+if __name__ == "__main__":
+    unittest.main()
