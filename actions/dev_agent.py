@@ -24,13 +24,15 @@ MODEL_PLANNER    = "gemini-flash-latest"
 MODEL_WRITER     = "gemini-flash-latest"
 
 def _get_model(model_name: str | None = None):
-    """Use the independently configured Powerful Brain for coding/planning work."""
-    from core.llm_client import call_llm_text
+    """Route every development/DevOps/DevSecOps reasoning call to one Powerful Brain."""
+    from core.brain_router import call_brain_text
 
     class _W:
         def generate_content(self, contents):
             prompt = str(contents or "")
-            return SimpleNamespace(text=call_llm_text(prompt, model=None, profile="powerful"))
+            return SimpleNamespace(text=call_brain_text(
+                prompt, model=None, workload="software_development"
+            ))
 
     return _W()
 
@@ -234,13 +236,39 @@ Code for {file_path}:"""
             raise RateLimitError(str(e))
         raise
 
-def _install_dependencies(dependencies: list[str], project_dir: Path) -> str:
-    if not dependencies:return "No external dependencies."
-    # pip receives exact arguments; options cannot be smuggled in as package names.
-    if any(not isinstance(d,str) or d.startswith('-') for d in dependencies):
-        return "Execution failed: invalid dependency specification"
-    receipt=SERVICE.run_argv([sys.executable,"-m","pip","install",*dependencies],cwd=project_dir,timeout=120)
-    return format_execution(receipt)
+def _sandbox_output(receipt) -> str:
+    output = (receipt.stdout or "").strip()
+    if receipt.stderr:
+        output = (output + "\\n[stderr]\\n" + receipt.stderr.strip()).strip()
+    if receipt.returncode != 0:
+        return f"Execution failed (exit {receipt.returncode}).\\n{output[-10000:]}"
+    return output[-10000:] or "Command completed with no output."
+
+
+def _install_dependencies(
+    dependencies: list[str], project_dir: Path,
+    python_executable: Path | None = None,
+) -> str:
+    if not dependencies:
+        return "No external dependencies."
+    # Dependency names are data, not shell fragments or pip option arguments.
+    package_pattern = re.compile(
+        r"^[A-Za-z0-9][A-Za-z0-9_.-]*(?:\\[[A-Za-z0-9_,.-]+\\])?(?:(?:===|==|!=|~=|>=|<=|>|<)[A-Za-z0-9.*+!-]+)?$"
+    )
+    if any(
+        not isinstance(item, str) or not package_pattern.fullmatch(item.strip())
+        for item in dependencies
+    ):
+        return "Execution failed: dependency must be a package name with an optional version constraint."
+    from core.sandbox_runner import ensure_project_venv, run_sandboxed
+    python = python_executable or ensure_project_venv(project_dir)
+    receipt = run_sandboxed(
+        [str(python), "-m", "pip", "install", "--disable-pip-version-check",
+         "--no-input", *[item.strip() for item in dependencies]],
+        workspace=project_dir, timeout=180, network=True,
+        read_only_paths=[sys.base_prefix], prepend_paths=[python.parent],
+    )
+    return _sandbox_output(receipt)
 
 def _open_vscode(project_dir: Path) -> bool:
     executable=shutil.which('code')
@@ -248,23 +276,38 @@ def _open_vscode(project_dir: Path) -> bool:
     receipt=SERVICE.run_argv([executable,str(project_dir)],cwd=project_dir,timeout=10)
     return receipt['ok']
 
-def _run_project(run_command: str, project_dir: Path, timeout: int = 30) -> str:
-    # Use the actual OS shell. Quoted paths, pipelines and && retain their meaning.
-    return format_execution(SERVICE.shell(run_command,cwd=str(project_dir),timeout=timeout))
+def _run_project(
+    run_command: str, project_dir: Path, timeout: int = 30,
+    python_executable: Path | None = None,
+) -> str:
+    from core.sandbox_runner import run_project_command
+    return run_project_command(
+        run_command, workspace=project_dir, timeout=timeout,
+        network=False, python_executable=python_executable,
+    )
 
-def _try_auto_install(error_output: str, project_dir: Path) -> bool | None:
-    match=re.search(r"No module named ['\"]([a-zA-Z0-9_\-\.]+)['\"]",error_output)
-    if not match:return False
-    pkg=match.group(1).replace('_','-').split('.')[0]
-    receipt=SERVICE.run_argv([sys.executable,'-m','pip','install',pkg],cwd=project_dir,timeout=60)
-    # A declined/expired approval is a terminal result for this build.  It must
-    # not fall through to generated repairs or another install attempt.
-    _try_auto_install.last_result = format_execution(receipt)
-    if not receipt.get('ok') and ((receipt.get('data') or {}).get('cancelled') or
-                                  'cancel' in str(receipt.get('error') or '').lower() or
-                                  'expired' in str(receipt.get('error') or '').lower()):
-        return None
-    return bool(receipt.get('ok'))
+
+def _try_auto_install(
+    error_output: str, project_dir: Path,
+    python_executable: Path | None = None,
+) -> bool | None:
+    match = re.search(r"No module named ['\"]([a-zA-Z0-9_\-\.]+)['\"]", error_output)
+    if not match:
+        return False
+    pkg = match.group(1).replace("_", "-").split(".")[0]
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", pkg):
+        _try_auto_install.last_result = "Execution failed: invalid package name in import error."
+        return False
+    from core.sandbox_runner import ensure_project_venv, run_sandboxed
+    python = python_executable or ensure_project_venv(project_dir)
+    receipt = run_sandboxed(
+        [str(python), "-m", "pip", "install", "--disable-pip-version-check",
+         "--no-input", pkg],
+        workspace=project_dir, timeout=120, network=True,
+        read_only_paths=[sys.base_prefix], prepend_paths=[python.parent],
+    )
+    _try_auto_install.last_result = _sandbox_output(receipt)
+    return receipt.returncode == 0
 
 
 _try_auto_install.last_result = ""
@@ -390,6 +433,22 @@ def _build_project(
     project_dir  = prepare_projects_dir() / proj_name
     project_dir.mkdir(parents=True, exist_ok=True)
 
+    # Prepare the native OS sandbox before any generated project code is executed.
+    # Failure is closed: the host shell is never used as a fallback.
+    try:
+        from core.sandbox_runner import ensure_project_venv, ensure_sandbox_ready
+        sandbox_python = ensure_project_venv(project_dir)
+        ensure_sandbox_ready()
+    except Exception as exc:
+        message = (
+            "Software Development Agent cannot start because the Rust sandbox "
+            f"is unavailable. No generated code was executed. {type(exc).__name__}: {exc}"
+        )
+        log(message)
+        if speak:
+            speak(message)
+        return message
+
     files        = plan.get("files", [])
     entry_point  = plan.get("entry_point", "main.py")
     run_command  = plan.get("run_command", f"python {entry_point}")
@@ -439,7 +498,7 @@ def _build_project(
         return msg
 
     if dependencies:
-        install_result = _install_dependencies(dependencies, project_dir)
+        install_result = _install_dependencies(dependencies, project_dir, sandbox_python)
         log(install_result)
         if stopped(install_result) or install_result.startswith("Execution failed"):
             return install_result
@@ -451,7 +510,7 @@ def _build_project(
 
     for attempt in range(1, MAX_FIX_ATTEMPTS + 1):
         log(f"Running project (attempt {attempt}/{MAX_FIX_ATTEMPTS})...")
-        last_output = _run_project(run_command, project_dir, timeout)
+        last_output = _run_project(run_command, project_dir, timeout, sandbox_python)
         log(f"Output preview: {last_output[:150]}")
 
         if stopped(last_output):
@@ -471,9 +530,9 @@ def _build_project(
 
         error_type = _classify_error(last_output)
         if error_type == "dependency_error" and auto_installs < 3:
-            installed = _try_auto_install(last_output, project_dir)
+            installed = _try_auto_install(last_output, project_dir, sandbox_python)
             if installed is None:
-                return _try_auto_install.last_result or "Execution cancelled: dependency installation was not approved"
+                return _try_auto_install.last_result or "Execution failed: the isolated dependency install did not complete."
             if installed:
                 auto_installs += 1
                 log("Missing dependency installed, retrying...")
