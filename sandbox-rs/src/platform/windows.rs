@@ -125,8 +125,9 @@ fn grant_tree(root: &Path, sid: Sid, writable: bool) -> Result<(), String> {
 }
 
 fn is_windows_system_directory(path: &Path) -> bool {
-    let root = std::env::var("SYSTEMROOT").or_else(|_| std::env::var("WINDIR"))
-    let system_root = values.get("SYSTEMROOT").or_else(|| values.get("WINDIR")).cloned().unwrap_or_else(|| r"C:\Windows".into());
+    let root = std::env::var("SYSTEMROOT")
+        .or_else(|_| std::env::var("WINDIR"))
+        .unwrap_or_else(|_| r"C:\Windows".to_string());
     let system = PathBuf::from(root).join("System32");
     path.to_string_lossy().to_lowercase() == system.to_string_lossy().to_lowercase()
 }
