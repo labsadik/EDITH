@@ -125,7 +125,9 @@ class SpeechPlayerTests(unittest.TestCase):
         self.assertGreater(player.snapshot()['prefill_bytes'], PREFILL_BYTES)
         self.assertEqual(self.kwargs['samplerate'], 24000)
         self.assertEqual(self.kwargs['blocksize'], 0)
-        self.assertEqual(self.kwargs['latency'], 'high')
+        self.assertEqual(self.kwargs['latency'], 'low')
+        self.assertEqual(PREFILL_BYTES, 2880)  # 60 ms at 24 kHz mono PCM16
+        self.assertEqual(MAX_PREFILL_BYTES, 14400)  # 300 ms hard ceiling
 
     def test_jitter_keeps_pending_tail_and_playback_state_until_turn_finishes(self):
         buffer = SpeechBuffer()
