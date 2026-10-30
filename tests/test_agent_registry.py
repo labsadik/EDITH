@@ -15,7 +15,9 @@ class AgentRegistryTests(unittest.TestCase):
         agents = agent_registry.list_agents()
         self.assertGreaterEqual(len(agents), 8)
         for agent in agents:
-            self.assertRegex(agent["version"], r"^\\d+\\.\\d+\\.\\d+$")
+            pieces = agent["version"].split(".")
+            self.assertEqual(len(pieces), 3)
+            self.assertTrue(all(piece.isdigit() for piece in pieces))
             self.assertTrue(agent["enabled"], agent["id"])
         ids = {agent["id"] for agent in agents}
         self.assertTrue({
