@@ -1223,6 +1223,10 @@ class ApiKeyOverlay(QWidget):
             }}
             QLineEdit:focus {{ border: 1px solid {C.PRI}; }}
         """)
+        voice_key_label = QLabel("VOICE API KEY")
+        voice_key_label.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+        voice_key_label.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        layout.addWidget(voice_key_label)
         layout.addWidget(self._key_input)
 
         if current_key:
@@ -2182,7 +2186,21 @@ class CustomizeOverlay(QWidget):
                f"border: 1px solid {C.BORDER}; border-radius: 9px; padding: 6px 10px; }}"
                f"QLineEdit:focus {{ border: 1px solid {C.PRI}; }}")
 
-        lay.addWidget(_lbl("PREFERENCES", 13, True))
+        title_row = QHBoxLayout()
+        settings_icon = QLabel()
+        settings_icon.setPixmap(svg_icon("settings", C.PRI).pixmap(QSize(22, 22)))
+        title_row.addWidget(settings_icon)
+        title_row.addWidget(_lbl("PREFERENCES", 13, True), 1)
+        self._close_btn = QPushButton()
+        self._close_btn.setAccessibleName("Close preferences")
+        self._close_btn.setToolTip("Close")
+        self._close_btn.setIcon(svg_icon("x", C.TEXT_DIM))
+        self._close_btn.setIconSize(QSize(18, 18))
+        self._close_btn.setFixedSize(36, 36)
+        self._close_btn.setStyleSheet(f"QPushButton {{ background:{C.PANEL2}; border:1px solid {C.BORDER}; border-radius:11px; }} QPushButton:hover {{ background:{C.DANGER_BG}; border-color:{C.RED}; }}")
+        self._close_btn.clicked.connect(self._cancel)
+        title_row.addWidget(self._close_btn)
+        lay.addLayout(title_row)
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         lay.addWidget(sep)
@@ -2920,7 +2938,21 @@ class RemoteKeyOverlay(QWidget):
             w.setWordWrap(True)
             return w
 
-        lay.addWidget(_lbl("◈  REMOTE ACCESS", 13, True))
+        title_row = QHBoxLayout()
+        remote_icon = QLabel()
+        remote_icon.setPixmap(svg_icon("wifi", C.PRI).pixmap(QSize(22, 22)))
+        title_row.addWidget(remote_icon)
+        title_row.addWidget(_lbl("REMOTE ACCESS", 13, True), 1)
+        self._close_btn = QPushButton()
+        self._close_btn.setAccessibleName("Close remote access")
+        self._close_btn.setToolTip("Close")
+        self._close_btn.setIcon(svg_icon("x", C.TEXT_DIM))
+        self._close_btn.setIconSize(QSize(18, 18))
+        self._close_btn.setFixedSize(36, 36)
+        self._close_btn.setStyleSheet(f"QPushButton {{ background:{C.PANEL2}; border:1px solid {C.BORDER}; border-radius:11px; }} QPushButton:hover {{ background:{C.DANGER_BG}; border-color:{C.RED}; }}")
+        self._close_btn.clicked.connect(self._do_close)
+        title_row.addWidget(self._close_btn)
+        lay.addLayout(title_row)
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         lay.addWidget(sep)
