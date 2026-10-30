@@ -19,11 +19,12 @@ import urllib.request
 import webbrowser
 
 from core.secrets import get_config_secret, save_config_secret
+from core.app_paths import config_path, writable_config_path
 
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_CONFIG_PATH = ROOT / "config" / "mcp_servers.json"
-DEFAULT_SECRETS_PATH = ROOT / "config" / "api_keys.json"
+DEFAULT_CONFIG_PATH = writable_config_path("mcp_servers.json")
+DEFAULT_SECRETS_PATH = config_path()
 PROTOCOL_VERSION = "2024-11-05"
 
 DEFAULT_SERVERS = (
