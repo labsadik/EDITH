@@ -1,8 +1,8 @@
-"""URL normalization tests for the embedded browser without Qt WebEngine runtime."""
+"""Embedded-browser URL, action and visible error-page contracts."""
 import json
 import unittest
 
-from core.embedded_browser import build_embedded_browser_script, normalize_web_url
+from core.embedded_browser import browser_start_page_html, build_embedded_browser_script, normalize_web_url
 
 
 class EmbeddedBrowserURLTests(unittest.TestCase):
@@ -40,6 +40,19 @@ class EmbeddedBrowserURLTests(unittest.TestCase):
             build_embedded_browser_script("press", {"key": "Delete"})
         with self.assertRaises(ValueError):
             build_embedded_browser_script("evaluate", {"script": "alert(1)"})
+
+    def test_start_and_network_error_pages_are_visible_nonempty_html(self):
+        start = browser_start_page_html()
+        failure = browser_start_page_html("Could not load https://example.com")
+        self.assertIn("EDITH Browser", start)
+        self.assertIn("Enter a website", start)
+        self.assertIn("Could not load https://example.com", failure)
+        self.assertIn("<body>", failure)
+
+    def test_landing_page_escapes_remote_error_text(self):
+        page = browser_start_page_html("<script>alert(1)</script>")
+        self.assertNotIn("<script>alert(1)</script>", page)
+        self.assertIn("&lt;script&gt;", page)
 
     def test_rejects_non_web_schemes(self):
         for target in ("javascript:alert(1)", "file:///etc/passwd", "data:text/html,hello"):
