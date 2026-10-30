@@ -7,7 +7,7 @@ import sys
 import json
 import re
 import time
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 
 def get_base_dir():
@@ -42,7 +42,13 @@ def _safe_project_path(project_dir: Path, relative_path: str) -> Path:
     root = Path(project_dir).expanduser().resolve()
     raw = str(relative_path or "").strip()
     candidate = Path(raw)
-    if not raw or candidate.is_absolute() or any(part in {"..", ""} for part in candidate.parts):
+    windows_path = PureWindowsPath(raw)
+    if (
+        not raw or candidate == Path(".") or candidate.is_absolute()
+        or windows_path.is_absolute() or bool(windows_path.drive)
+        or any(part in {"..", ""} for part in candidate.parts)
+        or any(part == ".." for part in windows_path.parts)
+    ):
         raise ValueError(f"Unsafe project-relative path: {raw!r}")
     target = (root / candidate).resolve()
     if target != root and root not in target.parents:
@@ -69,9 +75,12 @@ def _validate_project_plan(plan: dict) -> dict:
         if not isinstance(item, dict):
             raise ValueError("Every project file entry must be an object")
         path = str(item.get("path") or "")
-        # Path root is validated again before each file read/write.
-        _safe_project_path(Path.cwd(), path) if Path(path).is_absolute() else None
-        if not path or Path(path).is_absolute() or ".." in Path(path).parts:
+        windows_path = PureWindowsPath(path)
+        if (
+            not path or Path(path).is_absolute() or windows_path.is_absolute()
+            or bool(windows_path.drive) or ".." in Path(path).parts
+            or ".." in windows_path.parts
+        ):
             raise ValueError(f"Unsafe project path in plan: {path!r}")
         if path in paths:
             raise ValueError(f"Duplicate project path in plan: {path!r}")
