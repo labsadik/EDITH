@@ -37,6 +37,10 @@ def main():
     parser.add_argument("--live-voice-test", action="store_true")
     parser.add_argument("--record-mic-test", action="store_true")
     parser.add_argument("--speaker-test", action="store_true")
+    parser.add_argument(
+        "--test-powerful-brain", action="store_true",
+        help="send one real minimal request through the configured Powerful Brain provider",
+    )
     parser.add_argument("--seconds", type=float, default=2.0)
     args = parser.parse_args()
     warnings = [0, 0]
@@ -60,6 +64,25 @@ def main():
                           ("key-present" if key else "no-key"))
         return "; ".join(result)
     check("Brain profiles", providers, warnings)
+
+    if args.test_powerful_brain:
+        def powerful_brain_probe():
+            from core.provider_registry import (
+                load_provider_settings, provider_api_key, probe_provider,
+            )
+            settings = load_provider_settings(CONFIG, "powerful")
+            key = provider_api_key(settings["provider"], CONFIG, "powerful")
+            result = probe_provider(
+                settings["provider"], settings["url"], settings["model"],
+                api_key=key, timeout=25.0,
+            )
+            if not result.get("ok"):
+                raise RuntimeError(result.get("error") or "Provider inference failed")
+            return (
+                f"{settings['provider']}/{settings['model']} responded in "
+                f"{result.get('latency_ms', 0)} ms"
+            )
+        check("Powerful Brain live inference", powerful_brain_probe, warnings)
 
     def voice():
         mode = str(config.get("voice_mode") or "female").lower()
