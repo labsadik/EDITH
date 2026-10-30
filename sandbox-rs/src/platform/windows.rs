@@ -124,12 +124,54 @@ fn grant_tree(root: &Path, sid: Sid, writable: bool) -> Result<(), String> {
     grant_acl(root, sid, permissions, inheritance)
 }
 
+fn normalize_windows_path(path: &Path) -> String {
+    // canonicalize() commonly returns the Win32 extended-length prefix (\\?\).
+    // Strip that prefix before comparing protected OS paths so System32 is
+    // never mistaken for an ordinary runtime directory and modified by ACL.
+    let mut value = path.to_string_lossy().replace('/', "\\").to_ascii_lowercase();
+    if let Some(rest) = value.strip_prefix("\\\\?\\unc\\") {
+        value = format!("\\\\{rest}");
+    } else if let Some(rest) = value.strip_prefix("\\\\?\\") {
+        value = rest.to_string();
+    } else if let Some(rest) = value.strip_prefix("\\\\.\\") {
+        value = rest.to_string();
+    }
+    value.trim_end_matches('\\').to_string()
+}
+
 fn is_windows_system_directory(path: &Path) -> bool {
     let root = std::env::var("SYSTEMROOT")
         .or_else(|_| std::env::var("WINDIR"))
         .unwrap_or_else(|_| r"C:\Windows".to_string());
     let system = PathBuf::from(root).join("System32");
-    path.to_string_lossy().to_lowercase() == system.to_string_lossy().to_lowercase()
+    normalize_windows_path(path) == normalize_windows_path(&system)
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+
+    #[test]
+    fn extended_length_system32_path_is_recognized() {
+        let root = std::env::var("SYSTEMROOT")
+            .or_else(|_| std::env::var("WINDIR"))
+            .unwrap_or_else(|_| r"C:\Windows".to_string());
+        let system = PathBuf::from(root).join("System32");
+        let extended = PathBuf::from(format!("\\\\?\\{}", system.display()));
+
+        assert!(is_windows_system_directory(&system));
+        assert!(is_windows_system_directory(&extended));
+    }
+
+    #[test]
+    fn windows_path_comparison_ignores_case_and_trailing_separator() {
+        let regular = Path::new(r"C:\Windows\System32\\");
+        let differently_cased = Path::new(r"c:\WINDOWS\system32");
+        assert_eq!(
+            normalize_windows_path(regular),
+            normalize_windows_path(differently_cased)
+        );
+    }
 }
 
 fn appcontainer_sid(workspace: &Path) -> Result<Sid, String> {
