@@ -12,6 +12,7 @@ import asyncio
 import base64
 import hashlib
 import re
+import shutil
 import secrets
 import socket
 import string
@@ -350,6 +351,13 @@ def _local_ip() -> str:
 def _certificate_paths() -> tuple[Path, Path]:
     """Use EDITH certificate names, preserving an existing paired identity."""
     certs = config_path().parent / "certs"
+    legacy_certs = BASE_DIR / "config" / "certs"
+    if not certs.exists() and legacy_certs.is_dir() and legacy_certs.resolve() != certs.resolve():
+        certs.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copytree(legacy_certs, certs)
+        except OSError as exc:
+            print(f"[EDITH] Dashboard certificate migration deferred: {type(exc).__name__}")
     key_p, crt_p = certs / "edith.key", certs / "edith.crt"
     if key_p.exists() and crt_p.exists():
         return key_p, crt_p
