@@ -9,9 +9,11 @@ import threading
 from pathlib import Path
 from typing import Any, Callable
 
-ROOT = Path(__file__).resolve().parents[1]
+from core.app_paths import resource_dir, writable_config_path
+
+ROOT = resource_dir()
 MANIFEST_PATH = ROOT / "agents" / "manifest.json"
-CONFIG_PATH = ROOT / "config" / "agents.json"
+CONFIG_PATH = writable_config_path("agents.json")
 _LOCK = threading.RLock()
 _AGENT_ID = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
 
