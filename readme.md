@@ -100,3 +100,64 @@ node tests/check_workspace_js.js
 The suite covers the platform adapters with mocks, task scheduling, interruption, audio buffering, MCP protocol/configuration, UI smoke behaviour and provider contracts. It does not certify your own microphone, speakers, provider account, OAuth credentials, third-party app layout, vehicle, or physical device. Test those on the target device before relying on them.
 
 For implementation evidence and known target-device gates, see [docs/IMPLEMENTATION_PROGRESS.md](docs/IMPLEMENTATION_PROGRESS.md), [VERIFICATION.md](VERIFICATION.md), [CAPABILITY_MATRIX.md](CAPABILITY_MATRIX.md), and [TESTING.md](TESTING.md).
+
+
+## Installers and release metadata
+
+EDITH's release version is maintained in `VERSION`. The Windows installer is built as
+`EDITH-Setup-<version>-x64.exe` by the **Build EDITH installers** GitHub Actions workflow.
+The installer publisher is **Sadik Laskar** and the product is **EDITH — Neuron Intelligence**.
+It opens the proprietary license agreement before the remaining setup pages, then lets the
+user choose the install directory and install scope (current user or all users). The
+desktop shortcut is optional. The matching application version and publisher are written
+to the executable and installer metadata.
+
+The same workflow produces a macOS app package and a Linux x64 archive. Windows produces
+the interactive Inno Setup EXE; macOS and Linux use their native application/package
+formats rather than pretending the Windows EXE is portable.
+
+Packaged builds keep credentials and preferences outside the installation folder:
+- Windows: `%APPDATA%\\EDITH\\config\\api_keys.json`
+- macOS: `~/Library/Application Support/EDITH/config/api_keys.json`
+- Linux: `$XDG_CONFIG_HOME/edith/config/api_keys.json` (or `~/.config/edith/config/api_keys.json`)
+
+An existing installation config is copied into the current user's data directory on first
+launch without deleting or overwriting either copy. Source checkouts continue using the
+repository `config/api_keys.json` for developer compatibility.
+
+## Powerful Brain provider setup
+
+Open **Controls → API Providers → Powerful Brain**. Select local Ollama or a cloud/API
+provider (OpenAI, Anthropic, Groq, xAI) or an OpenAI-compatible local server. Enter the
+endpoint/model and provider key where required, load the available model list, run the
+real connection test, and only then save. Powerful Brain settings are stored separately
+from Main/legacy settings and from Gemini Live voice credentials. The provider preflight
+can make a real, minimal test request:
+
+```powershell
+python scripts/edith_preflight.py
+python scripts/edith_preflight.py --test-powerful-brain
+```
+
+The selected Powerful Brain provider powers the text-reasoning/specialist-agent route.
+The current real-time voice transport remains Google Gemini Live; a generic OpenAI API
+key or Ollama endpoint does not itself provide the Live audio transport.
+
+## Smart Network and embedded browser recovery
+
+Passive local network discovery does not require Home Assistant. Home Assistant entity
+status/read/control requires an owner-paired Home Assistant URL and long-lived access token.
+Run `python scripts/configure_home_assistant.py --help` locally or set
+`EDITH_HOME_ASSISTANT_URL` and `EDITH_HOME_ASSISTANT_TOKEN`. An unpaired instance is
+reported as a setup-needed state instead of a traceback; writes remain disabled until
+pairing is configured and still require local confirmation.
+
+The embedded browser now displays a local EDITH start page when opened without a URL and a
+visible diagnostic page when navigation fails. It continues to reject non-web URL schemes
+and arbitrary JavaScript execution.
+
+## Restored software license
+
+The repository and Windows setup wizard use the proprietary agreement in [LICENSE](LICENSE).
+The repository remains source-available for viewing/auditing only under the supplied terms;
+a public repository does not imply an open-source grant.
