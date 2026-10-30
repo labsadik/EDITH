@@ -2196,8 +2196,12 @@ class _ProviderProfileTab(_ApiTabBase):
     def _finish_models(self, payload):
         self._loading_models = False
         self._refresh_btn.setEnabled(True)
-        if payload.get("signature")[:3] != self._signature()[:3]:
-            self._set_status("Provider settings changed while models were loading. Load again.", "warning")
+        loaded = payload.get("signature") or ("", "", "", "")
+        current_signature = self._signature()
+        if (loaded[0], loaded[1], loaded[3]) != (
+            current_signature[0], current_signature[1], current_signature[3]
+        ):
+            self._set_status("Provider, endpoint or key changed while models were loading. Load again.", "warning")
             return
         if payload.get("error"):
             self._set_status(payload["error"], "error")
