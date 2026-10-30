@@ -6,6 +6,7 @@ use std::mem::{size_of, zeroed};
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::ptr::{null, null_mut};
+use std::time::Instant;
 use crate::Options;
 
 type Handle = *mut c_void;
@@ -83,6 +84,16 @@ extern "system" {
 
 fn wide(value: &str) -> Vec<u16> { std::ffi::OsStr::new(value).encode_wide().chain(Some(0)).collect() }
 fn check_win(ok: i32, label: &str) -> Result<(), String> { if ok == 0 { Err(format!("{label} failed with Windows error {}", std::io::Error::last_os_error())) } else { Ok(()) } }
+
+fn debug_step(started: &Instant, label: &str) {
+    if std::env::var_os("EDITH_SANDBOX_DEBUG").is_some() {
+        eprintln!(
+            "EDITH_SANDBOX_DEBUG {} elapsed_ms={}",
+            label,
+            started.elapsed().as_millis()
+        );
+    }
+}
 
 fn grant_acl(path: &Path, sid: Sid, permissions: u32, inheritance: u32) -> Result<(), String> {
     let mut name: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
@@ -295,17 +306,25 @@ fn make_job(timeout: u64, memory_mb: u64) -> Result<Handle, String> {
 }
 
 pub fn run(options: &Options) -> Result<i32, String> {
+    let started = Instant::now();
+    debug_step(&started, "prepare workspace");
     let workspace = &options.workspace;
     let temp = workspace.join(".edith-tmp");
     for path in [&temp, &workspace.join(".edith-home"), &workspace.join(".edith-appdata"), &workspace.join(".edith-local")] {
         std::fs::create_dir_all(path).map_err(|e| format!("Cannot prepare sandbox directory {}: {e}", path.display()))?;
     }
+    debug_step(&started, "create AppContainer profile");
     let sid = appcontainer_sid(workspace)?;
+    debug_step(&started, "created AppContainer profile");
     let result = (|| {
+        debug_step(&started, "grant workspace ACL");
         grant_tree(workspace, sid, true)?;
+        debug_step(&started, "granted workspace ACL");
         for path in &options.read_only {
             if path.exists() && !path.starts_with(workspace) && !is_windows_system_directory(path) {
+                debug_step(&started, &format!("grant read-only ACL {}", path.display()));
                 grant_tree(path, sid, false)?;
+                debug_step(&started, &format!("granted read-only ACL {}", path.display()));
             }
         }
         let app = if options.program.is_absolute() { options.program.clone() } else {
@@ -357,7 +376,9 @@ pub fn run(options: &Options) -> Result<i32, String> {
         startup.StartupInfo.hStdError = unsafe { GetStdHandle(STD_ERROR_HANDLE) };
         startup.lpAttributeList = attributes;
         let mut process: ProcessInformation = unsafe { zeroed() };
+        debug_step(&started, "create AppContainer child process");
         let created = unsafe { CreateProcessW(app_wide.as_ptr(), command_wide.as_mut_ptr(), null_mut(), null_mut(), 1, EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT, env_block.as_mut_ptr().cast(), cwd.as_mut_ptr(), (&mut startup as *mut StartupInfoExW).cast(), &mut process) };
+        debug_step(&started, "created AppContainer child process");
         unsafe { DeleteProcThreadAttributeList(attributes); if !internet_sid.is_null() { LocalFree(internet_sid); } }
         check_win(created, "CreateProcessW(AppContainer)")?;
         let job = match make_job(options.cpu_seconds, options.memory_mb) {
@@ -375,7 +396,9 @@ pub fn run(options: &Options) -> Result<i32, String> {
             return Err(error);
         }
         let wait_ms = (options.timeout.saturating_mul(1000)).min(u32::MAX as u64 - 1) as u32;
+        debug_step(&started, "wait for AppContainer child");
         let wait = unsafe { WaitForSingleObject(process.hProcess, wait_ms) };
+        debug_step(&started, "AppContainer child wait completed");
         let code = if wait == WAIT_TIMEOUT {
             unsafe { TerminateJobObject(job, 124); WaitForSingleObject(process.hProcess, 5000); }
             124
