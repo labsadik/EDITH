@@ -32,7 +32,7 @@ class SandboxRunnerTests(unittest.TestCase):
             self.assertIn("17", command)
             self.assertIn("--network", command)
             self.assertIn("deny", command)
-            self.assertEqual(command[-3:], ["python", "main.py"][-3:])
+            self.assertEqual(command[-2:], ["python", "main.py"])
 
     def test_runner_forwards_only_explicit_stdin(self):
         with tempfile.TemporaryDirectory() as folder:
