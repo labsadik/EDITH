@@ -273,7 +273,7 @@ def probe_provider(provider: object, url: str, model: str, api_key: str | None =
                 "options": {"num_predict": 64, "temperature": 0},
                 "messages": [{"role": "user", "content": prompt}],
             }
-            response = requests.post(f"{base}/api/chat", json=payload, timeout=timeout)
+            response = requests.post(f"{base}/api/chat", json=dict(payload), timeout=timeout)
             if response.status_code == 400:
                 payload.pop("think", None)
                 response = requests.post(f"{base}/api/chat", json=payload, timeout=timeout)

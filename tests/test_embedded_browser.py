@@ -12,7 +12,7 @@ class EmbeddedBrowserURLTests(unittest.TestCase):
     def test_turns_search_terms_into_google_search(self):
         url = normalize_web_url("EDITH assistant documentation")
         self.assertEqual(url.host(), "www.google.com")
-        self.assertIn("EDITH%20assistant%20documentation", url.toString())
+        self.assertIn("EDITH%20assistant%20documentation", bytes(url.toEncoded()).decode("ascii"))
 
     def test_rejects_non_web_schemes(self):
         for target in ("javascript:alert(1)", "file:///etc/passwd", "data:text/html,hello"):
