@@ -1936,6 +1936,859 @@ class ProviderSettingsOverlay(QWidget):
             self.hide()
 
 
+
+
+class _ApiTabBase(QWidget):
+    """Shared quiet surface, field and feedback helpers for API provider tabs."""
+
+    def _init_surface(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(f"""
+            QWidget {{ background: transparent; color: {C.TEXT}; }}
+            QLabel {{ background: transparent; }}
+        """)
+
+    @staticmethod
+    def _field_style() -> str:
+        return f"""
+            QLineEdit, QComboBox {{
+                background: {C.INPUT}; color: {C.TEXT};
+                border: 1px solid {C.BORDER}; border-radius: 11px;
+                padding: 9px 12px; min-height: 22px;
+                selection-background-color: {C.PRI_GHO};
+            }}
+            QLineEdit:focus, QComboBox:focus {{ border: 1px solid {C.PRI_DIM}; }}
+            QComboBox::drop-down {{ border: 0; width: 28px; }}
+            QComboBox QAbstractItemView {{
+                background: {C.PANEL}; color: {C.TEXT};
+                border: 0; selection-background-color: {C.PRI_GHO};
+                outline: 0; padding: 5px;
+            }}
+        """
+
+    @staticmethod
+    def _label(text: str) -> QLabel:
+        label = QLabel(text.upper())
+        label.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+        label.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        return label
+
+    @staticmethod
+    def _button(text: str, primary: bool = False) -> QPushButton:
+        button = QPushButton(text)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setMinimumHeight(40)
+        button.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+        if primary:
+            button.setStyleSheet(f"""
+                QPushButton {{ background: {C.PRI}; color: {C.DARK};
+                               border: 0; border-radius: 11px; padding: 0 17px; }}
+                QPushButton:hover {{ background: {C.PRI_DIM}; }}
+                QPushButton:disabled {{ background: {C.PANEL2}; color: {C.TEXT_DIM}; }}
+            """)
+        else:
+            button.setStyleSheet(f"""
+                QPushButton {{ background: {C.PANEL2}; color: {C.TEXT_MED};
+                               border: 0; border-radius: 11px; padding: 0 15px; }}
+                QPushButton:hover {{ background: {C.HOVER}; color: {C.TEXT}; }}
+                QPushButton:disabled {{ color: {C.TEXT_DIM}; }}
+            """)
+        return button
+
+    def _set_status(self, text: str, tone: str = "neutral") -> None:
+        palette = {"success": C.GREEN, "error": C.RED, "warning": C.ACC2,
+                   "neutral": C.TEXT_DIM, "working": C.PRI}
+        self._status.setText(text)
+        self._status.setStyleSheet(f"color: {palette.get(tone, C.TEXT_DIM)}; background: transparent;")
+
+    @staticmethod
+    def _secret_preview(key: str) -> str:
+        if not key:
+            return "No saved key"
+        return f"Saved key available · ending {key[-4:]}"
+
+
+class _ProviderProfileTab(_ApiTabBase):
+    """Account-aware provider/model/key setup for Main Brain or Powerful Brain."""
+
+    saved = pyqtSignal()
+    _models_result = pyqtSignal(object)
+    _test_result = pyqtSignal(object)
+
+    _PROVIDERS = (
+        ("Ollama · Local", "ollama"),
+        ("OpenAI", "openai"),
+        ("Anthropic Claude", "anthropic"),
+        ("Groq", "groq"),
+        ("xAI · Grok", "xai"),
+        ("OpenAI-compatible local server", "openai_compatible"),
+    )
+
+    def __init__(self, profile: str, parent=None):
+        super().__init__(parent)
+        self.profile = profile
+        self._tested_signature = None
+        self._loading_models = False
+        self._key_revealed = False
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 18)
+        layout.setSpacing(12)
+
+        title_row = QHBoxLayout()
+        icon = QLabel()
+        icon.setFixedSize(36, 36)
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon.setPixmap(svg_icon("brain-circuit" if profile == "main" else "cpu", C.PRI).pixmap(QSize(21, 21)))
+        icon.setStyleSheet(f"background: {C.PANEL2}; border-radius: 12px;")
+        title_row.addWidget(icon)
+        title_col = QVBoxLayout()
+        title_col.setSpacing(2)
+        title = QLabel("Main reasoning model" if profile == "main" else "High-capability reasoning model")
+        title.setFont(QFont(FONT_MAIN, 12, QFont.Weight.Bold))
+        title_col.addWidget(title)
+        hint = QLabel("Select provider, load its available models, test the exact setup, then save.")
+        hint.setWordWrap(True)
+        hint.setFont(QFont(FONT_MAIN, 8))
+        hint.setStyleSheet(f"color: {C.TEXT_DIM};")
+        title_col.addWidget(hint)
+        title_row.addLayout(title_col, 1)
+        layout.addLayout(title_row)
+
+        if profile == "powerful":
+            self._inherit_note = QLabel("Powerful Brain currently follows Main Brain until you save its own profile.")
+            self._inherit_note.setWordWrap(True)
+            self._inherit_note.setFont(QFont(FONT_MAIN, 8))
+            self._inherit_note.setStyleSheet(f"color: {C.ACC2}; background: {C.PANEL2}; border-radius: 9px; padding: 8px 10px;")
+            self._inherit_note.setVisible(not __import__("core.provider_registry", fromlist=["has_provider_profile"]).has_provider_profile(API_FILE, "powerful"))
+            layout.addWidget(self._inherit_note)
+
+        layout.addWidget(self._label("Provider"))
+        self._provider = QComboBox()
+        for label_text, identifier in self._PROVIDERS:
+            self._provider.addItem(label_text, identifier)
+        self._provider.setAccessibleName(f"{profile.title()} Brain API provider")
+        self._provider.setFixedHeight(42)
+        self._provider.setStyleSheet(self._field_style())
+        layout.addWidget(self._provider)
+
+        layout.addWidget(self._label("API endpoint"))
+        self._url = QLineEdit()
+        self._url.setFixedHeight(42)
+        self._url.setStyleSheet(self._field_style())
+        layout.addWidget(self._url)
+
+        layout.addWidget(self._label("API key"))
+        key_row = QHBoxLayout()
+        key_row.setSpacing(8)
+        self._key = QLineEdit()
+        self._key.setEchoMode(QLineEdit.EchoMode.Password)
+        self._key.setPlaceholderText("Paste provider API key · not written to logs")
+        self._key.setFixedHeight(42)
+        self._key.setStyleSheet(self._field_style())
+        key_row.addWidget(self._key, 1)
+        self._reveal = self._button("")
+        self._reveal.setAccessibleName(f"Preview {profile} Brain API key")
+        self._reveal.setToolTip("Show or hide saved API key")
+        self._reveal.setIcon(svg_icon("eye", C.TEXT_DIM))
+        self._reveal.setIconSize(QSize(18, 18))
+        self._reveal.setFixedSize(44, 42)
+        self._reveal.clicked.connect(self._toggle_reveal)
+        key_row.addWidget(self._reveal)
+        layout.addLayout(key_row)
+        self._key_hint = QLabel("No saved key")
+        self._key_hint.setFont(QFont(FONT_MAIN, 8))
+        self._key_hint.setStyleSheet(f"color: {C.TEXT_DIM};")
+        layout.addWidget(self._key_hint)
+
+        layout.addWidget(self._label("Model"))
+        model_row = QHBoxLayout()
+        model_row.setSpacing(8)
+        self._model = QComboBox()
+        self._model.setEditable(True)
+        self._model.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._model.setAccessibleName(f"{profile.title()} Brain model")
+        self._model.setFixedHeight(42)
+        self._model.setStyleSheet(self._field_style())
+        model_row.addWidget(self._model, 1)
+        self._refresh_btn = self._button("LOAD MODELS")
+        self._refresh_btn.setToolTip("Fetch models currently available to this provider API key")
+        self._refresh_btn.clicked.connect(self._refresh_models)
+        model_row.addWidget(self._refresh_btn)
+        layout.addLayout(model_row)
+
+        self._status = QLabel("Choose a model. Save is enabled only after a successful live test.")
+        self._status.setWordWrap(True)
+        self._status.setMinimumHeight(34)
+        self._status.setFont(QFont(FONT_MAIN, 8))
+        self._status.setStyleSheet(f"color: {C.TEXT_DIM};")
+        layout.addWidget(self._status)
+
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+        self._test_btn = self._button("TEST CONNECTION")
+        self._save_btn = self._button("SAVE / UPDATE", primary=True)
+        self._test_btn.clicked.connect(self._test_connection)
+        self._save_btn.clicked.connect(self._save_profile)
+        self._save_btn.setEnabled(False)
+        actions.addWidget(self._test_btn)
+        actions.addWidget(self._save_btn)
+        layout.addLayout(actions)
+        layout.addStretch(1)
+
+        self._models_result.connect(self._finish_models)
+        self._test_result.connect(self._finish_test)
+        self._provider.currentIndexChanged.connect(self._provider_changed)
+        self._url.textChanged.connect(self._invalidate)
+        self._key.textChanged.connect(self._on_key_changed)
+        self._model.currentTextChanged.connect(self._invalidate)
+        self._load_current()
+
+    def _signature(self):
+        return (str(self._provider.currentData() or ""),
+                self._url.text().strip().rstrip("/"),
+                self._model.currentText().strip(),
+                self._key.text().strip())
+
+    def _invalidate(self, *_args):
+        self._tested_signature = None
+        self._save_btn.setEnabled(False)
+        if hasattr(self, "_status") and self._status.text().startswith("TEST PASSED"):
+            self._set_status("Settings changed. Test this exact provider, key and model again.", "warning")
+
+    def _on_key_changed(self, *_args):
+        self._key_hint.setText("Unsaved key changes · test before saving")
+        self._invalidate()
+
+    def _toggle_reveal(self):
+        self._key_revealed = not self._key_revealed
+        self._key.setEchoMode(QLineEdit.EchoMode.Normal if self._key_revealed else QLineEdit.EchoMode.Password)
+        self._reveal.setIcon(svg_icon("eye-off" if self._key_revealed else "eye", C.TEXT_DIM))
+        self._reveal.setToolTip("Hide API key" if self._key_revealed else "Preview API key")
+
+    def _load_current(self):
+        from core.provider_registry import load_provider_settings, provider_api_key
+        settings = load_provider_settings(API_FILE, self.profile)
+        self._provider.blockSignals(True)
+        self._provider.setCurrentIndex(max(0, self._provider.findData(settings["provider"])))
+        self._provider.blockSignals(False)
+        self._url.setText(settings["url"])
+        self._model.clear()
+        self._model.addItem(settings["model"])
+        self._model.setCurrentText(settings["model"])
+        key = provider_api_key(settings["provider"], API_FILE, self.profile) or ""
+        self._key.blockSignals(True)
+        self._key.setText(key)
+        self._key.blockSignals(False)
+        self._key_hint.setText(self._secret_preview(key))
+        self._provider_changed()
+
+    def _provider_changed(self, *_args):
+        from core.provider_registry import provider_spec, provider_api_key
+        provider = str(self._provider.currentData() or "ollama")
+        spec = provider_spec(provider)
+        self._url.setText(spec.default_url)
+        saved_key = provider_api_key(provider, API_FILE, self.profile) or ""
+        self._key.blockSignals(True)
+        self._key.setText(saved_key)
+        self._key.blockSignals(False)
+        self._key_hint.setText(self._secret_preview(saved_key))
+        self._model.clear()
+        self._model.addItem(spec.default_model)
+        self._model.setCurrentText(spec.default_model)
+        self._model.setEnabled(True)
+        self._refresh_btn.setEnabled(True)
+        self._key.setPlaceholderText("Not required for this local provider" if not spec.secret_name
+                                     else f"Paste {spec.label} API key")
+        self._invalidate()
+        if self._key_revealed:
+            self._key.setEchoMode(QLineEdit.EchoMode.Password)
+            self._key_revealed = False
+            self._reveal.setIcon(svg_icon("eye", C.TEXT_DIM))
+
+    def _refresh_models(self):
+        from core.provider_registry import list_provider_models
+        signature = self._signature()
+        provider, url, _model, key = signature
+        if provider not in {"ollama", "openai_compatible"} and not key:
+            self._set_status("Paste this provider's API key before loading its model list.", "warning")
+            return
+        if self._loading_models:
+            return
+        self._loading_models = True
+        self._refresh_btn.setEnabled(False)
+        self._set_status("Loading models available to this API key…", "working")
+
+        def worker():
+            try:
+                models = list_provider_models(provider, url, key or None)
+                self._models_result.emit({"signature": signature, "models": models, "error": None})
+            except Exception as exc:
+                self._models_result.emit({"signature": signature, "models": [], "error": str(exc)})
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_models(self, payload):
+        self._loading_models = False
+        self._refresh_btn.setEnabled(True)
+        if payload.get("signature")[:3] != self._signature()[:3]:
+            self._set_status("Provider settings changed while models were loading. Load again.", "warning")
+            return
+        if payload.get("error"):
+            self._set_status(payload["error"], "error")
+            return
+        current = self._model.currentText().strip()
+        self._model.blockSignals(True)
+        self._model.clear()
+        self._model.addItems(payload["models"])
+        if current and current not in payload["models"]:
+            self._model.addItem(current)
+        self._model.setCurrentText(current if current else payload["models"][0])
+        self._model.blockSignals(False)
+        self._invalidate()
+        self._set_status(f"Loaded {len(payload['models'])} available model(s) from {self._provider.currentText()}.", "success")
+
+    def _test_connection(self):
+        from core.provider_registry import probe_provider
+        signature = self._signature()
+        provider, url, model, key = signature
+        if not url or not model:
+            self._set_status("Choose a provider, endpoint and model first.", "warning")
+            return
+        spec_has_key = provider not in {"ollama", "openai_compatible"}
+        if spec_has_key and not key:
+            self._set_status("Paste the provider API key before testing.", "warning")
+            return
+        self._test_btn.setEnabled(False)
+        self._save_btn.setEnabled(False)
+        self._set_status("Testing the selected model with a live request…", "working")
+
+        def worker():
+            result = probe_provider(provider, url, model, key or None)
+            self._test_result.emit({"signature": signature, "result": result})
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_test(self, payload):
+        self._test_btn.setEnabled(True)
+        signature = payload.get("signature")
+        result = payload.get("result") or {}
+        if signature != self._signature():
+            self._set_status("Inputs changed during the test. Run the test again.", "warning")
+            return
+        if result.get("ok"):
+            self._tested_signature = signature
+            self._save_btn.setEnabled(True)
+            self._set_status(f"TEST PASSED · {result.get('latency_ms', 0)} ms · {result.get('model', '')}", "success")
+        else:
+            self._tested_signature = None
+            self._save_btn.setEnabled(False)
+            self._set_status(f"TEST FAILED · {result.get('error') or 'No model response'}", "error")
+
+    def _save_profile(self):
+        from core.provider_registry import save_provider_settings, has_provider_profile
+        signature = self._signature()
+        if signature != self._tested_signature:
+            self._set_status("Test the exact provider, model and key before saving.", "warning")
+            return
+        try:
+            provider, url, model, key = signature
+            save_provider_settings(API_FILE, provider, url, model, key, profile=self.profile)
+        except Exception as exc:
+            self._set_status(f"Could not save settings: {type(exc).__name__}: {exc}", "error")
+            return
+        self._tested_signature = signature
+        if self.profile == "powerful" and hasattr(self, "_inherit_note"):
+            self._inherit_note.hide()
+        self._key_hint.setText(self._secret_preview(key))
+        self._set_status("Saved. EDITH will use this provider and model for this Brain profile.", "success")
+        self.saved.emit()
+
+
+class _VoiceProviderTab(_ApiTabBase):
+    """Gemini Live voice provider settings with real model response validation."""
+
+    saved = pyqtSignal()
+    _models_result = pyqtSignal(object)
+    _test_result = pyqtSignal(object)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._tested_signature = None
+        self._loading_models = False
+        self._key_revealed = False
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 18)
+        layout.setSpacing(12)
+
+        title_row = QHBoxLayout()
+        icon = QLabel()
+        icon.setFixedSize(36, 36)
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon.setPixmap(svg_icon("mic", C.PRI).pixmap(QSize(20, 20)))
+        icon.setStyleSheet(f"background: {C.PANEL2}; border-radius: 12px;")
+        title_row.addWidget(icon)
+        title_col = QVBoxLayout()
+        title = QLabel("Voice connection")
+        title.setFont(QFont(FONT_MAIN, 12, QFont.Weight.Bold))
+        title_col.addWidget(title)
+        hint = QLabel("The current EDITH audio transport supports Google Gemini Live.")
+        hint.setFont(QFont(FONT_MAIN, 8))
+        hint.setStyleSheet(f"color: {C.TEXT_DIM};")
+        title_col.addWidget(hint)
+        title_row.addLayout(title_col, 1)
+        layout.addLayout(title_row)
+
+        layout.addWidget(self._label("Voice provider"))
+        self._provider = QComboBox()
+        self._provider.addItem("Google Gemini Live", "gemini_live")
+        self._provider.setAccessibleName("Voice API provider")
+        self._provider.setFixedHeight(42)
+        self._provider.setStyleSheet(self._field_style())
+        layout.addWidget(self._provider)
+
+        layout.addWidget(self._label("Voice model"))
+        model_row = QHBoxLayout()
+        self._model = QComboBox()
+        self._model.setEditable(True)
+        self._model.setFixedHeight(42)
+        self._model.setStyleSheet(self._field_style())
+        model_row.addWidget(self._model, 1)
+        self._refresh_btn = self._button("LOAD MODELS")
+        self._refresh_btn.clicked.connect(self._refresh_models)
+        model_row.addWidget(self._refresh_btn)
+        layout.addLayout(model_row)
+
+        layout.addWidget(self._label("Voice API key"))
+        key_row = QHBoxLayout()
+        self._key = QLineEdit()
+        self._key.setEchoMode(QLineEdit.EchoMode.Password)
+        self._key.setPlaceholderText("Paste Gemini Live API key")
+        self._key.setFixedHeight(42)
+        self._key.setStyleSheet(self._field_style())
+        key_row.addWidget(self._key, 1)
+        self._reveal = self._button("")
+        self._reveal.setIcon(svg_icon("eye", C.TEXT_DIM))
+        self._reveal.setIconSize(QSize(18, 18))
+        self._reveal.setFixedSize(44, 42)
+        self._reveal.setAccessibleName("Preview Voice API key")
+        self._reveal.clicked.connect(self._toggle_reveal)
+        key_row.addWidget(self._reveal)
+        layout.addLayout(key_row)
+        self._key_hint = QLabel("No saved key")
+        self._key_hint.setFont(QFont(FONT_MAIN, 8))
+        self._key_hint.setStyleSheet(f"color: {C.TEXT_DIM};")
+        layout.addWidget(self._key_hint)
+
+        self._status = QLabel("Test the selected Live model before saving or updating the key.")
+        self._status.setWordWrap(True)
+        self._status.setMinimumHeight(36)
+        self._status.setFont(QFont(FONT_MAIN, 8))
+        self._status.setStyleSheet(f"color: {C.TEXT_DIM};")
+        layout.addWidget(self._status)
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+        self._test_btn = self._button("TEST VOICE")
+        self._save_btn = self._button("SAVE / UPDATE", primary=True)
+        self._save_btn.setEnabled(False)
+        self._test_btn.clicked.connect(self._test_voice)
+        self._save_btn.clicked.connect(self._save_voice)
+        actions.addWidget(self._test_btn)
+        actions.addWidget(self._save_btn)
+        layout.addLayout(actions)
+        layout.addStretch(1)
+
+        self._models_result.connect(self._finish_models)
+        self._test_result.connect(self._finish_test)
+        self._model.currentTextChanged.connect(self._invalidate)
+        self._key.textChanged.connect(self._on_key_changed)
+        self._load_current()
+
+    def _signature(self):
+        return (str(self._provider.currentData() or "gemini_live"),
+                self._model.currentText().strip(), self._key.text().strip())
+
+    def _invalidate(self, *_args):
+        self._tested_signature = None
+        self._save_btn.setEnabled(False)
+
+    def _on_key_changed(self, *_args):
+        self._key_hint.setText("Unsaved key changes · test before saving")
+        self._invalidate()
+
+    def _load_current(self):
+        from core.provider_registry import load_voice_settings
+        from core.secrets import get_gemini_api_key
+        settings = load_voice_settings(API_FILE)
+        self._model.addItem(settings["model"])
+        key = get_gemini_api_key(API_FILE) or ""
+        self._key.setText(key)
+        self._key_hint.setText(self._secret_preview(key))
+
+    def _toggle_reveal(self):
+        self._key_revealed = not self._key_revealed
+        self._key.setEchoMode(QLineEdit.EchoMode.Normal if self._key_revealed else QLineEdit.EchoMode.Password)
+        self._reveal.setIcon(svg_icon("eye-off" if self._key_revealed else "eye", C.TEXT_DIM))
+
+    def _refresh_models(self):
+        from core.provider_registry import list_voice_models
+        key = self._key.text().strip()
+        if not key:
+            self._set_status("Paste the Voice API key before loading account models.", "warning")
+            return
+        if self._loading_models:
+            return
+        self._loading_models = True
+        self._refresh_btn.setEnabled(False)
+        self._set_status("Loading Live models available to this API key…", "working")
+        def worker():
+            try:
+                models = list_voice_models(key)
+                self._models_result.emit({"key": key, "models": models, "error": None})
+            except Exception as exc:
+                self._models_result.emit({"key": key, "models": [], "error": str(exc)})
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_models(self, payload):
+        self._loading_models = False
+        self._refresh_btn.setEnabled(True)
+        if payload.get("key") != self._key.text().strip():
+            self._set_status("Voice key changed while models were loading. Load again.", "warning")
+            return
+        if payload.get("error"):
+            self._set_status(payload["error"], "error")
+            return
+        current = self._model.currentText().strip()
+        self._model.blockSignals(True)
+        self._model.clear()
+        self._model.addItems(payload["models"])
+        if current and current not in payload["models"]:
+            self._model.addItem(current)
+        self._model.setCurrentText(current if current else payload["models"][0])
+        self._model.blockSignals(False)
+        self._invalidate()
+        self._set_status(f"Loaded {len(payload['models'])} Live model(s).", "success")
+
+    def _test_voice(self):
+        from core.provider_registry import probe_voice_provider
+        signature = self._signature()
+        if not signature[1] or not signature[2]:
+            self._set_status("Choose a Live model and paste the Voice API key.", "warning")
+            return
+        self._test_btn.setEnabled(False)
+        self._save_btn.setEnabled(False)
+        self._set_status("Opening a real Gemini Live session and waiting for model output…", "working")
+        def worker():
+            result = probe_voice_provider(*signature)
+            self._test_result.emit({"signature": signature, "result": result})
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_test(self, payload):
+        self._test_btn.setEnabled(True)
+        signature = payload.get("signature")
+        result = payload.get("result") or {}
+        if signature != self._signature():
+            self._set_status("Inputs changed during the test. Test the current Voice setup again.", "warning")
+            return
+        if result.get("ok"):
+            self._tested_signature = signature
+            self._save_btn.setEnabled(True)
+            self._set_status(f"TEST PASSED · Live model responded in {result.get('latency_ms', 0)} ms.", "success")
+        else:
+            self._tested_signature = None
+            self._save_btn.setEnabled(False)
+            self._set_status(f"TEST FAILED · {result.get('error') or 'No Live response'}", "error")
+
+    def _save_voice(self):
+        from core.provider_registry import save_voice_settings
+        signature = self._signature()
+        if signature != self._tested_signature:
+            self._set_status("Test the exact Voice provider, model and key before saving.", "warning")
+            return
+        try:
+            status = save_voice_settings(API_FILE, signature[0], signature[1], signature[2])
+        except Exception as exc:
+            self._set_status(f"Could not save Voice settings: {type(exc).__name__}", "error")
+            return
+        self._key_hint.setText(self._secret_preview(signature[2]))
+        tone = "warning" if status.storage == "legacy" else "success"
+        self._set_status("Voice settings saved. EDITH will use this Live model on reconnect.", tone)
+        self.saved.emit()
+
+
+class _RealtimeSearchTab(_ApiTabBase):
+    """Test and securely store the selected live search API."""
+
+    saved = pyqtSignal()
+    _test_result = pyqtSignal(object)
+    _PROVIDERS = (
+        ("Tavily Search", "tavily"),
+        ("Brave Search API", "brave"),
+        ("SerpAPI", "serpapi"),
+        ("Exa", "exa"),
+    )
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._tested_signature = None
+        self._key_revealed = False
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 18)
+        layout.setSpacing(12)
+        title_row = QHBoxLayout()
+        icon = QLabel()
+        icon.setFixedSize(36, 36)
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon.setPixmap(svg_icon("search", C.PRI).pixmap(QSize(20, 20)))
+        icon.setStyleSheet(f"background: {C.PANEL2}; border-radius: 12px;")
+        title_row.addWidget(icon)
+        text_col = QVBoxLayout()
+        title = QLabel("Real-time search engine")
+        title.setFont(QFont(FONT_MAIN, 12, QFont.Weight.Bold))
+        text_col.addWidget(title)
+        hint = QLabel("Live web results for current information. Separate from local file search.")
+        hint.setFont(QFont(FONT_MAIN, 8))
+        hint.setStyleSheet(f"color: {C.TEXT_DIM};")
+        text_col.addWidget(hint)
+        title_row.addLayout(text_col, 1)
+        layout.addLayout(title_row)
+
+        layout.addWidget(self._label("Search provider"))
+        self._provider = QComboBox()
+        for label, provider in self._PROVIDERS:
+            self._provider.addItem(label, provider)
+        self._provider.setAccessibleName("Real-time search provider")
+        self._provider.setFixedHeight(42)
+        self._provider.setStyleSheet(self._field_style())
+        layout.addWidget(self._provider)
+
+        layout.addWidget(self._label("API key"))
+        key_row = QHBoxLayout()
+        self._key = QLineEdit()
+        self._key.setEchoMode(QLineEdit.EchoMode.Password)
+        self._key.setPlaceholderText("Paste real-time search API key")
+        self._key.setFixedHeight(42)
+        self._key.setStyleSheet(self._field_style())
+        key_row.addWidget(self._key, 1)
+        self._reveal = self._button("")
+        self._reveal.setIcon(svg_icon("eye", C.TEXT_DIM))
+        self._reveal.setIconSize(QSize(18, 18))
+        self._reveal.setFixedSize(44, 42)
+        self._reveal.setAccessibleName("Preview real-time search API key")
+        self._reveal.clicked.connect(self._toggle_reveal)
+        key_row.addWidget(self._reveal)
+        layout.addLayout(key_row)
+        self._key_hint = QLabel("No saved key")
+        self._key_hint.setFont(QFont(FONT_MAIN, 8))
+        self._key_hint.setStyleSheet(f"color: {C.TEXT_DIM};")
+        layout.addWidget(self._key_hint)
+
+        note = QLabel("Test sends a small live query to the selected provider. Save is available only after a successful response.")
+        note.setWordWrap(True)
+        note.setFont(QFont(FONT_MAIN, 8))
+        note.setStyleSheet(f"color: {C.TEXT_DIM};")
+        layout.addWidget(note)
+        self._status = QLabel("Choose a provider and test its API key.")
+        self._status.setWordWrap(True)
+        self._status.setMinimumHeight(36)
+        self._status.setFont(QFont(FONT_MAIN, 8))
+        self._status.setStyleSheet(f"color: {C.TEXT_DIM};")
+        layout.addWidget(self._status)
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+        self._test_btn = self._button("TEST SEARCH")
+        self._save_btn = self._button("SAVE / UPDATE", primary=True)
+        self._save_btn.setEnabled(False)
+        self._test_btn.clicked.connect(self._test_search)
+        self._save_btn.clicked.connect(self._save_search)
+        actions.addWidget(self._test_btn)
+        actions.addWidget(self._save_btn)
+        layout.addLayout(actions)
+        layout.addStretch(1)
+
+        self._test_result.connect(self._finish_test)
+        self._provider.currentIndexChanged.connect(self._provider_changed)
+        self._key.textChanged.connect(self._key_changed)
+        self._load_current()
+
+    def _signature(self):
+        return (str(self._provider.currentData() or "tavily"), self._key.text().strip())
+
+    def _invalidate(self):
+        self._tested_signature = None
+        self._save_btn.setEnabled(False)
+
+    def _key_changed(self, *_args):
+        self._key_hint.setText("Unsaved key changes · test before saving")
+        self._invalidate()
+
+    def _load_current(self):
+        from core.provider_registry import load_realtime_search_settings, realtime_search_api_key
+        settings = load_realtime_search_settings(API_FILE)
+        self._provider.blockSignals(True)
+        self._provider.setCurrentIndex(max(0, self._provider.findData(settings["provider"])))
+        self._provider.blockSignals(False)
+        key = realtime_search_api_key(settings["provider"], API_FILE) or ""
+        self._key.setText(key)
+        self._key_hint.setText(self._secret_preview(key))
+
+    def _provider_changed(self, *_args):
+        from core.provider_registry import realtime_search_api_key
+        provider = str(self._provider.currentData() or "tavily")
+        key = realtime_search_api_key(provider, API_FILE) or ""
+        self._key.blockSignals(True)
+        self._key.setText(key)
+        self._key.blockSignals(False)
+        self._key_hint.setText(self._secret_preview(key))
+        self._invalidate()
+        if self._key_revealed:
+            self._key.setEchoMode(QLineEdit.EchoMode.Password)
+            self._key_revealed = False
+            self._reveal.setIcon(svg_icon("eye", C.TEXT_DIM))
+
+    def _toggle_reveal(self):
+        self._key_revealed = not self._key_revealed
+        self._key.setEchoMode(QLineEdit.EchoMode.Normal if self._key_revealed else QLineEdit.EchoMode.Password)
+        self._reveal.setIcon(svg_icon("eye-off" if self._key_revealed else "eye", C.TEXT_DIM))
+
+    def _test_search(self):
+        from core.provider_registry import probe_realtime_search
+        signature = self._signature()
+        if not signature[1]:
+            self._set_status("Paste the selected search provider API key first.", "warning")
+            return
+        self._test_btn.setEnabled(False)
+        self._save_btn.setEnabled(False)
+        self._set_status("Testing a real-time query against the selected search engine…", "working")
+        def worker():
+            result = probe_realtime_search(*signature)
+            self._test_result.emit({"signature": signature, "result": result})
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_test(self, payload):
+        self._test_btn.setEnabled(True)
+        signature = payload.get("signature")
+        result = payload.get("result") or {}
+        if signature != self._signature():
+            self._set_status("Provider or key changed during the test. Test again.", "warning")
+            return
+        if result.get("ok"):
+            self._tested_signature = signature
+            self._save_btn.setEnabled(True)
+            self._set_status(f"TEST PASSED · {result.get('result_count', 0)} live result · {result.get('latency_ms', 0)} ms.", "success")
+        else:
+            self._tested_signature = None
+            self._save_btn.setEnabled(False)
+            self._set_status(f"TEST FAILED · {result.get('error') or 'No search results returned'}", "error")
+
+    def _save_search(self):
+        from core.provider_registry import save_realtime_search_settings
+        signature = self._signature()
+        if signature != self._tested_signature:
+            self._set_status("Test the exact search provider and key before saving.", "warning")
+            return
+        try:
+            status = save_realtime_search_settings(API_FILE, *signature)
+        except Exception as exc:
+            self._set_status(f"Could not save search settings: {type(exc).__name__}", "error")
+            return
+        self._key_hint.setText(self._secret_preview(signature[1]))
+        tone = "warning" if status.storage == "legacy" else "success"
+        self._set_status("Real-time search provider and key saved. EDITH will use it for live search.", tone)
+        self.saved.emit()
+
+
+class ApiProviderWorkspace(QWidget):
+    """Four-tab provider workspace for Voice, both Brain profiles and live search."""
+
+    settings_saved = pyqtSignal()
+    voice_saved = pyqtSignal()
+    _OW, _OH = 900, 720
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        _glass_shadow(self)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(f"""
+            ApiProviderWorkspace {{
+                background: {C.SHEET};
+                border: 0;
+                border-radius: 22px;
+            }}
+        """)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(22, 16, 22, 20)
+        root.setSpacing(12)
+
+        header = QHBoxLayout()
+        mark = QLabel()
+        mark.setFixedSize(40, 40)
+        mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        mark.setPixmap(svg_icon("key", C.PRI).pixmap(QSize(22, 22)))
+        mark.setStyleSheet(f"background: {C.PANEL2}; border-radius: 13px;")
+        header.addWidget(mark)
+        text_col = QVBoxLayout()
+        text_col.setSpacing(2)
+        title = QLabel("API PROVIDERS")
+        title.setFont(QFont(FONT_MAIN, 16, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
+        text_col.addWidget(title)
+        subtitle = QLabel("Manage credentials, select models and verify every connection")
+        subtitle.setFont(QFont(FONT_MAIN, 8))
+        subtitle.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        text_col.addWidget(subtitle)
+        header.addLayout(text_col, 1)
+
+        close_btn = QPushButton()
+        close_btn.setAccessibleName("Close API Providers")
+        close_btn.setToolTip("Close API Providers")
+        close_btn.setIcon(svg_icon("x", C.TEXT_DIM))
+        close_btn.setIconSize(QSize(18, 18))
+        close_btn.setFixedSize(40, 40)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{ background: {C.PANEL2}; border: 0; border-radius: 13px; }}
+            QPushButton:hover {{ background: {C.DANGER_BG}; }}
+        """)
+        close_btn.clicked.connect(self.hide)
+        header.addWidget(close_btn)
+        root.addLayout(header)
+
+        self._tabs = QTabWidget(self)
+        self._tabs.setDocumentMode(True)
+        self._tabs.setMovable(False)
+        self._tabs.setStyleSheet(f"""
+            QTabWidget::pane {{ border: 0; background: transparent; top: 0; }}
+            QTabBar {{ background: transparent; }}
+            QTabBar::tab {{
+                background: transparent; color: {C.TEXT_DIM};
+                border: 0; border-bottom: 2px solid transparent;
+                padding: 13px 17px; margin-right: 8px;
+                font-family: "{FONT_MAIN}"; font-size: 9pt; font-weight: 700;
+            }}
+            QTabBar::tab:selected {{ color: {C.PRI}; border-bottom: 2px solid {C.PRI}; }}
+            QTabBar::tab:hover:!selected {{ color: {C.TEXT}; }}
+        """)
+        self._voice = _VoiceProviderTab()
+        self._main_brain = _ProviderProfileTab("main")
+        self._powerful_brain = _ProviderProfileTab("powerful")
+        self._search = _RealtimeSearchTab()
+        self._tabs.addTab(self._voice, svg_icon("mic", C.PRI), "VOICE")
+        self._tabs.addTab(self._main_brain, svg_icon("brain-circuit", C.PRI), "MAIN BRAIN")
+        self._tabs.addTab(self._powerful_brain, svg_icon("cpu", C.PRI), "POWERFUL BRAIN")
+        self._tabs.addTab(self._search, svg_icon("search", C.PRI), "REAL-TIME SEARCH")
+        root.addWidget(self._tabs, 1)
+
+        self._voice.saved.connect(self._on_voice_saved)
+        self._main_brain.saved.connect(self.settings_saved.emit)
+        self._powerful_brain.saved.connect(self.settings_saved.emit)
+        self._search.saved.connect(self.settings_saved.emit)
+
+    def _on_voice_saved(self):
+        self.settings_saved.emit()
+        self.voice_saved.emit()
+
+
 class SetupOverlay(QWidget):
     done = pyqtSignal(str, str)
 
