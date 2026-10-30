@@ -26,7 +26,10 @@ class ModalBackdropTests(unittest.TestCase):
         self.assertEqual(backdrop._image.graphicsEffect().blurRadius(), 24)
         self.assertTrue(backdrop._snapshot.isNull() is False)
 
+        backdrop.show()
+        self.app.processEvents()
         backdrop.resize(640, 480)
+        self.app.processEvents()
         self.assertEqual(backdrop._image.geometry(), backdrop.rect())
         self.assertEqual(backdrop._scrim.geometry(), backdrop.rect())
 
