@@ -250,7 +250,7 @@ Configure the endpoint and model, enter a provider key when required, run the re
 
 ### Gemini Live key
 
-The Gemini Live key is configured in the Voice provider section / first-run wizard. Use **TEST KEY** before saving where the UI offers it; EDITH makes a real minimal provider request and then enables the save action only for a tested key.
+The Gemini Live key is configured in the Voice provider section / first-run wizard. Use **TEST KEY** to test the key before saving where the UI offers it; EDITH makes a real minimal provider request and then enables the save action only for a tested key.
 
 ### MCP connectors
 
@@ -466,6 +466,8 @@ cargo test --manifest-path sandbox-rs/Cargo.toml
 ```
 
 The automated tests cover platform adapters with mocks, audio chunk ordering/buffering, agent and tool policy, task scheduling/interruption, MCP/provider contracts, UI behaviour and sandbox policy. CI's platform smoke workflow runs on Windows, Ubuntu and macOS; the installer workflow builds the platform artifacts.
+
+For the full manual end-to-end checklist and platform-specific acceptance steps, see [TESTING.md](TESTING.md), [VERIFICATION.md](VERIFICATION.md) and [CAPABILITY_MATRIX.md](CAPABILITY_MATRIX.md).
 
 **Important:** CI mocks do not certify a specific USB Wi-Fi adapter/driver, microphone, speaker, GPU, Home Assistant server, MQTT broker, provider account, OAuth token or third-party desktop application. Test those integrations on the target machine before relying on them.
 
