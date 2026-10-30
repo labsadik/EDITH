@@ -12,15 +12,14 @@ fn push_ro_bind(command: &mut Command, path: &Path) {
 }
 
 pub fn run(options: &Options) -> Result<i32, String> {
+    if options.network {
+        return Err(
+            "Internet-enabled Linux sandbox runs are blocked until a restricted egress proxy/firewall backend is installed. No process was started.".into()
+        );
+    }
     let bwrap = std::env::var_os("EDITH_BWRAP").unwrap_or_else(|| "bwrap".into());
     let mut command = Command::new(bwrap);
-    command.arg("--die-with-parent").arg("--new-session");
-    if options.network {
-        command.arg("--unshare-user").arg("--unshare-pid").arg("--unshare-ipc")
-            .arg("--unshare-uts").arg("--unshare-cgroup-try");
-    } else {
-        command.arg("--unshare-all");
-    }
+    command.arg("--die-with-parent").arg("--new-session").arg("--unshare-all");
     for (source, target) in [
         ("/usr", "/usr"), ("/bin", "/bin"), ("/sbin", "/sbin"),
         ("/lib", "/lib"), ("/lib64", "/lib64"),
