@@ -105,7 +105,8 @@ class FastResponseWiringTests(unittest.TestCase):
         cls.ui = (root / "ui.py").read_text(encoding="utf-8")
 
     def test_live_api_and_local_llm_remain_separate(self):
-        self.assertIn("client.aio.live.connect(model=LIVE_MODEL, config=config)", self.main)
+        self.assertIn("def _get_live_voice_model()", self.main)
+        self.assertIn("client.aio.live.connect(model=_get_live_voice_model(), config=config)", self.main)
         self.assertIn("from core.realtime_audio      import enqueue_latest_audio", self.main)
         self.assertIn("self.out_queue        = asyncio.Queue(maxsize=32)", self.main)
 
