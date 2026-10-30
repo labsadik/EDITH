@@ -14,7 +14,9 @@ EDITH is designed to adapt to the computer on which it runs. It detects the runn
 - Local app discovery/launching, window/process inventory, file operations, browser and visible desktop workflows, bounded shell execution, coding helpers and activity/audit receipts.
 - Task queue, busy-input gate, interruption with `ESC`, owned child-process cancellation, task history, safe bounded retries for declared read-only tools, and a fixed telemetry fallback.
 - Persistent memory with atomic writes and recovery backup.
-- Configurable text-model providers: local Ollama, OpenAI-compatible servers, OpenAI, Anthropic and xAI where valid credentials/models are configured.
+- One Powerful Brain text/reasoning profile: local Ollama, OpenAI-compatible servers, OpenAI, Anthropic, Groq and xAI/Grok. Gemini Live remains the voice/audio session, not a second text brain.
+- Versioned local specialist agents for software development/DevOps, DevSecOps, Project Management, Device Security, Smart Network, research, browser/computer, files/workspace and system monitoring.
+- Local Rust OS-enforced code sandbox (Windows AppContainer, Linux bubblewrap, macOS Seatbelt) with fail-closed generated-code execution.
 - Optional phone/remote dashboard with pairing and reconnect handling.
 - Simulator-first special-device contract. The built-in vehicle adapter is an in-memory simulator only; a real OEM integration must be separately installed, authorised and tested.
 
@@ -43,6 +45,14 @@ claiming that the app is ready.
 `edith.platform` selects a controller for Windows 10/11, macOS 13+, Ubuntu 22.04+ and compatible Linux distributions. It exposes structured results in the form `{ok, data, error, unsupported}` for telemetry, process/window lists, network information, application inventory, displays, audio devices and other platform capabilities.
 
 Features differ by OS, installed dependencies, accessibility/screen-recording permission and available hardware. Missing sensors are shown as `N/A`; EDITH does not claim real network-speed tests, hardware control, remote-device access, or vehicle control when no supported, authorised adapter exists.
+
+## Local agents and sandbox
+
+The agent registry is versioned in `agents/manifest.json`; ask EDITH **"list agents and versions"** to inspect the exact active versions. Agent enable/disable state is saved locally in `config/agents.json`. The Project Manager stores local project/task metadata in `config/projects.json`.
+
+Generated project code, code-file runs and generated desktop snippets are routed through the local Rust sandbox. If the OS cannot enforce the sandbox, execution stops; EDITH does not fall back to host execution. See [docs/LOCAL_AGENTS_AND_SANDBOX.md](docs/LOCAL_AGENTS_AND_SANDBOX.md) for the architecture, platform prerequisites, security boundaries and full PowerShell/macOS/Linux test commands.
+
+Linux/macOS sandbox runs currently deny network access. Windows dependency installation uses the AppContainer InternetClient capability while ordinary generated project execution remains offline. Do not enable unrestricted egress as a workaround.
 
 ## MCP connectors
 
