@@ -1,5 +1,7 @@
 use std::env;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+#[cfg(not(windows))]
+use std::path::Path;
 use std::process::ExitCode;
 
 mod platform;
@@ -89,6 +91,7 @@ fn main() -> ExitCode {
     }
 }
 
+#[cfg(target_os = "linux")]
 pub(crate) fn add_if_exists(command: &mut std::process::Command, source: &Path, destination: &str) {
     if source.exists() { command.arg("--ro-bind").arg(source).arg(destination); }
 }
