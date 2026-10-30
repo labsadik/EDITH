@@ -853,7 +853,7 @@ class EdithLive:
         self._tool_registry = ToolRegistry(
             TOOL_DECLARATIONS, self._plugin_registry.get_tool_declarations
         )
-        self.ui.get_plugins = self._plugin_registry.list_for_ui
+        self.ui.get_plugins = self._list_plugin_manager_items
         self.ui.request_say = self.plugin_say   # plugins: mid-task speech channel
 
     def plugin_say(self, instruction: str) -> None:
@@ -882,6 +882,35 @@ class EdithLive:
             asyncio.run_coroutine_threadsafe(_say(), loop)
         except Exception as e:
             print(f"[PluginSay] {e}")
+
+    def _list_plugin_manager_items(self) -> list[dict]:
+        """Combine configured plugins/MCP servers with the versioned local agents."""
+        from core.agent_registry import plugin_manager_records
+
+        return [
+            *self._plugin_registry.list_for_ui(),
+            *plugin_manager_records(self._on_agent_registry_changed),
+        ]
+
+    def _on_agent_registry_changed(self, item: dict) -> None:
+        """Persisted agent toggles from Qt must reconfigure Live on its own loop."""
+        self.ui.write_log(
+            f"AGENT: {item['id']} {item['status']} · v{item['version']}"
+        )
+        loop = self._loop
+        if loop is None or not loop.is_running():
+            return
+
+        def _request_reconfigure() -> None:
+            self._reconfigure_reason = "Agent registry changed from Plugins manager"
+            if self._reconfigure_event is not None:
+                self._reconfigure_event.set()
+
+        try:
+            loop.call_soon_threadsafe(_request_reconfigure)
+        except RuntimeError:
+            # The Live loop may be shutting down while the Qt window is closing.
+            pass
 
     def _make_remote_key(self):
         """Called from Qt main thread when user presses Remote Control."""

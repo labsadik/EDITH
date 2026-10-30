@@ -158,8 +158,37 @@ def format_agent_catalog() -> str:
     return "\n".join(lines)
 
 
+def plugin_manager_records(
+    on_change: Callable[[dict[str, Any]], None] | None = None,
+) -> list[dict[str, Any]]:
+    """Adapt the versioned agent manifest to the desktop Plugins → Agents catalog."""
+    records: list[dict[str, Any]] = []
+    for agent in list_agents():
+        agent_id = agent["id"]
+
+        def _toggle(enabled: bool, *, _agent_id: str = agent_id) -> dict[str, Any]:
+            updated = set_agent_enabled(_agent_id, bool(enabled))
+            if on_change is not None:
+                on_change(updated)
+            return updated
+
+        records.append({
+            "name": f"{agent['name']} · v{agent['version']}",
+            "description": agent["description"],
+            "file": f"{agent_id} · {agent['module']}",
+            "valid": True,
+            "error": "",
+            "enabled": agent["enabled"],
+            "kind": "agent",
+            "agent_id": agent_id,
+            "version": agent["version"],
+            "toggle": _toggle,
+        })
+    return records
+
+
 __all__ = [
     "TOOL_AGENT_MAP", "build_agent_prompt_context", "filter_tool_declarations",
     "format_agent_catalog", "get_agent", "is_agent_enabled", "list_agents",
-    "set_agent_enabled",
+    "plugin_manager_records", "set_agent_enabled",
 ]
