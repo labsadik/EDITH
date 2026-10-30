@@ -42,7 +42,7 @@ class WorkspaceTests(unittest.TestCase):
 
 
     def test_modern_workspace_surfaces_and_provider_panels(self):
-        from PyQt6.QtWidgets import QScrollArea
+        from PyQt6.QtWidgets import QFrame, QScrollArea
         from ui import PluginManagerOverlay, ProviderSettingsOverlay
 
         self.assertIn("border-radius: 18px", self.window._left_panel.styleSheet())
