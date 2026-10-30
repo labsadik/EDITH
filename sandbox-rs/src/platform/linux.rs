@@ -6,7 +6,7 @@ use crate::{add_if_exists, Options};
 
 fn is_already_mounted(path: &Path) -> bool {
     let key = path.to_string_lossy();
-    ["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/ssl/certs", "/etc/alternatives", "/dev", "/proc", "/tmp"]
+    key == "/tmp" || ["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/ssl/certs", "/etc/alternatives", "/dev", "/proc"]
         .iter().any(|base| key == *base || key.starts_with(&format!("{base}/")))
 }
 
