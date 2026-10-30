@@ -42,7 +42,7 @@ class WorkspaceTests(unittest.TestCase):
 
 
     def test_modern_workspace_surfaces_and_provider_panels(self):
-        from PyQt6.QtWidgets import QFrame, QScrollArea
+        from PyQt6.QtWidgets import QFrame, QScrollArea, QTabWidget
         from ui import PluginManagerOverlay, ProviderSettingsOverlay
 
         self.assertIn("border-radius: 18px", self.window._left_panel.styleSheet())
@@ -62,9 +62,33 @@ class WorkspaceTests(unittest.TestCase):
             {"name": "sample_tool", "kind": "python",
              "description": "Local tool", "valid": True, "enabled": True},
         ], parent=self.window.centralWidget())
-        self.assertEqual(len(catalog.findChildren(QScrollArea)), 1)
+        self.assertIsInstance(catalog._tabs, QTabWidget)
+        self.assertEqual([catalog._tabs.tabText(i) for i in range(catalog._tabs.count())],
+                         ["MCP SERVERS", "AGENTS"])
+        self.assertEqual(len(catalog.findChildren(QScrollArea)), 2)
         self.assertEqual(len(catalog.findChildren(QFrame, "PluginCard")), 2)
+        self.assertEqual(len(catalog._mcp_tab.findChildren(QFrame, "PluginCard")), 1)
+        self.assertEqual(len(catalog._agents_tab.findChildren(QFrame, "PluginCard")), 1)
+        self.assertTrue(catalog.findChild(__import__("PyQt6.QtWidgets", fromlist=["QPushButton"]).QPushButton,
+                                          ""))
+        self.assertEqual(catalog.findChildren(__import__("PyQt6.QtWidgets", fromlist=["QPushButton"]).QPushButton)[0].accessibleName(),
+                         "Close Plugins manager")
         catalog.deleteLater()
+        self.app.processEvents()
+
+    def test_api_settings_exposes_voice_brain_and_realtime_search(self):
+        from unittest.mock import patch
+        from ui import ApiKeyOverlay
+
+        with patch.object(ApiKeyOverlay, "_probe_local_connection", lambda *_args: None):
+            overlay = ApiKeyOverlay("voice-key-placeholder", parent=self.window.centralWidget())
+        self.assertEqual(overlay._voice_provider.currentData(), "gemini_live")
+        self.assertGreaterEqual(overlay._brain_panel._provider.count(), 4)
+        self.assertEqual(overlay._search_provider.count(), 4)
+        self.assertEqual(overlay._search_provider.accessibleName(), "Real-time search provider")
+        self.assertEqual(overlay._close_btn.accessibleName(), "Close API settings")
+        self.assertIsNotNone(overlay.findChild(QScrollArea))
+        overlay.deleteLater()
         self.app.processEvents()
 
     def test_remove_attachment_clears_all_selection_state(self):
