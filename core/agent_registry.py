@@ -7,7 +7,7 @@ import re
 import tempfile
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "agents" / "manifest.json"
