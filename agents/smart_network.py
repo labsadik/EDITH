@@ -556,9 +556,10 @@ def _home_assistant(action: str, entity_id: str = "", service: str = "",
             "action": action,
             "message": "Home Assistant is not paired. Local network discovery remains available; "
                        "smart-home entity reads and controls are disabled until pairing is completed.",
-            "setup": "Run scripts/configure_home_assistant.py locally, or set "
-                     "EDITH_HOME_ASSISTANT_URL and EDITH_HOME_ASSISTANT_TOKEN. "
-                     "The token is stored in the OS keychain when available.",
+            "setup": "Open Plugins → Agents → Smart Network and choose PAIR HA, or run "
+                     "scripts/configure_home_assistant.py locally. EDITH verifies the "
+                     "Home Assistant API before saving the token; the OS keychain is "
+                     "used when available.",
         }
 
     if action == "status":
