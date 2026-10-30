@@ -155,7 +155,7 @@ fn is_windows_system_directory(path: &Path) -> bool {
         .or_else(|_| std::env::var("WINDIR"))
         .unwrap_or_else(|_| r"C:\Windows".to_string());
     let system = PathBuf::from(root).join("System32");
-    normalize_windows_path(path) == normalize_windows_path(&system)
+    windows_path_is_within(path, &system)
 }
 
 fn windows_path_is_within(path: &Path, root: &Path) -> bool {
@@ -209,6 +209,18 @@ mod path_tests {
 
         assert!(is_windows_system_directory(&system));
         assert!(is_windows_system_directory(&extended));
+    }
+
+    #[test]
+    fn system32_descendants_are_protected_from_acl_updates() {
+        let root = std::env::var("SYSTEMROOT")
+            .or_else(|_| std::env::var("WINDIR"))
+            .unwrap_or_else(|_| r"C:\Windows".to_string());
+        let powershell = PathBuf::from(root)
+            .join("System32")
+            .join("WindowsPowerShell")
+            .join("v1.0");
+        assert!(is_windows_system_directory(&powershell));
     }
 
     #[test]
