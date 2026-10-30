@@ -55,3 +55,11 @@ Name: "{autodesktop}\EDITH"; Filename: "{app}\EDITH.exe"; WorkingDir: "{app}"; T
 
 [Run]
 Filename: "{app}\EDITH.exe"; Description: "Launch EDITH — Neuron Intelligence"; Flags: postinstall nowait skipifsilent
+
+[Code]
+procedure InitializeWizard;
+begin
+  { Keep the product identity visible even on the first (license) page. }
+  WizardForm.BeveledLabel.Caption :=
+    'EDITH — Neuron Intelligence  |  Version {#AppVersion}  |  Created by Sadik Laskar';
+end;
