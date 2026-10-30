@@ -71,8 +71,8 @@ class SecretStorageTests(unittest.TestCase):
         # Coding/planning now uses the Powerful Brain profile, whose provider
         # credentials are resolved by the shared provider_registry secret helper.
         dev_agent = (root / "actions/dev_agent.py").read_text(encoding="utf-8")
-        self.assertIn('profile="powerful"', dev_agent)
-        self.assertIn("call_llm_text", dev_agent)
+        self.assertIn('workload="software_development"', dev_agent)
+        self.assertIn("call_brain_text", dev_agent)
 
 
 if __name__ == "__main__":
