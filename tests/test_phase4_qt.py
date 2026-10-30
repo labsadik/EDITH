@@ -42,10 +42,15 @@ class Phase4QtSmokeTests(unittest.TestCase):
         self.app.processEvents()
 
     def tearDown(self):
-        self.window.hide()
-        self.window._clock_tmr.stop()
-        self.window._metric_tmr.stop()
-        self.window._log._tmr.stop()
+        # Exercise the same close path used by the running app. Hiding a Qt
+        # window only pauses QMediaPlayer; it does not release the FFmpeg
+        # decoder/sink. Repeated headless UI tests otherwise leave decoder
+        # workers alive and can segfault when QApplication tears down.
+        self.window.close()
+        self.window.hud.shutdown()
+        self.app.processEvents()
+        self.window.deleteLater()
+        self.app.sendPostedEvents()
         self.app.processEvents()
 
     def test_existing_hud_preserved_and_task_rows_expand(self):
