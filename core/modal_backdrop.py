@@ -22,7 +22,6 @@ class ModalBackdrop(QWidget):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("EdithModalBackdrop")
-        self.setGeometry(parent.rect())
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
 
@@ -45,13 +44,20 @@ class ModalBackdrop(QWidget):
         self._scrim.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self._scrim.setStyleSheet(f"background-color: {tint};")
 
+        # Set the size only after the child layers exist: QWidget may deliver
+        # resizeEvent synchronously from setGeometry().
+        self.setGeometry(parent.rect())
         self._layout_layers()
 
     def _layout_layers(self) -> None:
+        image = getattr(self, "_image", None)
+        scrim = getattr(self, "_scrim", None)
+        if image is None or scrim is None:
+            return
         rect = self.rect()
-        self._image.setGeometry(rect)
-        self._scrim.setGeometry(rect)
-        self._scrim.raise_()
+        image.setGeometry(rect)
+        scrim.setGeometry(rect)
+        scrim.raise_()
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
         super().resizeEvent(event)
