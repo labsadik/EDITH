@@ -10,7 +10,13 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / "config" / "api_keys.json"
+# Running `python scripts/edith_preflight.py` sets sys.path[0] to scripts/,
+# not the repository root. Add the project root before any package imports.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from core.app_paths import config_path
+
+CONFIG = config_path()
 PRESETS = {"female": "Kore", "male": "Orus"}
 
 
@@ -113,8 +119,9 @@ def main():
 
     def home_assistant():
         from agents.smart_network import _ha_credentials
-        if not _ha_credentials(required=False):
-            raise RuntimeError("Home Assistant is not paired")
+        credentials = _ha_credentials(required=False)
+        if not credentials:
+            return "not paired; pairing is optional and local network discovery remains available"
         return "paired URL/token configured (token hidden)"
     check("Home Assistant", home_assistant, warnings, True)
 
