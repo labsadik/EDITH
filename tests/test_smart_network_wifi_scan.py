@@ -37,7 +37,7 @@ class WifiScanParserTests(unittest.TestCase):
                  {"available": True, "output": WINDOWS_SCAN},
                  {"available": True, "output": "The scan request was successfully completed."},
                  {"available": True, "output": "SSID 1 : Second AP\n  Authentication : WPA2-Personal\n  Encryption : CCMP\n  BSSID 1 : aa:bb:cc:dd:ee:04\n    Signal : 90%\n    Channel : 11"},
-             ]), patch.object(smart_network.time, "sleep") as sleep:
+             ]) as run, patch.object(smart_network.time, "sleep") as sleep:
             result = smart_network.scan_wifi_networks()
         self.assertTrue(result["ok"])
         self.assertEqual([item["name"] for item in result["adapters"]], ["Wi-Fi USB", "Wi-Fi 2"])
