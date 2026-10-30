@@ -33,9 +33,11 @@ class WifiScanParserTests(unittest.TestCase):
         with patch.object(smart_network.platform, "system", return_value="Windows"), \
              patch.object(smart_network, "_run_fixed", side_effect=[
                  {"available": True, "output": "    Name : Wi-Fi USB\n    Name : Wi-Fi 2"},
+                 {"available": True, "output": "The scan request was successfully completed."},
                  {"available": True, "output": WINDOWS_SCAN},
+                 {"available": True, "output": "The scan request was successfully completed."},
                  {"available": True, "output": "SSID 1 : Second AP\n  Authentication : WPA2-Personal\n  Encryption : CCMP\n  BSSID 1 : aa:bb:cc:dd:ee:04\n    Signal : 90%\n    Channel : 11"},
-             ]) as run:
+             ]), patch.object(smart_network.time, "sleep") as sleep:
             result = smart_network.scan_wifi_networks()
         self.assertTrue(result["ok"])
         self.assertEqual([item["name"] for item in result["adapters"]], ["Wi-Fi USB", "Wi-Fi 2"])
@@ -43,7 +45,19 @@ class WifiScanParserTests(unittest.TestCase):
         self.assertEqual(result["networks"][0]["ssid"], "Home WiFi")
         self.assertEqual(result["networks"][0]["signal_percent"], 88)
         self.assertEqual(result["networks"][1]["bssid"], "aa:bb:cc:dd:ee:02")
-        self.assertEqual(run.call_count, 3)
+        self.assertEqual(run.call_count, 5)
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_windows_scan_request_failure_is_reported_per_adapter(self):
+        with patch.object(smart_network.platform, "system", return_value="Windows"), \
+             patch.object(smart_network, "_run_fixed", side_effect=[
+                 {"available": True, "output": "Name : USB Wi-Fi"},
+                 {"available": False, "reason": "WLAN is disabled"},
+             ]):
+            result = smart_network.scan_wifi_networks()
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["adapters"][0]["name"], "USB Wi-Fi")
+        self.assertIn("WLAN is disabled", result["adapters"][0]["error"])
 
     def test_windows_reports_missing_dongle_or_driver_as_actionable(self):
         with patch.object(smart_network.platform, "system", return_value="Windows"), \
