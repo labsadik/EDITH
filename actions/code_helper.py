@@ -7,6 +7,8 @@ import sys
 import json
 import re
 import time
+import tempfile
+import shutil
 from pathlib import Path
 
 
@@ -238,18 +240,23 @@ def _run_file(path: Path, args: list, timeout: int) -> str:
     executable = shutil.which(interpreter[0]) if not Path(interpreter[0]).is_absolute() else interpreter[0]
     if not executable:
         return f"Execution failed: interpreter '{interpreter[0]}' is not installed."
-    argv = [str(Path(executable).resolve()), *interpreter[1:]]
-    if path.suffix.lower() == ".py":
-        argv.append("-I")
-    argv.extend([str(path), *[str(item) for item in (args or [])]])
-
     try:
         from core.sandbox_runner import run_sandboxed
-        receipt = run_sandboxed(
-            argv, workspace=path.parent, timeout=max(1, min(int(timeout), 3600)),
-            network=False, read_only_paths=[sys.base_prefix, sys.prefix],
-            prepend_paths=[Path(executable).resolve().parent],
-        )
+        # Copy only the explicitly selected source into an ephemeral workspace.
+        # The original folder is not writable or mounted into the sandbox.
+        with tempfile.TemporaryDirectory(prefix="edith-code-sandbox-") as folder:
+            workspace = Path(folder).resolve()
+            sandbox_source = workspace / path.name
+            shutil.copy2(path, sandbox_source)
+            argv = [str(Path(executable).resolve()), *interpreter[1:]]
+            if path.suffix.lower() == ".py":
+                argv.append("-I")
+            argv.extend([str(sandbox_source), *[str(item) for item in (args or [])]])
+            receipt = run_sandboxed(
+                argv, workspace=workspace, timeout=max(1, min(int(timeout), 3600)),
+                network=False, read_only_paths=[sys.base_prefix, sys.prefix],
+                prepend_paths=[Path(executable).resolve().parent],
+            )
     except Exception as exc:
         return (
             "Execution failed: Rust sandbox unavailable; source was not executed "
