@@ -1180,15 +1180,6 @@ class ApiKeyOverlay(QWidget):
         local_hint.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
         layout.addWidget(local_hint)
 
-        brain_heading = QLabel("BRAIN PROVIDER")
-        brain_heading.setFont(QFont(FONT_MAIN, 11, QFont.Weight.Bold))
-        brain_heading.setStyleSheet(f"color: {C.TEXT}; background: transparent; padding-top: 5px;")
-        layout.addWidget(brain_heading)
-        self._brain_panel = ProviderSettingsOverlay(parent=body, embedded=True)
-        self._brain_panel.saved.connect(self._provider_settings_saved)
-        self._brain_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        layout.addWidget(self._brain_panel)
-
         voice_heading = QLabel("VOICE PROVIDER")
         voice_heading.setFont(QFont(FONT_MAIN, 11, QFont.Weight.Bold))
         voice_heading.setStyleSheet(f"color: {C.TEXT}; background: transparent; padding-top: 5px;")
@@ -1236,6 +1227,16 @@ class ApiKeyOverlay(QWidget):
         key_hint.setFont(QFont(FONT_MAIN, 8))
         key_hint.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
         layout.addWidget(key_hint)
+
+        brain_heading = QLabel("BRAIN PROVIDER")
+        brain_heading.setFont(QFont(FONT_MAIN, 11, QFont.Weight.Bold))
+        brain_heading.setStyleSheet(f"color: {C.TEXT}; background: transparent; padding-top: 5px;")
+        layout.addWidget(brain_heading)
+        self._brain_panel = ProviderSettingsOverlay(parent=body, embedded=True)
+        self._brain_panel.saved.connect(self._provider_settings_saved)
+        self._brain_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout.addWidget(self._brain_panel)
+
 
         self._status = QLabel("Test both the API connection and an actual model response before saving.")
         self._status.setWordWrap(True)
@@ -1780,7 +1781,11 @@ class ApiKeyOverlay(QWidget):
             self._search_status.setText("Search provider and API key saved to local credential storage.")
             self._search_status.setStyleSheet(f"color: {C.GREEN}; background: transparent;")
         self._search_key.clear()
-        self._search_key.setPlaceholderText("Saved securely · paste a new key to replace")
+        self._search_key.setPlaceholderText(
+            "Saved locally · paste a new key to replace"
+            if status.storage == "legacy"
+            else "Saved to OS keychain · paste a new key to replace"
+        )
 
 class ProviderSettingsOverlay(QWidget):
     """Provider-specific endpoint/model/key editor; the Gemini Live editor remains above."""
@@ -2620,19 +2625,6 @@ class PluginManagerOverlay(QWidget):
         footer_note.setFont(QFont(FONT_MAIN, 8))
         footer_note.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
         footer.addWidget(footer_note, 1)
-        close_btn = QPushButton("CLOSE")
-        close_btn.setFixedSize(104, 38)
-        close_btn.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {C.PANEL2}; color: {C.TEXT_MED};
-                border: 1px solid {C.BORDER}; border-radius: 10px; padding: 0 14px;
-            }}
-            QPushButton:hover {{ color: {C.TEXT}; border-color: {C.PRI_DIM}; }}
-        """)
-        close_btn.clicked.connect(self.hide)
-        footer.addWidget(close_btn)
         root.addLayout(footer)
         self.adjustSize()
 
