@@ -102,6 +102,13 @@ class Phase4QtSmokeTests(unittest.TestCase):
         self.app.processEvents()
         self.assertEqual(window._input.text(), "a newer draft")
 
+    def test_hud_shutdown_detaches_multimedia_resources_and_is_idempotent(self):
+        video = self.window.hud._video
+        self.window.hud.shutdown()
+        self.assertIsNone(video.player)
+        self.assertIsNone(video.sink)
+        self.window.hud.shutdown()
+
     def test_reduced_motion_is_ui_only_and_preserves_text(self):
         window = self.window
         window._log.set_reduced_motion(True)

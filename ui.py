@@ -350,6 +350,11 @@ class HudCanvas(QWidget):
         super().showEvent(event)
         self._video.sync(True, getattr(self, "reduced_motion", False))
 
+    def shutdown(self) -> None:
+        """Release animation timers and multimedia resources before widget teardown."""
+        self._tmr.stop()
+        self._video.shutdown()
+
     def set_input_level(self, level: float, source: str = "PC") -> None:
         """Qt-thread-only; values arrive through MainWindow's queued signal."""
         if self.muted or self.speaking:
@@ -4029,6 +4034,13 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         if getattr(self, "_theme_monitor", None):
             self._theme_monitor.stop()
+        if getattr(self, "hud", None) is not None:
+            self.hud.shutdown()
+        for timer_name in ("_clock_tmr", "_mic_status_tmr", "_metric_tmr"):
+            timer = getattr(self, timer_name, None)
+            if timer is not None:
+                timer.stop()
+        self._cam_stop.set() if hasattr(self, "_cam_stop") else None
         super().closeEvent(event)
 
     def _show_url_prompt(self, request):

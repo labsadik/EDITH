@@ -50,6 +50,33 @@ class LoopingVideo(QObject):
         elif changed:
             self.player.play()
 
+    def shutdown(self):
+        """Stop playback and detach the sink before Qt destroys multimedia objects."""
+        self.active = False
+        player = self.player
+        sink = getattr(self, "sink", None)
+        if player is None:
+            return
+        try:
+            player.stop()
+        except RuntimeError:
+            pass
+        if sink is not None:
+            try:
+                sink.videoFrameChanged.disconnect(self._receive_frame)
+            except (TypeError, RuntimeError):
+                pass
+        try:
+            player.setVideoSink(None)
+        except (TypeError, RuntimeError):
+            pass
+        try:
+            player.setSource(QUrl())
+        except RuntimeError:
+            pass
+        self.sink = None
+        self.player = None
+
 
 def draw_blended_video(painter, area, image, background):
     """Keep aspect ratio, then fade each video edge into the surrounding surface."""
