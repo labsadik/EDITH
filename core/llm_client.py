@@ -95,7 +95,7 @@ def ensure_ollama_running(timeout: int = 15, profile: str = "powerful") -> bool:
     if provider == "anthropic":
         # Anthropic has no unauthenticated model-list endpoint. A real request
         # is made by warmup/call instead of declaring it available here.
-        return bool(_cloud_headers(provider, url))
+        return bool(_cloud_headers(provider, url, profile))
 
     # ── Ollama ──────────────────────────────────────────────────────────────
     health = f"{url}/api/tags"
@@ -183,7 +183,7 @@ def warmup_model(system_prompt: str | None = None, profile: str = "powerful") ->
             payload["system"] = system
         try:
             resp = requests.post(f"{url}/messages", json=payload,
-                                 headers=_cloud_headers(provider, url), timeout=180)
+                                 headers=_cloud_headers(provider, url, profile), timeout=180)
             resp.raise_for_status()
             print(f"[LLM] '{model}' ready (Anthropic).")
             return True
@@ -439,7 +439,7 @@ def call_llm_text(
             payload["system"] = system
         try:
             resp = requests.post(f"{url}/messages", json=payload,
-                                 headers=_cloud_headers(provider, url), timeout=timeout)
+                                 headers=_cloud_headers(provider, url, profile), timeout=timeout)
             resp.raise_for_status()
             return "".join(str(part.get("text") or "") for part in resp.json().get("content", [])
                            if isinstance(part, dict) and part.get("type") == "text").strip()
@@ -686,7 +686,7 @@ def call_llm_stream(
         yield from _do_stream()
     except requests.exceptions.ConnectionError as e:
         print(f"[LLM] Stream ConnectionError — trying to restart Ollama… ({e})")
-        if ensure_ollama_running():
+        if ensure_ollama_running(profile=profile):
             yield from _do_stream()
             return
         raise RuntimeError(
