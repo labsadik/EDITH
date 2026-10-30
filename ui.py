@@ -1077,6 +1077,11 @@ class ApiKeyOverlay(QWidget):
         layout.setContentsMargins(26, 22, 26, 22)
         layout.setSpacing(10)
 
+        eyebrow = QLabel("LLM & API CONNECTION")
+        eyebrow.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+        eyebrow.setStyleSheet(f"color: {C.PRI}; background: transparent; letter-spacing: 1px;")
+        layout.addWidget(eyebrow)
+
         title = QLabel("CONNECTIONS & API ACCESS")
         title.setFont(QFont(FONT_MAIN, 16, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
@@ -3655,7 +3660,7 @@ class MainWindow(QMainWindow):
             l.setStyleSheet(f"color: {color}; background: transparent;")
             return l
 
-        lay.addWidget(_badge("EDITH  /  WORKSPACE", C.PRI_DIM))
+        lay.addWidget(_badge("EDITH SYSTEMS", C.PRI_DIM))
         lay.addSpacing(12)
         self._drawer_btn = QPushButton()
         _set_theme_icon(self._drawer_btn, "settings", "PRI")
