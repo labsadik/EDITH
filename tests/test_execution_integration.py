@@ -1,5 +1,6 @@
 """Step 7 integration contracts for the shared, confirmed execution layer."""
 import asyncio
+import subprocess
 import sys
 import tempfile
 import threading
@@ -103,33 +104,46 @@ class LegacyToolIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "echo args.py"
             path.write_text("import sys; print('|'.join(sys.argv[1:]))", encoding="utf-8")
-            service = ExecutionService(confirmer=lambda *_: True, audit=Mock())
-            with patch("actions.code_helper.SERVICE", service):
+            def fake_sandbox(argv, *, workspace, timeout=30, **kwargs):
+                return subprocess.run(
+                    [str(item) for item in argv], cwd=str(workspace),
+                    capture_output=True, text=True, timeout=timeout, check=False,
+                )
+            with patch("core.sandbox_runner.run_sandboxed", side_effect=fake_sandbox) as sandbox:
                 result = _run_file(path, '"two words" plain', 3)
         self.assertIn("two words|plain", result)
+        self.assertEqual(sandbox.call_count, 1)
+        self.assertFalse(sandbox.call_args.kwargs["network"])
 
-    def test_desktop_code_runs_in_child_and_denial_prevents_spawn(self):
-        with patch("core.execution.SERVICE") as service:
-            service.run_argv.return_value = {
-                "ok": False, "data": {}, "error": "Execution cancelled", "unsupported": False
-            }
-            self.assertIn("cancelled", _execute_generated_code("print('ok')").lower())
-            service.run_argv.assert_called_once()
-            call = service.run_argv.call_args
-            self.assertTrue(any(Path(arg).parts[-2:] == ("core", "desktop_worker.py") for arg in call.args[0]))
-            self.assertNotIn("exec(", str(call.kwargs.get("input_data", b"")))
+    def test_desktop_generated_code_fails_closed_without_rust_sandbox(self):
+        from core.sandbox_runner import SandboxUnavailable
+        with patch(
+            "core.sandbox_runner.run_sandboxed",
+            side_effect=SandboxUnavailable("sandbox unavailable"),
+        ) as sandbox:
+            result = _execute_generated_code("print('ok')")
+        self.assertIn("sandbox unavailable", result.lower())
+        self.assertIn("not run on the host", result.lower())
+        sandbox.assert_called_once()
 
-    def test_dependency_install_is_exact_and_decline_is_not_retried(self):
-        with patch("actions.dev_agent.SERVICE") as service:
-            service.run_argv.return_value = {
-                "ok": False, "data": {}, "error": "Execution cancelled", "unsupported": False
-            }
-            self.assertTrue(_install_dependencies(["requests==2.32.3"], Path.cwd()).startswith("Execution cancelled"))
-            command = service.run_argv.call_args.args[0]
-            self.assertEqual(command[:3], [sys.executable, "-m", "pip"])
-            self.assertEqual(command[3:], ["install", "requests==2.32.3"])
-            self.assertFalse(_try_auto_install("ModuleNotFoundError: No module named 'requests'", Path.cwd()))
-            self.assertEqual(service.run_argv.call_count, 2)
+
+    def test_dependency_install_uses_rust_sandbox_and_scoped_network(self):
+        with tempfile.TemporaryDirectory() as folder:
+            python = Path(folder) / "python.exe"
+            failed = subprocess.CompletedProcess([], 1, "", "package install failed")
+            with patch("core.sandbox_runner.run_sandboxed", return_value=failed) as sandbox:
+                result = _install_dependencies(["requests==2.32.3"], Path.cwd(), python)
+                self.assertIn("Execution failed", result)
+                command = sandbox.call_args.args[0]
+                self.assertEqual(command[:4], [str(python), "-m", "pip", "install"])
+                self.assertIn("requests==2.32.3", command)
+                self.assertTrue(sandbox.call_args.kwargs["network"])
+                self.assertEqual(sandbox.call_args.kwargs["workspace"], Path.cwd())
+
+                self.assertFalse(_try_auto_install(
+                    "ModuleNotFoundError: No module named 'requests'", Path.cwd(), python
+                ))
+                self.assertEqual(sandbox.call_count, 2)
 
 
 class DispatchContractTests(unittest.TestCase):

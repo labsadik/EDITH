@@ -74,19 +74,19 @@ class WorkspaceTests(unittest.TestCase):
         catalog.deleteLater()
         self.app.processEvents()
 
-    def test_api_provider_workspace_has_four_test_gated_tabs(self):
+    def test_api_provider_workspace_has_three_test_gated_tabs(self):
         from PyQt6.QtWidgets import QTabWidget, QPushButton
         from ui import ApiProviderWorkspace
 
         overlay = ApiProviderWorkspace(parent=self.window.centralWidget())
         self.assertIsInstance(overlay._tabs, QTabWidget)
         self.assertEqual([overlay._tabs.tabText(i) for i in range(overlay._tabs.count())],
-                         ["VOICE", "MAIN BRAIN", "POWERFUL BRAIN", "REAL-TIME SEARCH"])
+                         ["VOICE", "POWERFUL BRAIN", "REAL-TIME SEARCH"])
         self.assertEqual(overlay._voice._provider.currentData(), "gemini_live")
-        self.assertEqual(overlay._main_brain._provider.count(), 6)
+        self.assertFalse(hasattr(overlay, "_main_brain"))
         self.assertEqual(overlay._powerful_brain._provider.count(), 6)
         self.assertEqual(overlay._search._provider.count(), 4)
-        for panel in (overlay._voice, overlay._main_brain, overlay._powerful_brain, overlay._search):
+        for panel in (overlay._voice, overlay._powerful_brain, overlay._search):
             self.assertFalse(panel._save_btn.isEnabled())
         self.assertTrue(any(button.accessibleName() == "Close API Providers"
                             for button in overlay.findChildren(QPushButton)))

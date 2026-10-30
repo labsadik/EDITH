@@ -617,6 +617,43 @@ TOOL_DECLARATIONS = [
         },
     },
     {
+        "name": "project_manager",
+        "description": "Creates a project plan using Powerful Brain and saves it locally; lists project/task status; updates a task as pending, in_progress, blocked or completed. Actions: plan, status/list, update, complete, start, block.",
+        "parameters": {"type": "OBJECT", "properties": {
+            "action": {"type": "STRING", "enum": ["plan", "status", "list", "update", "complete", "start", "block"]},
+            "project_id": {"type": "STRING", "description": "Short local id for the project; required except when listing all projects."},
+            "goal": {"type": "STRING", "description": "Project objective; required for plan."},
+            "task_id": {"type": "STRING", "description": "Task id such as T001; required for task updates."},
+            "status": {"type": "STRING", "enum": ["pending", "in_progress", "blocked", "completed"]},
+            "notes": {"type": "STRING", "description": "Optional task progress note."}
+        }, "required": ["action"]}
+    },
+    {
+        "name": "devsecops_audit",
+        "description": "Runs an offline static DevSecOps review of an existing project under the EDITH Projects folder. Reports hard-coded credential patterns, dynamic eval/exec, unsafe deserialization, shell=True, disabled TLS verification and unsafe YAML loading. It does not alter files or perform a penetration test.",
+        "parameters": {"type": "OBJECT", "properties": {
+            "project_name": {"type": "STRING", "description": "Existing project folder name under EDITH Projects."}
+        }, "required": ["project_name"]}
+    },
+    {
+        "name": "agent_manager",
+        "description": "Lists every installed EDITH agent with its exact version and enabled state. Use action=list or status to inspect. Use action=enable or disable with agent_id to toggle a specialist agent. Agent toggles are stored locally.",
+        "parameters": {"type": "OBJECT", "properties": {
+            "action": {"type": "STRING", "enum": ["list", "status", "enable", "disable"]},
+            "agent_id": {"type": "STRING", "description": "Agent id from the catalog, e.g. software_development, device_security, smart_network"}
+        }, "required": ["action"]}
+    },
+    {
+        "name": "device_security",
+        "description": "Runs a read-only local device security posture audit: firewall/endpoint protection status where the OS exposes it, hardware inventory and platform capabilities. It never changes security settings or accesses kernel memory.",
+        "parameters": {"type": "OBJECT", "properties": {}, "required": []}
+    },
+    {
+        "name": "smart_network",
+        "description": "Lists devices already present in the OS local neighbor cache and summarizes known local network neighbors. It does not actively scan, exploit, log in to or control other devices. Authenticated pairing is required before any remote-control adapter can be used.",
+        "parameters": {"type": "OBJECT", "properties": {}, "required": []}
+    },
+    {
         "name": "task_history",
         "description": (
             "Show a short privacy-safe history of recent EDITH task outcomes, "
@@ -1267,6 +1304,8 @@ class EdithLive:
         parts = [time_ctx, identity_ctx]
         if mem_str:
             parts.append(mem_str)
+        from core.agent_registry import build_agent_prompt_context
+        parts.append(build_agent_prompt_context())
         parts.append(sys_prompt)
 
         voice_name = VOICE_PRESETS[self._voice_mode]
@@ -1275,7 +1314,7 @@ class EdithLive:
             output_audio_transcription={},
             input_audio_transcription={},
             system_instruction="\n".join(parts),
-            tools=[{"function_declarations": self._tool_registry.declarations()}],
+            tools=[{"function_declarations": __import__("core.agent_registry", fromlist=["filter_tool_declarations"]).filter_tool_declarations(self._tool_registry.declarations())}],
             session_resumption=types.SessionResumptionConfig(),
             # Sliding-window compression: session never dies from a full context
             # window — EDITH can stay in one conversation for hours
@@ -1392,6 +1431,15 @@ class EdithLive:
                 (response.response or {}).get("result") if response else None,
             )
             return response
+
+        from core.agent_registry import TOOL_AGENT_MAP, is_agent_enabled
+        bound_agent = TOOL_AGENT_MAP.get(name)
+        if bound_agent and not is_agent_enabled(bound_agent):
+            result = f"Agent '{bound_agent}' is disabled. Enable it with agent_manager before requesting this capability."
+            self.ui.write_log(f"AGENT: {bound_agent} is disabled; tool was not run.")
+            if not self.ui.muted:
+                self.ui.set_state("LISTENING")
+            return _completed(types.FunctionResponse(id=fc.id, name=name, response={"result": result}))
 
         confirmation_reason = confirmation_requirement(name, args)
         if backend_tier >= 2 and not confirmation_reason:
@@ -1646,6 +1694,61 @@ class EdithLive:
             elif name == "flight_finder":
                 r = await loop.run_in_executor(None, lambda: flight_finder(parameters=args, player=self.ui))
                 result = r or "Done."
+
+            elif name == "project_manager":
+                from agents.project_manager import run_project_manager
+                result = await asyncio.to_thread(
+                    run_project_manager,
+                    str(args.get("action") or "status"),
+                    str(args.get("project_id") or ""),
+                    str(args.get("goal") or ""),
+                    str(args.get("task_id") or ""),
+                    str(args.get("status") or ""),
+                    str(args.get("notes") or ""),
+                )
+                self.ui.show_content("PROJECT MANAGER", result)
+
+            elif name == "devsecops_audit":
+                from agents.devsecops import scan_project, format_report
+                from core.branding import prepare_projects_dir
+                project_name = str(args.get("project_name") or "").strip()
+                if not project_name or Path(project_name).name != project_name or project_name in {".", ".."}:
+                    result = "Specify an existing project folder name under EDITH Projects."
+                else:
+                    project_root = prepare_projects_dir().resolve()
+                    project_path = (project_root / project_name).resolve()
+                    if project_path.parent != project_root or not project_path.is_dir():
+                        result = "Project not found inside EDITH Projects; no files were read."
+                    else:
+                        report = await asyncio.to_thread(scan_project, project_path)
+                        result = format_report(report)
+                        self.ui.show_content("DEVSECOPS STATIC REVIEW", result)
+
+            elif name == "agent_manager":
+                from core.agent_registry import format_agent_catalog, set_agent_enabled
+                action = str(args.get("action") or "list").strip().lower()
+                if action in {"list", "status"}:
+                    result = format_agent_catalog()
+                elif action in {"enable", "disable"}:
+                    agent_id = str(args.get("agent_id") or "").strip().lower()
+                    item = set_agent_enabled(agent_id, action == "enable")
+                    result = f"{item['name']} ({item['id']}) is now {item['status']} · version {item['version']}."
+                    self.ui.write_log(f"AGENT: {item['id']} {item['status']} · v{item['version']}")
+                    self._reconfigure_reason = "Agent registry changed"
+                    if self._reconfigure_event:
+                        self._reconfigure_event.set()
+                else:
+                    result = "Use agent_manager action=list, status, enable or disable."
+
+            elif name == "device_security":
+                from agents.device_security import run_security_audit
+                result = await loop.run_in_executor(None, run_security_audit, self._device_tools)
+                self.ui.show_content("DEVICE SECURITY AUDIT", result)
+
+            elif name == "smart_network":
+                from agents.smart_network import run_smart_network
+                result = await loop.run_in_executor(None, run_smart_network)
+                self.ui.show_content("LOCAL NETWORK INVENTORY", result)
 
             elif name == "task_history":
                 result = format_task_history(self._agent_journal.recent(limit=10))

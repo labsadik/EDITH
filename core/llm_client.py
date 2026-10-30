@@ -49,7 +49,7 @@ _DEFAULTS = {
 }
 
 
-def get_llm_provider(profile: str = "main") -> str:
+def get_llm_provider(profile: str = "powerful") -> str:
     """Return the active protocol, preserving legacy local OpenAI aliases."""
     selected = load_provider_settings(CONFIG_PATH, profile)["provider"]
     if selected in {"anthropic", "xai", "groq"}:
@@ -64,7 +64,7 @@ def _load_config() -> dict:
         return {}
 
 
-def ensure_ollama_running(timeout: int = 15, profile: str = "main") -> bool:
+def ensure_ollama_running(timeout: int = 15, profile: str = "powerful") -> bool:
     """
     For Ollama: ping /api/tags; auto-launch 'ollama serve' if not running.
     For OpenAI-compatible providers: just ping /v1/models (server must be started manually).
@@ -133,7 +133,7 @@ def ensure_ollama_running(timeout: int = 15, profile: str = "main") -> bool:
     return False
 
 
-def warmup_model(system_prompt: str | None = None, profile: str = "main") -> bool:
+def warmup_model(system_prompt: str | None = None, profile: str = "powerful") -> bool:
     """
     Pre-load the model AND prime Ollama's KV prefix cache.
 
@@ -211,7 +211,7 @@ def warmup_model(system_prompt: str | None = None, profile: str = "main") -> boo
         return False
 
 
-def check_model_available(log: Callable | None = None, profile: str = "main") -> bool:
+def check_model_available(log: Callable | None = None, profile: str = "powerful") -> bool:
     """
     Returns True if the configured model is already pulled in Ollama.
     Logs an actionable warning (to console + optional UI callback) if not.
@@ -245,7 +245,7 @@ def check_model_available(log: Callable | None = None, profile: str = "main") ->
         return True   # Ollama might still be starting up; non-blocking
 
 
-def get_llm_settings(profile: str = "main") -> tuple[str, str]:
+def get_llm_settings(profile: str = "powerful") -> tuple[str, str]:
     """Returns the selected profile's (base_url, model_name)."""
     settings = load_provider_settings(CONFIG_PATH, profile)
     return settings["url"].rstrip("/"), settings["model"]
@@ -257,7 +257,7 @@ def _openai_endpoint(url: str, suffix: str) -> str:
     return base + suffix if base.endswith("/v1") else base + "/v1" + suffix
 
 
-def _cloud_headers(provider: str, url: str, profile: str = "main") -> dict[str, str]:
+def _cloud_headers(provider: str, url: str, profile: str = "powerful") -> dict[str, str]:
     """Return credentials only for configured cloud profiles, never logs them."""
     try:
         selected = load_provider_settings(CONFIG_PATH, profile)["provider"]
@@ -290,7 +290,7 @@ def call_llm(
     tools:    list | None = None,
     timeout:  int = 120,
     max_tokens: int = 150,
-    profile: str = "main",
+    profile: str = "powerful",
 ) -> dict:
     """
     Non-streaming chat request.  Routes to Ollama or OpenAI-compatible backend.
@@ -410,7 +410,7 @@ def call_llm_text(
     system:  str | None = None,
     model:   str | None = None,
     timeout: int = 120,
-    profile: str = "main",
+    profile: str = "powerful",
 ) -> str:
     """Text-only generation using the configured local provider.
 
@@ -476,7 +476,7 @@ def _stream_openai(
     messages: list,
     tools:    list | None,
     timeout:  int,
-    profile:  str = "main",
+    profile:  str = "powerful",
 ) -> Generator[dict, None, None]:
     """
     Streaming backend for OpenAI-compatible servers (LM Studio, LocalAI, Jan…).
@@ -594,7 +594,7 @@ def call_llm_stream(
     messages: list,
     tools:    list | None = None,
     timeout:  int = 120,
-    profile:  str = "main",
+    profile:  str = "powerful",
 ) -> Generator[dict, None, None]:
     """
     Streaming chat request.  Routes to Ollama or OpenAI-compatible backend.

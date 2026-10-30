@@ -39,6 +39,15 @@ def operation_tier(operation, arguments=None):
 
 def tool_tier(name, args):
     action = str(args.get('action') or '').lower().replace('-','_')
+    if name in {'device_security', 'smart_network', 'devsecops_audit'}: return 0
+    if name == 'project_manager':
+        if action in {'list', 'status'}: return 0
+        if action in {'plan', 'update', 'complete', 'start', 'block'}: return 1
+        return 2
+    if name == 'agent_manager':
+        if action in {'list', 'status'}: return 0
+        if action in {'enable', 'disable'}: return 1
+        return 2
     if name in {'system_status','performance_metrics','web_search','task_history','screen_process','close_camera'}:
         return 0 if name != 'close_camera' else 1
     if name == 'platform_system':

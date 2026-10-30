@@ -35,12 +35,32 @@ def _get_api_key() -> str:
 
 
 def _gemini_client():
+    """Use Powerful Brain for text tasks; keep Gemini only for image/audio payloads."""
+    from types import SimpleNamespace
+    from core.brain_router import call_brain_text
     from google import genai
-    _c = genai.Client(api_key=_get_api_key())
+    _client = None
 
     class _W:
         def generate_content(self, contents):
-            return _c.models.generate_content(model="gemini-flash-latest", contents=contents)
+            nonlocal _client
+            if isinstance(contents, str):
+                return SimpleNamespace(text=call_brain_text(
+                    contents, workload="file_workspace"
+                ))
+            if isinstance(contents, (list, tuple)) and all(
+                isinstance(part, str) for part in contents
+            ):
+                return SimpleNamespace(text=call_brain_text(
+                    "\n\n".join(contents), workload="file_workspace"
+                ))
+            # Multimodal analysis/transcription remains on the dedicated Gemini
+            # media path; text-only reasoning is centralized on Powerful Brain.
+            if _client is None:
+                _client = genai.Client(api_key=_get_api_key())
+            return _client.models.generate_content(
+                model="gemini-flash-latest", contents=contents
+            )
 
     return _W()
 

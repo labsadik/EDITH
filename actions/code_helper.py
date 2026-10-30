@@ -1,11 +1,13 @@
 import subprocess
+import shutil
 import shlex
-from core.execution import SERVICE, format_execution, stopped
+from core.execution import stopped
 from core.secrets import get_gemini_api_key
 import sys
 import json
 import re
 import time
+import tempfile
 from pathlib import Path
 
 
@@ -29,12 +31,16 @@ def _get_api_key() -> str:
 
 
 def _get_gemini(model: str = GEMINI_MODEL):
-    from google import genai
-    _c = genai.Client(api_key=_get_api_key())
+    """Compatibility wrapper: all text/code reasoning uses the Powerful Brain."""
+    from types import SimpleNamespace
+    from core.brain_router import call_brain_text
 
     class _W:
         def generate_content(self, contents):
-            return _c.models.generate_content(model=model, contents=contents)
+            prompt = contents if isinstance(contents, str) else str(contents)
+            return SimpleNamespace(text=call_brain_text(
+                prompt, workload="software_development"
+            ))
 
     return _W()
 
@@ -209,23 +215,62 @@ Fixed code:"""
 
 
 def _run_file(path: Path, args: list, timeout: int) -> str:
+    """Run a user-provided source file only inside the local Rust OS sandbox."""
     interpreters = {
-        ".py":  [sys.executable],
-        ".js":  ["node"],
-        ".ts":  ["ts-node"],
-        ".sh":  ["bash"],
+        ".py": [sys.executable],
+        ".js": ["node"],
+        ".ts": ["ts-node"],
+        ".sh": ["bash"],
         ".ps1": ["powershell", "-File"],
-        ".rb":  ["ruby"],
+        ".rb": ["ruby"],
         ".php": ["php"],
     }
-    interp = interpreters.get(path.suffix.lower())
-    if not interp:
+    interpreter = interpreters.get(path.suffix.lower())
+    if not interpreter:
         return f"No interpreter for {path.suffix}."
+    if isinstance(args, str):
+        args = shlex.split(args)
+    path = path.expanduser().resolve()
+    if not path.is_file():
+        return f"Execution failed: source file not found: {path}"
+    if path.stat().st_size > 1_000_000:
+        return "Execution failed: source file exceeds the 1 MB sandbox input limit."
 
-    if isinstance(args,str):args=shlex.split(args)
-    path=path.expanduser().resolve()
-    receipt=SERVICE.run_argv(interp+[str(path)]+list(args or []),cwd=path.parent,timeout=timeout,source_path=path)
-    return format_execution(receipt)
+    executable = shutil.which(interpreter[0]) if not Path(interpreter[0]).is_absolute() else interpreter[0]
+    if not executable:
+        return f"Execution failed: interpreter '{interpreter[0]}' is not installed."
+    try:
+        from core.sandbox_runner import run_sandboxed
+        # Copy only the explicitly selected source into an ephemeral workspace.
+        # The original folder is not writable or mounted into the sandbox.
+        with tempfile.TemporaryDirectory(prefix="edith-code-sandbox-") as folder:
+            workspace = Path(folder).resolve()
+            sandbox_source = workspace / path.name
+            shutil.copy2(path, sandbox_source)
+            argv = [str(Path(executable).resolve()), *interpreter[1:]]
+            if path.suffix.lower() == ".py":
+                argv.append("-I")
+            argv.extend([str(sandbox_source), *[str(item) for item in (args or [])]])
+            receipt = run_sandboxed(
+                argv, workspace=workspace, timeout=max(1, min(int(timeout), 3600)),
+                network=False, read_only_paths=[sys.base_prefix, sys.prefix],
+                prepend_paths=[Path(executable).resolve().parent],
+            )
+    except Exception as exc:
+        return (
+            "Execution failed: Rust sandbox unavailable; source was not executed "
+            f"on the host. {type(exc).__name__}: {exc}"
+        )
+
+    stdout = (receipt.stdout or "").strip()
+    stderr = (receipt.stderr or "").strip()
+    if receipt.returncode != 0:
+        return f"Execution failed (exit {receipt.returncode}).\n{stdout}\n{stderr}".strip()
+    return (
+        "Exit code: 0\n"
+        + (f"STDOUT:\n{stdout}" if stdout else "")
+        + (f"\nSTDERR:\n{stderr}" if stderr else "")
+    )
 
 
 def _build(description, language, output_path, args, timeout, speak=None, player=None) -> str:

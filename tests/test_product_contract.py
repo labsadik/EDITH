@@ -70,8 +70,8 @@ class ProductContractTests(unittest.TestCase):
         self.assertIn('"llm_provider"', self.llm_client)
         self.assertIn('"llm_url"', self.llm_client)
         self.assertIn('"llm_model"', self.llm_client)
-        self.assertIn('def get_llm_provider(profile: str = "main")', self.llm_client)
-        self.assertIn('def get_llm_settings(profile: str = "main")', self.llm_client)
+        self.assertIn('def get_llm_provider(profile: str = "powerful")', self.llm_client)
+        self.assertIn('def get_llm_settings(profile: str = "powerful")', self.llm_client)
         self.assertIn("def call_llm(", self.llm_client)
         self.assertNotIn("self._local_endpoint", self.ui)
 
@@ -139,8 +139,8 @@ class ProductContractTests(unittest.TestCase):
         self.assertIn("if spec.exclusive:", self.scheduler)
         self.assertIn("Dependency did not succeed", self.scheduler)
         self.assertIn("MULTITASKING AND TASK DEPENDENCIES", self.prompt)
-        # Both provider adapters and the original cloud model remain configured.
-        self.assertIn('def get_llm_provider(profile: str = "main")', self.llm_client)
+        # All specialist text inference defaults to the single Powerful Brain profile.
+        self.assertIn('def get_llm_provider(profile: str = "powerful")', self.llm_client)
         self.assertIn("def call_llm_text(", self.llm_client)
         self.assertIn("def call_llm_stream(", self.llm_client)
         self.assertIn("models/gemini-2.5-flash-native-audio-preview-12-2025", self.main)

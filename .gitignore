@@ -1,5 +1,7 @@
 # ── Secrets — never commit ───────────────────────────────────────────────
 config/api_keys.json
+config/agents.json
+config/projects.json
 config/certs/
 *.pem
 *.key

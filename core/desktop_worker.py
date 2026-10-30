@@ -1,7 +1,8 @@
-"""Approved desktop snippets execute in an owned child, never the voice process.
+"""Worker for generated desktop snippets, always launched by the Rust sandbox.
 
-This namespace preserves legacy helpers; it is not a security sandbox. The exact
-source is reviewed in EDITH before spawning this timeout-bound child.
+The reduced builtin namespace is defense in depth only; the OS-enforced
+AppContainer/bubblewrap/Seatbelt boundary is the security isolation layer.
+Use native computer-control tools for real foreground desktop interaction.
 """
 import json
 from pathlib import Path

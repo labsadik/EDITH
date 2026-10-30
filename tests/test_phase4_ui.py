@@ -101,7 +101,7 @@ class Phase4UiContractTests(unittest.TestCase):
         self.assertIn("self.document().setMaximumBlockCount(700)", self.ui)
         self.assertIn("self._adjust_side_panels()", self.ui)
         self.assertIn("self._right_panel.width() - pw", self.ui)
-        self.assertIn('def get_llm_provider(profile: str = "main")', self.llm)
+        self.assertIn('def get_llm_provider(profile: str = "powerful")', self.llm)
         self.assertIn("def call_llm_text(", self.llm)
         self.assertIn("def call_llm_stream(", self.llm)
         self.assertIn(

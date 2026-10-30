@@ -7,7 +7,7 @@ import sys
 import json
 import re
 import time
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 
 def get_base_dir():
@@ -24,15 +24,82 @@ MODEL_PLANNER    = "gemini-flash-latest"
 MODEL_WRITER     = "gemini-flash-latest"
 
 def _get_model(model_name: str | None = None):
-    """Use the independently configured Powerful Brain for coding/planning work."""
-    from core.llm_client import call_llm_text
+    """Route every development/DevOps/DevSecOps reasoning call to one Powerful Brain."""
+    from core.brain_router import call_brain_text
 
     class _W:
         def generate_content(self, contents):
             prompt = str(contents or "")
-            return SimpleNamespace(text=call_llm_text(prompt, model=None, profile="powerful"))
+            return SimpleNamespace(text=call_brain_text(
+                prompt, model=None, workload="software_development"
+            ))
 
     return _W()
+
+
+def _safe_project_path(project_dir: Path, relative_path: str) -> Path:
+    """Resolve a model-generated path without allowing traversal or symlink escape."""
+    root = Path(project_dir).expanduser().resolve()
+    raw = str(relative_path or "").strip()
+    candidate = Path(raw)
+    windows_path = PureWindowsPath(raw)
+    if (
+        not raw or candidate == Path(".") or candidate.is_absolute()
+        or windows_path.is_absolute() or bool(windows_path.drive)
+        or any(part in {"..", ""} for part in candidate.parts)
+        or any(part == ".." for part in windows_path.parts)
+    ):
+        raise ValueError(f"Unsafe project-relative path: {raw!r}")
+    target = (root / candidate).resolve()
+    if target != root and root not in target.parents:
+        raise ValueError(f"Project path escapes workspace: {raw!r}")
+    current = root
+    for part in candidate.parts[:-1]:
+        current = current / part
+        if current.exists() and current.is_symlink():
+            raise ValueError(f"Project path traverses a symlink: {raw!r}")
+    if target.exists() and target.is_symlink():
+        raise ValueError(f"Project file is a symlink: {raw!r}")
+    return target
+
+
+def _validate_project_plan(plan: dict) -> dict:
+    """Validate model-produced paths, entry point and dependency shape before writes."""
+    if not isinstance(plan, dict):
+        raise ValueError("Planner must return a JSON object")
+    files = plan.get("files")
+    if not isinstance(files, list) or not files or len(files) > 150:
+        raise ValueError("Planner must return between 1 and 150 project files")
+    paths = []
+    for item in files:
+        if not isinstance(item, dict):
+            raise ValueError("Every project file entry must be an object")
+        path = str(item.get("path") or "")
+        windows_path = PureWindowsPath(path)
+        if (
+            not path or Path(path).is_absolute() or windows_path.is_absolute()
+            or bool(windows_path.drive) or ".." in Path(path).parts
+            or ".." in windows_path.parts
+        ):
+            raise ValueError(f"Unsafe project path in plan: {path!r}")
+        if path in paths:
+            raise ValueError(f"Duplicate project path in plan: {path!r}")
+        paths.append(path)
+    entry_point = str(plan.get("entry_point") or "")
+    if not entry_point or Path(entry_point).is_absolute() or ".." in Path(entry_point).parts:
+        raise ValueError("Planner returned an unsafe entry point")
+    if entry_point not in paths:
+        raise ValueError("Planner entry point must be included in the file list")
+    dependencies = plan.get("dependencies", [])
+    if not isinstance(dependencies, list) or len(dependencies) > 80:
+        raise ValueError("Planner dependency list must contain at most 80 package names")
+    if any(not isinstance(item, str) for item in dependencies):
+        raise ValueError("Every dependency must be a package name string")
+    run_command = str(plan.get("run_command") or f"python {entry_point}")
+    if not run_command.strip() or len(run_command) > 2000:
+        raise ValueError("Planner returned an invalid run command")
+    plan["run_command"] = run_command
+    return plan
 
 
 def _strip_fences(text: str) -> str:
@@ -222,7 +289,7 @@ Code for {file_path}:"""
         response = model.generate_content(prompt)
         code = _strip_fences(response.text)
 
-        full_path = project_dir / file_path
+        full_path = _safe_project_path(project_dir, file_path)
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_text(code, encoding="utf-8")
 
@@ -234,13 +301,39 @@ Code for {file_path}:"""
             raise RateLimitError(str(e))
         raise
 
-def _install_dependencies(dependencies: list[str], project_dir: Path) -> str:
-    if not dependencies:return "No external dependencies."
-    # pip receives exact arguments; options cannot be smuggled in as package names.
-    if any(not isinstance(d,str) or d.startswith('-') for d in dependencies):
-        return "Execution failed: invalid dependency specification"
-    receipt=SERVICE.run_argv([sys.executable,"-m","pip","install",*dependencies],cwd=project_dir,timeout=120)
-    return format_execution(receipt)
+def _sandbox_output(receipt) -> str:
+    output = (receipt.stdout or "").strip()
+    if receipt.stderr:
+        output = (output + "\n[stderr]\n" + receipt.stderr.strip()).strip()
+    if receipt.returncode != 0:
+        return f"Execution failed (exit {receipt.returncode}).\n{output[-10000:]}"
+    return output[-10000:] or "Command completed with no output."
+
+
+def _install_dependencies(
+    dependencies: list[str], project_dir: Path,
+    python_executable: Path | None = None,
+) -> str:
+    if not dependencies:
+        return "No external dependencies."
+    # Dependency names are data, not shell fragments or pip option arguments.
+    package_pattern = re.compile(
+        r"^[A-Za-z0-9][A-Za-z0-9_.-]*(?:\[[A-Za-z0-9_,.-]+\])?(?:(?:===|==|!=|~=|>=|<=|>|<)[A-Za-z0-9.*+!-]+)?$"
+    )
+    if any(
+        not isinstance(item, str) or not package_pattern.fullmatch(item.strip())
+        for item in dependencies
+    ):
+        return "Execution failed: dependency must be a package name with an optional version constraint."
+    from core.sandbox_runner import ensure_project_venv, run_sandboxed
+    python = python_executable or ensure_project_venv(project_dir)
+    receipt = run_sandboxed(
+        [str(python), "-m", "pip", "install", "--disable-pip-version-check",
+         "--no-input", *[item.strip() for item in dependencies]],
+        workspace=project_dir, timeout=180, network=True,
+        read_only_paths=[sys.base_prefix], prepend_paths=[python.parent],
+    )
+    return _sandbox_output(receipt)
 
 def _open_vscode(project_dir: Path) -> bool:
     executable=shutil.which('code')
@@ -248,23 +341,38 @@ def _open_vscode(project_dir: Path) -> bool:
     receipt=SERVICE.run_argv([executable,str(project_dir)],cwd=project_dir,timeout=10)
     return receipt['ok']
 
-def _run_project(run_command: str, project_dir: Path, timeout: int = 30) -> str:
-    # Use the actual OS shell. Quoted paths, pipelines and && retain their meaning.
-    return format_execution(SERVICE.shell(run_command,cwd=str(project_dir),timeout=timeout))
+def _run_project(
+    run_command: str, project_dir: Path, timeout: int = 30,
+    python_executable: Path | None = None,
+) -> str:
+    from core.sandbox_runner import run_project_command
+    return run_project_command(
+        run_command, workspace=project_dir, timeout=timeout,
+        network=False, python_executable=python_executable,
+    )
 
-def _try_auto_install(error_output: str, project_dir: Path) -> bool | None:
-    match=re.search(r"No module named ['\"]([a-zA-Z0-9_\-\.]+)['\"]",error_output)
-    if not match:return False
-    pkg=match.group(1).replace('_','-').split('.')[0]
-    receipt=SERVICE.run_argv([sys.executable,'-m','pip','install',pkg],cwd=project_dir,timeout=60)
-    # A declined/expired approval is a terminal result for this build.  It must
-    # not fall through to generated repairs or another install attempt.
-    _try_auto_install.last_result = format_execution(receipt)
-    if not receipt.get('ok') and ((receipt.get('data') or {}).get('cancelled') or
-                                  'cancel' in str(receipt.get('error') or '').lower() or
-                                  'expired' in str(receipt.get('error') or '').lower()):
-        return None
-    return bool(receipt.get('ok'))
+
+def _try_auto_install(
+    error_output: str, project_dir: Path,
+    python_executable: Path | None = None,
+) -> bool | None:
+    match = re.search(r"No module named ['\"]([a-zA-Z0-9_\-\.]+)['\"]", error_output)
+    if not match:
+        return False
+    pkg = match.group(1).replace("_", "-").split(".")[0]
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", pkg):
+        _try_auto_install.last_result = "Execution failed: invalid package name in import error."
+        return False
+    from core.sandbox_runner import ensure_project_venv, run_sandboxed
+    python = python_executable or ensure_project_venv(project_dir)
+    receipt = run_sandboxed(
+        [str(python), "-m", "pip", "install", "--disable-pip-version-check",
+         "--no-input", pkg],
+        workspace=project_dir, timeout=120, network=True,
+        read_only_paths=[sys.base_prefix], prepend_paths=[python.parent],
+    )
+    _try_auto_install.last_result = _sandbox_output(receipt)
+    return receipt.returncode == 0
 
 
 _try_auto_install.last_result = ""
@@ -345,7 +453,7 @@ Fixed code for {fix_path}:"""
             response = model.generate_content(prompt)
             fixed = _strip_fences(response.text)
 
-            full_path = project_dir / fix_path
+            full_path = _safe_project_path(project_dir, fix_path)
             full_path.parent.mkdir(parents=True, exist_ok=True)
             full_path.write_text(fixed, encoding="utf-8")
 
@@ -375,7 +483,7 @@ def _build_project(
 
     log("Planning project structure...")
     try:
-        plan = _plan_project(description, language)
+        plan = _validate_project_plan(_plan_project(description, language))
     except RateLimitError:
         msg = "Rate limit reached, sir. Please try again in a moment."
         if speak: speak(msg)
@@ -389,6 +497,22 @@ def _build_project(
     proj_name    = re.sub(r"[^\w\-]", "_", proj_name)
     project_dir  = prepare_projects_dir() / proj_name
     project_dir.mkdir(parents=True, exist_ok=True)
+
+    # Prepare the native OS sandbox before any generated project code is executed.
+    # Failure is closed: the host shell is never used as a fallback.
+    try:
+        from core.sandbox_runner import ensure_project_venv, ensure_sandbox_ready
+        sandbox_python = ensure_project_venv(project_dir)
+        ensure_sandbox_ready()
+    except Exception as exc:
+        message = (
+            "Software Development Agent cannot start because the Rust sandbox "
+            f"is unavailable. No generated code was executed. {type(exc).__name__}: {exc}"
+        )
+        log(message)
+        if speak:
+            speak(message)
+        return message
 
     files        = plan.get("files", [])
     entry_point  = plan.get("entry_point", "main.py")
@@ -439,7 +563,7 @@ def _build_project(
         return msg
 
     if dependencies:
-        install_result = _install_dependencies(dependencies, project_dir)
+        install_result = _install_dependencies(dependencies, project_dir, sandbox_python)
         log(install_result)
         if stopped(install_result) or install_result.startswith("Execution failed"):
             return install_result
@@ -450,8 +574,27 @@ def _build_project(
     auto_installs = 0  
 
     for attempt in range(1, MAX_FIX_ATTEMPTS + 1):
+        # DevSecOps review runs locally before every generated-code execution,
+        # including after repair attempts. A critical credential finding blocks run.
+        from agents.devsecops import scan_project, format_report
+        try:
+            security_report = scan_project(project_dir)
+            security_text = format_report(security_report)
+            log(security_text)
+        except Exception as exc:
+            return (
+                "DevSecOps review failed; project execution was blocked. "
+                f"{type(exc).__name__}: {exc}"
+            )
+        if security_report["counts"]["critical"]:
+            return (
+                "DevSecOps blocked project execution because critical security "
+                "findings remain. Review the local report and remove the exposed "
+                "credential/private-key pattern before asking EDITH to run this project.\\n"
+                + security_text
+            )
         log(f"Running project (attempt {attempt}/{MAX_FIX_ATTEMPTS})...")
-        last_output = _run_project(run_command, project_dir, timeout)
+        last_output = _run_project(run_command, project_dir, timeout, sandbox_python)
         log(f"Output preview: {last_output[:150]}")
 
         if stopped(last_output):
@@ -471,9 +614,9 @@ def _build_project(
 
         error_type = _classify_error(last_output)
         if error_type == "dependency_error" and auto_installs < 3:
-            installed = _try_auto_install(last_output, project_dir)
+            installed = _try_auto_install(last_output, project_dir, sandbox_python)
             if installed is None:
-                return _try_auto_install.last_result or "Execution cancelled: dependency installation was not approved"
+                return _try_auto_install.last_result or "Execution failed: the isolated dependency install did not complete."
             if installed:
                 auto_installs += 1
                 log("Missing dependency installed, retrying...")
