@@ -1353,7 +1353,7 @@ class ApiKeyOverlay(QWidget):
                 False, provider, url, model, f"{type(exc).__name__}: {str(exc)[:180]}"
             )
 
-    def _finish_local_connection(    def _finish_local_connection(
+    def _finish_local_connection(
         self, ok: bool, provider: str, url: str, model: str, detail: str
     ):
         current_provider, current_url, current_model = self._refresh_local_llm_config()
