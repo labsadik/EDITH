@@ -2675,7 +2675,7 @@ class _RealtimeSearchTab(_ApiTabBase):
 
 
 class ApiProviderWorkspace(QWidget):
-    """Four-tab provider workspace for Voice, both Brain profiles and live search."""
+    """Three-tab provider workspace: Voice transport, one Powerful Brain, live search."""
 
     settings_saved = pyqtSignal()
     voice_saved = pyqtSignal()
