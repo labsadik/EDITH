@@ -1,0 +1,78 @@
+"""Build an onedir EDITH application bundle for the current operating system."""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+WINDOWS = os.name == "nt"
+BINARY = "edith-sandbox.exe" if WINDOWS else "edith-sandbox"
+SANDBOX = ROOT / "sandbox-rs" / "target" / "release" / BINARY
+
+if not SANDBOX.is_file():
+    raise SystemExit(
+        f"Missing native sandbox binary: {SANDBOX}. "
+        "Build it first with cargo build --release --manifest-path sandbox-rs/Cargo.toml"
+    )
+
+dist = ROOT / "dist"
+if dist.exists():
+    shutil.rmtree(dist)
+dist.mkdir(parents=True, exist_ok=True)
+
+sep = os.pathsep
+data = [
+    ("core/prompt.txt", "core"),
+    ("assets/hud_reference.mp4", "assets"),
+    ("config/mcp_servers.json", "config"),
+    ("agents/manifest.json", "agents"),
+    ("plugins", "plugins"),
+]
+for source, _destination in data:
+    if not (ROOT / source).exists():
+        raise SystemExit(f"Required EDITH resource is missing: {source}")
+
+args = [
+    sys.executable, "-m", "PyInstaller",
+    "--noconfirm", "--clean", "--onedir", "--windowed",
+    "--name", "EDITH",
+    "--distpath", str(dist),
+    "--workpath", str(ROOT / "build" / "pyinstaller"),
+    "--specpath", str(ROOT / "build"),
+    "--icon", str(ROOT / "config" / "assistant.ico"),
+]
+if WINDOWS:
+    args += ["--version-file", str(ROOT / "installer" / "windows" / "version_info.txt")]
+for source, destination in data:
+    args += ["--add-data", f"{ROOT / source}{sep}{destination}"]
+args += ["--add-binary", f"{SANDBOX}{sep}sandbox-rs/target/release"]
+
+# Keep importlib/plugin-discovered modules and Qt WebEngine runtime inside the
+# distributable. Per-user credentials are deliberately never bundled.
+for package in (
+    "PyQt6", "google.genai", "langchain_core", "langchain_text_splitters",
+    "langgraph", "lancedb", "paho.mqtt", "actions", "agents", "core",
+    "dashboard", "memory", "plugins", "edith", "tools",
+):
+    args += ["--collect-all", package]
+args += [
+    "--hidden-import", "google.genai.types",
+    "--hidden-import", "PyQt6.QtWebEngineCore",
+    "--hidden-import", "PyQt6.QtWebEngineWidgets",
+    "--hidden-import", "sounddevice",
+    "--hidden-import", "keyring",
+    str(ROOT / "main.py"),
+]
+subprocess.run(args, cwd=ROOT, check=True)
+
+if sys.platform == "darwin":
+    output = dist / "EDITH.app"
+else:
+    output = dist / "EDITH"
+if not output.exists():
+    raise SystemExit("PyInstaller did not produce the EDITH application bundle")
+print(f"Built {output} (version {VERSION})")
