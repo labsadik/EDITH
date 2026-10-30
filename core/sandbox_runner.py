@@ -20,6 +20,36 @@ _TOOL_NAMES = (
     "bash", "powershell", "pwsh", "ruby", "php", "ts-node",
 )
 
+# Conservative, named resource presets. Explicit per-run values may lower these
+# ceilings but cannot raise them; network remains denied unless separately opted in.
+SANDBOX_PROFILES = {
+    "safe": {"memory_mb": 512, "cpu_seconds": 30, "timeout": 45},
+    "standard": {"memory_mb": 2048, "cpu_seconds": 180, "timeout": 180},
+    "build": {"memory_mb": 4096, "cpu_seconds": 600, "timeout": 600},
+}
+
+
+def sandbox_profile_limits(
+    profile: str, *, timeout: int = 60, memory_mb: int | None = None,
+    cpu_seconds: int | None = None,
+) -> tuple[int, int, int]:
+    """Return (timeout, memory_mb, cpu_seconds) bounded by a named profile."""
+    name = str(profile or "standard").strip().lower()
+    if name not in SANDBOX_PROFILES:
+        raise ValueError(
+            f"Unknown sandbox profile '{name}'. Choose: "
+            + ", ".join(sorted(SANDBOX_PROFILES))
+        )
+    caps = SANDBOX_PROFILES[name]
+    run_timeout = max(1, min(int(timeout), int(caps["timeout"])))
+    memory = int(caps["memory_mb"]) if memory_mb is None else max(
+        64, min(int(memory_mb), int(caps["memory_mb"]))
+    )
+    requested_cpu = run_timeout if cpu_seconds is None else max(1, int(cpu_seconds))
+    cpu = max(1, min(requested_cpu, run_timeout, int(caps["cpu_seconds"])))
+    return run_timeout, memory, cpu
+
+
 
 class SandboxUnavailable(RuntimeError):
     """The native sandbox could not be built or its OS backend is unavailable."""
@@ -142,8 +172,9 @@ def run_sandboxed(
     read_only_paths: Sequence[str | Path] = (),
     prepend_paths: Sequence[str | Path] = (),
     input_data: str | None = None,
-    memory_mb: int = 2048,
+    memory_mb: int | None = None,
     cpu_seconds: int | None = None,
+    profile: str = "standard",
 ) -> subprocess.CompletedProcess[str]:
     """Run exact argv with workspace-only writes, clean child env and bounded time."""
     if not argv:
@@ -157,12 +188,14 @@ def run_sandboxed(
     if not root.is_dir():
         raise ValueError("Sandbox workspace must be an existing directory")
     binary = ensure_sandbox_ready()
-    limit = max(1, min(int(timeout), 3600))
+    limit, memory_limit, cpu_limit = sandbox_profile_limits(
+        profile, timeout=timeout, memory_mb=memory_mb, cpu_seconds=cpu_seconds
+    )
     command = [
         str(binary), "run", "--workspace", str(root),
         "--timeout", str(limit),
-        "--memory-mb", str(max(64, min(int(memory_mb), 8192))),
-        "--cpu-seconds", str(max(1, min(int(cpu_seconds if cpu_seconds is not None else limit), 3600))),
+        "--memory-mb", str(memory_limit),
+        "--cpu-seconds", str(cpu_limit),
         "--network", "allow" if network else "deny",
     ]
     exposed: set[str] = set()
@@ -212,6 +245,7 @@ def run_sandboxed(
 def run_project_command(
     command: str, *, workspace: str | Path, timeout: int = 60,
     network: bool = False, python_executable: str | Path | None = None,
+    profile: str = "standard",
 ) -> str:
     """Run a project command in the OS sandbox; there is no host-shell fallback."""
     requested_root = Path(workspace).expanduser()
@@ -240,7 +274,7 @@ def run_project_command(
     try:
         result = run_sandboxed(
             argv, workspace=root, timeout=timeout, network=network,
-            read_only_paths=readonly, prepend_paths=path_dirs,
+            read_only_paths=readonly, prepend_paths=path_dirs, profile=profile,
         )
     except SandboxUnavailable as exc:
         return (
@@ -256,6 +290,7 @@ def run_project_command(
 
 
 __all__ = [
-    "SandboxUnavailable", "ensure_project_venv", "ensure_sandbox_ready",
-    "run_project_command", "run_sandboxed", "sandbox_binary",
+    "SANDBOX_PROFILES", "SandboxUnavailable", "ensure_project_venv",
+    "ensure_sandbox_ready", "run_project_command", "run_sandboxed",
+    "sandbox_binary", "sandbox_profile_limits",
 ]

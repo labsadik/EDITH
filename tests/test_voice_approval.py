@@ -53,7 +53,8 @@ class VoiceApprovalIntegrationContracts(unittest.TestCase):
         self.assertIn("self._handle_busy_input", main)
         self.assertIn("new action was not queued", main)
         self.assertNotIn("await self._request_voice_approval", main)
-        self.assertNotIn("self.ui.confirm_sensitive_action", main)
+        self.assertIn("force_local_confirmation = requires_local_confirmation(name, args)", main)
+        self.assertIn("if force_local_confirmation:", main)
         self.assertIn('self.ui.write_log(f"ACTIVITY RUNNING: {activity_label}")', main)
         self.assertIn('"WORKING"', ui)
 

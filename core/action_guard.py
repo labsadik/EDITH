@@ -148,6 +148,16 @@ def confirmation_requirement(tool_name: str, parameters: dict | None = None) -> 
             f"Settings: {preview}. Confirm only if this is the intended device and state change."
         )
 
+    if name == "smart_network" and action == "mqtt_publish":
+        topic = _text(p.get("topic") or "unspecified paired MQTT topic", 160)
+        payload = str(p.get("payload") or "")
+        preview = payload if len(payload) <= 600 else payload[:600] + "…"
+        return (
+            f"Publish to the paired MQTT topic '{topic}'?\n\n"
+            f"Payload preview:\n{preview or '[No payload]'}\n\n"
+            "This write is non-retained and uses QoS 1. Confirm only if this exact topic and payload are intended."
+        )
+
     if name == "knowledge_base" and action == "index_file":
         target = _text(p.get("file_path") or "the selected local document", 140)
         return (

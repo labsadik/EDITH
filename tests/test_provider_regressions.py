@@ -16,6 +16,10 @@ def _response(payload, status=200):
 
 
 class ProviderRegressionTests(unittest.TestCase):
+    def test_voice_probe_allows_selected_gender_preset(self):
+        import inspect
+        self.assertIn("voice_name", inspect.signature(providers.probe_voice_provider).parameters)
+
     def test_ollama_probe_disables_thinking_and_reads_final_content(self):
         response = _response({"message": {"thinking": "private reasoning", "content": "OK"}})
         with patch.object(providers.requests, "post", return_value=response) as post:

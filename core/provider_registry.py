@@ -447,7 +447,10 @@ def list_voice_models(api_key: str) -> list[str]:
         raise RuntimeError(f"Voice model list failed: {type(exc).__name__}: {detail[:160]}") from exc
 
 
-def probe_voice_provider(provider: str, model: str, api_key: str, timeout: float = 22.0) -> dict[str, Any]:
+def probe_voice_provider(
+    provider: str, model: str, api_key: str, timeout: float = 22.0,
+    voice_name: str = "Kore",
+) -> dict[str, Any]:
     started = time.perf_counter()
     try:
         if str(provider) != "gemini_live":
@@ -463,7 +466,7 @@ def probe_voice_provider(provider: str, model: str, api_key: str, timeout: float
                 response_modalities=["AUDIO"],
                 speech_config=types.SpeechConfig(
                     voice_config=types.VoiceConfig(
-                        prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Kore")
+                        prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=str(voice_name or "Kore"))
                     )
                 ),
             )
@@ -489,7 +492,7 @@ def probe_voice_provider(provider: str, model: str, api_key: str, timeout: float
         ok = asyncio.run(asyncio.wait_for(_probe(), timeout=timeout))
         if not ok:
             raise RuntimeError("Live session opened but the model returned no output")
-        return {"ok": True, "provider": provider, "model": model,
+        return {"ok": True, "provider": provider, "model": model, "voice": str(voice_name or "Kore"),
                 "latency_ms": int((time.perf_counter() - started) * 1000), "error": None}
     except Exception as exc:
         detail = str(exc).replace(str(api_key or ""), "[REDACTED]")

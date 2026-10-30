@@ -37,11 +37,18 @@ def operation_tier(operation, arguments=None):
         return 1
     return 2
 
+def requires_local_confirmation(operation, arguments):
+    """Smart-device writes always require an interactive owner approval, even unattended."""
+    name = str(operation or "").strip().lower()
+    action = str((arguments or {}).get("action") or "").strip().lower()
+    return name == "smart_network" and action in {"control", "mqtt_publish"}
+
+
 def tool_tier(name, args):
     action = str(args.get('action') or '').lower().replace('-','_')
     if name == 'smart_network':
-        if action in {'discover', 'status', 'entities', 'read', ''}: return 0
-        if action == 'control': return 2
+        if action in {'discover', 'status', 'entities', 'read', 'mqtt_status', 'mqtt_read', ''}: return 0
+        if action in {'control', 'mqtt_publish'}: return 2
         return 2
     if name in {'device_security', 'devsecops_audit'}: return 0
     if name == 'project_manager':

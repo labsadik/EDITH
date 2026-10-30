@@ -85,7 +85,7 @@ from core.plugin_loader        import discover_plugins
 from core.action_activity      import describe_tool_activity, activity_outcome
 from core.action_guard         import confirmation_requirement
 from edith.platform.audit      import redact
-from edith.platform.permissions import ActionCancelled, PermissionDenied, tool_tier
+from edith.platform.permissions import ActionCancelled, PermissionDenied, requires_local_confirmation, tool_tier
 from core.realtime_audio      import enqueue_latest_audio
 from core.narration_audio     import SpeechBuffer, SpeechPlayer
 from core.live_audio import response_pcm
@@ -444,6 +444,7 @@ TOOL_DECLARATIONS = [
             "type": "OBJECT",
             "properties": {
                 "action":      {"type": "STRING", "description": "go_to | search | click | type | scroll | fill_form | smart_click | smart_type | get_text | get_url | press | new_tab | close_tab | screenshot | back | forward | reload | switch | list_browsers | close | close_all"},
+                "fields": {"type": "OBJECT", "description": "CSS selector to value map for fill_form; up to 20 fields."},
                 "browser":     {"type": "STRING", "description": "Target browser: chrome | edge | firefox | opera | operagx | brave | vivaldi | safari. Omit to use the currently active browser."},
                 "mode":        {"type": "STRING", "enum": ["external", "embedded"], "description": "Use embedded for EDITH's persistent inbuilt browser; external for Playwright/browser sessions."},
                 "url":         {"type": "STRING", "description": "URL for go_to / new_tab action"},
@@ -652,9 +653,9 @@ TOOL_DECLARATIONS = [
     },
     {
         "name": "smart_network",
-        "description": "Discovers OS-known local network neighbors and reads or controls entities on the user's paired Home Assistant instance. Actions: discover, status, entities, read, control. Control is limited to allowlisted light, switch, climate, cover and scene services; local confirmation is required for every write. Never scan, log in to or control unpaired devices.",
+        "description": "Lists OS-known LAN neighbors without scanning; reads or controls paired Home Assistant entities; and reads/publishes only exact MQTT topics paired locally by the owner. All smart-device writes require local confirmation. Never scan, log in to or control unpaired devices or unapproved topics.",
         "parameters": {"type": "OBJECT", "properties": {
-            "action": {"type": "STRING", "enum": ["discover", "status", "entities", "read", "control"]},
+            "action": {"type": "STRING", "enum": ["discover", "status", "entities", "read", "control", "mqtt_status", "mqtt_read", "mqtt_publish"]},
             "entity_id": {"type": "STRING", "description": "Exact paired Home Assistant entity id such as light.living_room."},
             "service": {"type": "STRING", "description": "Allowlisted service such as light.turn_on, switch.turn_off, climate.set_temperature."},
             "service_data": {"type": "OBJECT", "properties": {
@@ -663,7 +664,9 @@ TOOL_DECLARATIONS = [
                 "transition": {"type": "NUMBER"}, "temperature": {"type": "NUMBER"},
                 "hvac_mode": {"type": "STRING"}, "position": {"type": "NUMBER"},
                 "tilt_position": {"type": "NUMBER"}
-            }, "description": "Only these validated Home Assistant service values are accepted."}
+            }, "description": "Only these validated Home Assistant service values are accepted."},
+            "topic": {"type": "STRING", "description": "Exact MQTT topic from the owner's local allowlist."},
+            "payload": {"type": "STRING", "description": "UTF-8 payload, maximum 4 KB; published non-retained with QoS 1."}
         }, "required": ["action"]}
     },
     {
@@ -1207,17 +1210,19 @@ class EdithLive:
     def _on_text_command(self, text: str) -> bool:
         """Queue text input; tell Qt whether it is safe to clear the draft."""
         from core.voice_intent import requested_voice_mode
+        # Voice presets are local configuration, so a direct request must still
+        # be saved while Gemini Live is reconnecting or temporarily offline.
+        # Ordinary chat commands still require an active Live session.
+        mode = requested_voice_mode(text)
+        if mode:
+            self._request_voice_mode_from_ui(mode)
+            return True
         if not self._loop or not self._loop.is_running() or not self.session:
             self.ui.write_log("NET: Gemini Live is not connected; command kept for retry.")
             return False
         if getattr(self, "_task_input_locked", False):
             # An active batch accepts only an interrupt; discard new tasks.
             self._loop.call_soon_threadsafe(self._handle_busy_input, text, "text")
-            return True
-        mode = requested_voice_mode(text)
-        if mode:
-            # Switch directly instead of relying on Gemini to remember to call a tool.
-            self._request_voice_mode_from_ui(mode)
             return True
         self._recent_voice_intent = None
         self._response_pending = True
@@ -1504,7 +1509,10 @@ class EdithLive:
                 self.ui.set_state("LISTENING")
             return _completed(types.FunctionResponse(id=fc.id, name=name, response={"result": result}))
 
+        force_local_confirmation = requires_local_confirmation(name, args)
         confirmation_reason = confirmation_requirement(name, args)
+        if force_local_confirmation and not confirmation_reason:
+            confirmation_reason = f"Confirm this exact {args.get('action')} operation on the paired smart-device network."
         if backend_tier >= 2 and not confirmation_reason:
             confirmation_reason = f"Tier {backend_tier} operation '{name}'"
         close_confirmation = bool(
@@ -1585,7 +1593,19 @@ class EdithLive:
         if confirmation_reason:
             self.ui.write_log(f"ACTIVITY RUNNING: {activity_label}")
             try:
-                EXECUTION.broker.authorize(name, args, minimum=backend_tier)
+                if force_local_confirmation:
+                    confirmed = await asyncio.to_thread(
+                        self.ui.confirm_sensitive_action,
+                        f"Tier {backend_tier} · Review {name}",
+                        confirmation_reason,
+                    )
+                    if not confirmed:
+                        raise PermissionDenied("Cancelled or expired; nothing was executed")
+                    EXECUTION.broker.authorize(
+                        name, args, minimum=backend_tier, preapproved=True
+                    )
+                else:
+                    EXECUTION.broker.authorize(name, args, minimum=backend_tier)
             except (PermissionDenied, ActionCancelled) as exc:
                 result = f"Action could not start. ({exc})"
                 if not self.ui.muted:
@@ -1664,10 +1684,21 @@ class EdithLive:
                         }
                         engine = str(args.get("engine") or "google").lower()
                         target = engines.get(engine, engines["google"]) + quote(str(args.get("query") or ""))
-                    else:
+                        receipt = await asyncio.to_thread(
+                            self.ui.execute_embedded_browser_action, "go_to", {"url": target}
+                        )
+                        result = json.dumps(receipt, ensure_ascii=False) if isinstance(receipt, dict) else str(receipt)
+                    elif action in {"go_to", "goto"}:
                         target = str(args.get("url") or "about:blank")
-                    self.ui.open_embedded_browser(target)
-                    result = f"Opened EDITH's embedded browser: {target}"
+                        receipt = await asyncio.to_thread(
+                            self.ui.execute_embedded_browser_action, "go_to", {"url": target}
+                        )
+                        result = json.dumps(receipt, ensure_ascii=False) if isinstance(receipt, dict) else str(receipt)
+                    else:
+                        receipt = await asyncio.to_thread(
+                            self.ui.execute_embedded_browser_action, action, args
+                        )
+                        result = json.dumps(receipt, ensure_ascii=False) if isinstance(receipt, dict) else str(receipt)
                 else:
                     r = await loop.run_in_executor(None, lambda: browser_control(parameters=args, player=self.ui))
                     result = r or "Done."
@@ -1833,6 +1864,8 @@ class EdithLive:
                     str(args.get("entity_id") or ""),
                     str(args.get("service") or ""),
                     args.get("service_data") if isinstance(args.get("service_data"), dict) else {},
+                    str(args.get("topic") or ""),
+                    str(args.get("payload") or ""),
                 )
                 self.ui.show_content("SMART HOME / LOCAL NETWORK", result)
 
