@@ -115,6 +115,15 @@ BASE_DIR        = get_base_dir()
 API_CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
 PROMPT_PATH     = BASE_DIR / "core" / "prompt.txt"
 LIVE_MODEL          = "models/gemini-2.5-flash-native-audio-preview-12-2025"
+
+
+def _get_live_voice_model() -> str:
+    """Read the selected Voice model; preserve the current Live default."""
+    try:
+        from core.provider_registry import load_voice_settings
+        return load_voice_settings(API_CONFIG_PATH)["model"] or LIVE_MODEL
+    except Exception:
+        return LIVE_MODEL
 VOICE_PRESETS       = {"female": "Kore", "male": "Orus"}
 CHANNELS            = 1
 SEND_SAMPLE_RATE    = 16000
@@ -2378,7 +2387,7 @@ class EdithLive:
                 )
 
                 async with (
-                    client.aio.live.connect(model=LIVE_MODEL, config=config) as session,
+                    client.aio.live.connect(model=_get_live_voice_model(), config=config) as session,
                     asyncio.TaskGroup() as tg,
                 ):
                     self.session          = session
