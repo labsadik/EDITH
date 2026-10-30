@@ -4,6 +4,9 @@ import sys
 import threading
 import time
 from core.secrets import get_gemini_api_key
+from core.provider_registry import (
+    load_realtime_search_settings, realtime_search_api_key, run_realtime_search,
+)
 from pathlib import Path
 
 # ── Gemini grounding quota circuit breaker ────────────────────────────────────
@@ -198,6 +201,36 @@ def _format_news(query: str, results: list[dict]) -> str:
         lines.append("")
     return "\n".join(lines).strip()
 
+def _configured_realtime_results(query: str, max_results: int = 6) -> list[dict] | None:
+    """Use the user's selected paid real-time search API when it is configured."""
+    try:
+        settings = load_realtime_search_settings(API_CONFIG_PATH)
+        provider = settings["provider"]
+        key = realtime_search_api_key(provider, API_CONFIG_PATH)
+        if not key:
+            return None
+        return run_realtime_search(provider, query, key, max_results=max_results, timeout=12.0)
+    except Exception as exc:
+        # A provider outage must not disable the existing search fallbacks.
+        print(f"[WebSearch] Configured real-time provider unavailable ({type(exc).__name__}); using fallback.")
+        return None
+
+
+def _format_realtime(query: str, results: list[dict], heading: str = "Real-time search results") -> str:
+    if not results:
+        return f"No results found for: {query}"
+    lines = [f"{heading}: {query}\n"]
+    for i, item in enumerate(results, 1):
+        if item.get("title"):
+            lines.append(f"{i}. {item['title']}")
+        if item.get("snippet"):
+            lines.append(f"   {item['snippet'][:240]}")
+        if item.get("url"):
+            lines.append(f"   Source: {item['url']}")
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
 
 # ── Briefing helper ────────────────────────────────────────────────────────────
 
@@ -241,7 +274,10 @@ def _gemini_headlines(n: int = 5) -> tuple[list[str], str]:
 # ── Modes ──────────────────────────────────────────────────────────────────────
 
 def _search(query: str) -> str:
-    """Default search — Gemini grounded, DDG fallback."""
+    """Prefer the configured real-time API; retain Gemini and DDG fallbacks."""
+    realtime = _configured_realtime_results(query)
+    if realtime:
+        return _format_realtime(query, realtime)
     try:
         return _gemini_search(query)
     except Exception as e:
@@ -268,6 +304,10 @@ def _news(query: str) -> str:
     gemini_query = f"latest news today: {query}" if query else "top world news today"
     ddg_query    = query if query else "world news today"
 
+    realtime = _configured_realtime_results(gemini_query, max_results=8)
+    if realtime:
+        return _format_realtime(gemini_query, realtime, "Latest real-time news")
+
     def _ddg_attempt() -> str:
         return _format_news(ddg_query, _ddg_news(ddg_query, max_results=8))
 
@@ -293,6 +333,9 @@ def _research(query: str) -> str:
         f"Comprehensive, detailed explanation of: {query}. "
         "Include background context, key facts, current state, and important nuances."
     )
+    realtime = _configured_realtime_results(research_query, max_results=10)
+    if realtime:
+        return _format_realtime(query, realtime, "Real-time research sources")
     try:
         return _gemini_search(research_query)
     except Exception as e:
@@ -304,6 +347,9 @@ def _research(query: str) -> str:
 def _price(query: str) -> str:
     """Product price lookup — searches for current market prices."""
     price_query = f"current price of {query} — how much does it cost today"
+    realtime = _configured_realtime_results(price_query, max_results=6)
+    if realtime:
+        return _format_realtime(query, realtime, "Current price sources")
     try:
         return _gemini_search(price_query)
     except Exception as e:
@@ -325,7 +371,9 @@ def _compare(items: list[str], aspect: str) -> str:
     all_results: dict[str, list] = {}
     for item in items:
         try:
-            all_results[item] = _ddg_search(f"{item} {aspect}", max_results=3)
+            query = f"{item} {aspect}"
+            live = _configured_realtime_results(query, max_results=3)
+            all_results[item] = live if live else _ddg_search(query, max_results=3)
         except Exception:
             all_results[item] = []
 

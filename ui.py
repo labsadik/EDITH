@@ -75,9 +75,9 @@ class C:
     BG        = "#0A0F18"
     PANEL     = "#141C29"
     PANEL2    = "#1D2939"
-    BORDER    = "#2C3A4D"
-    BORDER_B  = "#43566F"
-    BORDER_A  = "#657C97"
+    BORDER    = "#1B2533"
+    BORDER_B  = "#29374A"
+    BORDER_A  = "#36485E"
     PRI       = "#B39AFB"
     PRI_DIM   = "#987FE4"
     PRI_GHO   = "#392C5B"
@@ -124,7 +124,7 @@ _THEME_DEFAULTS = {
     "dark": {key: getattr(C, key) for key in _THEME_COLOR_KEYS},
     "light": {
         "BG": "#EEF1F7", "PANEL": "#F8F9FC", "PANEL2": "#EEF0F7",
-        "BORDER": "#D7DCE7", "BORDER_B": "#B8C1D1", "BORDER_A": "#8D9BB0",
+        "BORDER": "#E7ECF3", "BORDER_B": "#D8E0EB", "BORDER_A": "#C4CFDE",
         "PRI": "#7156C8", "PRI_DIM": "#806BD0", "PRI_GHO": "#E9E2FB",
         "ACC": "#26769F", "ACC2": "#946018", "GREEN": "#187A60",
         "GREEN_D": "#246D58", "RED": "#BD4057", "MUTED_C": "#BD4057",
@@ -147,66 +147,11 @@ _THEME_DEFAULTS = {
     },
 }
 
-# Accent affects the cyan family only; status colours retain their semantic role.
-_HUE_LINKED = (
-    "BG", "PANEL", "PANEL2", "BORDER", "BORDER_B", "BORDER_A",
-    "PRI", "PRI_DIM", "PRI_GHO", "TEXT", "TEXT_DIM", "TEXT_MED",
-    "WHITE", "DARK", "BAR_BG",
-)
-_PALETTE_DEFAULTS: dict[str, str] = dict(_THEME_DEFAULTS["dark"])
-
-DEFAULT_UI_COLOR = _PALETTE_DEFAULTS["PRI"]
-
-
-def apply_ui_accent(accent_hex: str) -> bool:
-    """
-    Seçilen accent rengine göre tüm turkuaz-ailesi paleti yeniden türetir
-    (hue kaydırma — parlaklık/doygunluk oranları korunur, tasarım bozulmaz).
-    Boyanan öğeler (HUD, dalga formu, metrikler) bir sonraki karede yeni
-    rengi alır; stylesheet tabanlı paneller yeniden kurulduklarında alır.
-    """
-    import colorsys
-
-    accent_hex = (accent_hex or "").strip().lower()
-    if not (accent_hex.startswith("#") and len(accent_hex) == 7):
-        return False
-    try:
-        int(accent_hex[1:], 16)
-    except ValueError:
-        return False
-
-    def _hsv(h: str) -> tuple[float, float, float]:
-        r = int(h[1:3], 16) / 255
-        g = int(h[3:5], 16) / 255
-        b = int(h[5:7], 16) / 255
-        return colorsys.rgb_to_hsv(r, g, b)
-
-    base_h            = _hsv(_PALETTE_DEFAULTS["PRI"])[0]
-    acc_h, acc_s, _av = _hsv(accent_hex)
-    dh   = acc_h - base_h
-    grey = acc_s < 0.08   # griye yakın accent → tüm tema desaturize edilir
-
-    for key in _HUE_LINKED:
-        hex0 = _PALETTE_DEFAULTS[key]
-        h, s, v = _hsv(hex0)
-        if grey:
-            s *= 0.15
-        r, g, b = colorsys.hsv_to_rgb((h + dh) % 1.0, s, v)
-        setattr(C, key, "#{:02x}{:02x}{:02x}".format(
-            int(r * 255 + 0.5), int(g * 255 + 0.5), int(b * 255 + 0.5)))
-    return True
-
-
-def apply_ui_theme(theme: str, accent_hex: str = "") -> str:
-    """Set the base palette, then reapply the optional persisted accent."""
+def apply_ui_theme(theme: str) -> str:
+    """Apply the selected system palette without user-defined accent overrides."""
     resolved = normalise_theme(theme)
-    defaults = _THEME_DEFAULTS[resolved]
-    for key, value in defaults.items():
+    for key, value in _THEME_DEFAULTS[resolved].items():
         setattr(C, key, value)
-    _PALETTE_DEFAULTS.clear()
-    _PALETTE_DEFAULTS.update(defaults)
-    if accent_hex and accent_hex.strip().lower() != DEFAULT_UI_COLOR.lower():
-        apply_ui_accent(accent_hex)
     return resolved
 
 
@@ -1936,6 +1881,890 @@ class ProviderSettingsOverlay(QWidget):
             self.hide()
 
 
+
+
+class _ApiTabBase(QWidget):
+    """Shared quiet surface, field and feedback helpers for API provider tabs."""
+
+    def _init_surface(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(f"""
+            QWidget {{ background: transparent; color: {C.TEXT}; }}
+            QLabel {{ background: transparent; }}
+        """)
+
+    def _create_scroll_form(self) -> QVBoxLayout:
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet(f"""
+            QScrollArea {{ background: transparent; border: 0; }}
+            QScrollBar:vertical {{ background: transparent; width: 7px; margin: 4px 0; }}
+            QScrollBar::handle:vertical {{ background: {C.BORDER_B}; border-radius: 3px; min-height: 26px; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+        """)
+        body = QWidget()
+        body.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(20, 20, 20, 18)
+        layout.setSpacing(12)
+        scroll.setWidget(body)
+        root.addWidget(scroll, 1)
+        return layout
+
+    @staticmethod
+    def _field_style() -> str:
+        return f"""
+            QLineEdit, QComboBox {{
+                background: {C.INPUT}; color: {C.TEXT};
+                border: 1px solid {C.BORDER}; border-radius: 11px;
+                padding: 9px 12px; min-height: 22px;
+                selection-background-color: {C.PRI_GHO};
+            }}
+            QLineEdit:focus, QComboBox:focus {{ border: 1px solid {C.PRI_DIM}; }}
+            QComboBox::drop-down {{ border: 0; width: 28px; }}
+            QComboBox QAbstractItemView {{
+                background: {C.PANEL}; color: {C.TEXT};
+                border: 0; selection-background-color: {C.PRI_GHO};
+                outline: 0; padding: 5px;
+            }}
+        """
+
+    @staticmethod
+    def _label(text: str) -> QLabel:
+        label = QLabel(text.upper())
+        label.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+        label.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        return label
+
+    @staticmethod
+    def _button(text: str, primary: bool = False) -> QPushButton:
+        button = QPushButton(text)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setMinimumHeight(40)
+        button.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+        if primary:
+            button.setStyleSheet(f"""
+                QPushButton {{ background: {C.PRI}; color: {C.DARK};
+                               border: 0; border-radius: 11px; padding: 0 17px; }}
+                QPushButton:hover {{ background: {C.PRI_DIM}; }}
+                QPushButton:disabled {{ background: {C.PANEL2}; color: {C.TEXT_DIM}; }}
+            """)
+        else:
+            button.setStyleSheet(f"""
+                QPushButton {{ background: {C.PANEL2}; color: {C.TEXT_MED};
+                               border: 0; border-radius: 11px; padding: 0 15px; }}
+                QPushButton:hover {{ background: {C.HOVER}; color: {C.TEXT}; }}
+                QPushButton:disabled {{ color: {C.TEXT_DIM}; }}
+            """)
+        return button
+
+    def _set_status(self, text: str, tone: str = "neutral") -> None:
+        palette = {"success": C.GREEN, "error": C.RED, "warning": C.ACC2,
+                   "neutral": C.TEXT_DIM, "working": C.PRI}
+        self._status.setText(text)
+        self._status.setStyleSheet(f"color: {palette.get(tone, C.TEXT_DIM)}; background: transparent;")
+
+    @staticmethod
+    def _secret_preview(key: str) -> str:
+        if not key:
+            return "No saved key"
+        return f"Saved key available · ending {key[-4:]}"
+
+
+class _ProviderProfileTab(_ApiTabBase):
+    """Account-aware provider/model/key setup for Main Brain or Powerful Brain."""
+
+    saved = pyqtSignal()
+    _models_result = pyqtSignal(object)
+    _test_result = pyqtSignal(object)
+
+    _PROVIDERS = (
+        ("Ollama · Local", "ollama"),
+        ("OpenAI", "openai"),
+        ("Anthropic Claude", "anthropic"),
+        ("Groq", "groq"),
+        ("xAI · Grok", "xai"),
+        ("OpenAI-compatible local server", "openai_compatible"),
+    )
+
+    def __init__(self, profile: str, parent=None):
+        super().__init__(parent)
+        self.profile = profile
+        self._tested_signature = None
+        self._loading_models = False
+        self._key_revealed = False
+        self._previous_provider: str | None = None
+
+        layout = self._create_scroll_form()
+
+        title_row = QHBoxLayout()
+        icon = QLabel()
+        icon.setFixedSize(36, 36)
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon.setPixmap(svg_icon("brain-circuit" if profile == "main" else "cpu", C.PRI).pixmap(QSize(21, 21)))
+        icon.setStyleSheet(f"background: {C.PANEL2}; border-radius: 12px;")
+        title_row.addWidget(icon)
+        title_col = QVBoxLayout()
+        title_col.setSpacing(2)
+        title = QLabel("Main reasoning model" if profile == "main" else "High-capability reasoning model")
+        title.setFont(QFont(FONT_MAIN, 12, QFont.Weight.Bold))
+        title_col.addWidget(title)
+        hint = QLabel("Select provider, load its available models, test the exact setup, then save.")
+        hint.setWordWrap(True)
+        hint.setFont(QFont(FONT_MAIN, 8))
+        hint.setStyleSheet(f"color: {C.TEXT_DIM};")
+        title_col.addWidget(hint)
+        title_row.addLayout(title_col, 1)
+        layout.addLayout(title_row)
+
+        if profile == "powerful":
+            self._inherit_note = QLabel("Powerful Brain currently follows Main Brain until you save its own profile.")
+            self._inherit_note.setWordWrap(True)
+            self._inherit_note.setFont(QFont(FONT_MAIN, 8))
+            self._inherit_note.setStyleSheet(f"color: {C.ACC2}; background: {C.PANEL2}; border-radius: 9px; padding: 8px 10px;")
+            self._inherit_note.setVisible(not __import__("core.provider_registry", fromlist=["has_provider_profile"]).has_provider_profile(API_FILE, "powerful"))
+            layout.addWidget(self._inherit_note)
+
+        layout.addWidget(self._label("Provider"))
+        self._provider = QComboBox()
+        for label_text, identifier in self._PROVIDERS:
+            self._provider.addItem(label_text, identifier)
+        self._provider.setAccessibleName(f"{profile.title()} Brain API provider")
+        self._provider.setFixedHeight(42)
+        self._provider.setStyleSheet(self._field_style())
+        layout.addWidget(self._provider)
+
+        layout.addWidget(self._label("API endpoint"))
+        self._url = QLineEdit()
+        self._url.setFixedHeight(42)
+        self._url.setStyleSheet(self._field_style())
+        layout.addWidget(self._url)
+
+        layout.addWidget(self._label("API key"))
+        key_row = QHBoxLayout()
+        key_row.setSpacing(8)
+        self._key = QLineEdit()
+        self._key.setEchoMode(QLineEdit.EchoMode.Password)
+        self._key.setPlaceholderText("Paste provider API key · not written to logs")
+        self._key.setFixedHeight(42)
+        self._key.setStyleSheet(self._field_style())
+        key_row.addWidget(self._key, 1)
+        self._reveal = self._button("")
+        self._reveal.setAccessibleName(f"Preview {profile} Brain API key")
+        self._reveal.setToolTip("Show or hide saved API key")
+        self._reveal.setIcon(svg_icon("eye", C.TEXT_DIM))
+        self._reveal.setIconSize(QSize(18, 18))
+        self._reveal.setFixedSize(44, 42)
+        self._reveal.clicked.connect(self._toggle_reveal)
+        key_row.addWidget(self._reveal)
+        layout.addLayout(key_row)
+        self._key_hint = QLabel("No saved key")
+        self._key_hint.setFont(QFont(FONT_MAIN, 8))
+        self._key_hint.setStyleSheet(f"color: {C.TEXT_DIM};")
+        layout.addWidget(self._key_hint)
+
+        layout.addWidget(self._label("Model"))
+        model_row = QHBoxLayout()
+        model_row.setSpacing(8)
+        self._model = QComboBox()
+        self._model.setEditable(True)
+        self._model.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._model.setAccessibleName(f"{profile.title()} Brain model")
+        self._model.setFixedHeight(42)
+        self._model.setStyleSheet(self._field_style())
+        model_row.addWidget(self._model, 1)
+        self._refresh_btn = self._button("LOAD MODELS")
+        self._refresh_btn.setToolTip("Fetch models currently available to this provider API key")
+        self._refresh_btn.clicked.connect(self._refresh_models)
+        model_row.addWidget(self._refresh_btn)
+        layout.addLayout(model_row)
+
+        self._status = QLabel("Choose a model. Save is enabled only after a successful live test.")
+        self._status.setWordWrap(True)
+        self._status.setMinimumHeight(34)
+        self._status.setFont(QFont(FONT_MAIN, 8))
+        self._status.setStyleSheet(f"color: {C.TEXT_DIM};")
+        layout.addWidget(self._status)
+
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+        self._test_btn = self._button("TEST CONNECTION")
+        self._save_btn = self._button("SAVE / UPDATE", primary=True)
+        self._test_btn.clicked.connect(self._test_connection)
+        self._save_btn.clicked.connect(self._save_profile)
+        self._save_btn.setEnabled(False)
+        actions.addWidget(self._test_btn)
+        actions.addWidget(self._save_btn)
+        layout.addLayout(actions)
+        layout.addStretch(1)
+
+        self._models_result.connect(self._finish_models)
+        self._test_result.connect(self._finish_test)
+        self._provider.currentIndexChanged.connect(self._provider_changed)
+        self._url.textChanged.connect(self._invalidate)
+        self._key.textChanged.connect(self._on_key_changed)
+        self._model.currentTextChanged.connect(self._invalidate)
+        self._load_current()
+
+    def _signature(self):
+        return (str(self._provider.currentData() or ""),
+                self._url.text().strip().rstrip("/"),
+                self._model.currentText().strip(),
+                self._key.text().strip())
+
+    def _invalidate(self, *_args):
+        self._tested_signature = None
+        self._save_btn.setEnabled(False)
+        if hasattr(self, "_status") and self._status.text().startswith("TEST PASSED"):
+            self._set_status("Settings changed. Test this exact provider, key and model again.", "warning")
+
+    def _on_key_changed(self, *_args):
+        self._key_hint.setText("Unsaved key changes · test before saving")
+        self._invalidate()
+
+    def _toggle_reveal(self):
+        self._key_revealed = not self._key_revealed
+        self._key.setEchoMode(QLineEdit.EchoMode.Normal if self._key_revealed else QLineEdit.EchoMode.Password)
+        self._reveal.setIcon(svg_icon("eye-off" if self._key_revealed else "eye", C.TEXT_DIM))
+        self._reveal.setToolTip("Hide API key" if self._key_revealed else "Preview API key")
+
+    def _load_current(self):
+        from core.provider_registry import load_provider_settings, provider_api_key
+        settings = load_provider_settings(API_FILE, self.profile)
+        self._provider.blockSignals(True)
+        self._provider.setCurrentIndex(max(0, self._provider.findData(settings["provider"])))
+        self._provider.blockSignals(False)
+        self._url.setText(settings["url"])
+        self._model.clear()
+        self._model.addItem(settings["model"])
+        self._model.setCurrentText(settings["model"])
+        key = provider_api_key(settings["provider"], API_FILE, self.profile) or ""
+        self._key.blockSignals(True)
+        self._key.setText(key)
+        self._key.blockSignals(False)
+        self._key_hint.setText(self._secret_preview(key))
+        self._previous_provider = settings["provider"]
+        self._provider_changed()
+
+    def _provider_changed(self, *_args):
+        from core.provider_registry import provider_spec, provider_api_key
+        provider = str(self._provider.currentData() or "ollama")
+        spec = provider_spec(provider)
+        if provider != self._previous_provider:
+            self._url.setText(spec.default_url)
+            self._model.blockSignals(True)
+            self._model.clear()
+            self._model.addItem(spec.default_model)
+            self._model.setCurrentText(spec.default_model)
+            self._model.blockSignals(False)
+            self._previous_provider = provider
+        saved_key = provider_api_key(provider, API_FILE, self.profile) or ""
+        self._key.blockSignals(True)
+        self._key.setText(saved_key)
+        self._key.blockSignals(False)
+        self._key_hint.setText(self._secret_preview(saved_key))
+        self._model.setEnabled(True)
+        self._refresh_btn.setEnabled(True)
+        self._key.setPlaceholderText("Not required for this local provider" if not spec.secret_name
+                                     else f"Paste {spec.label} API key")
+        self._invalidate()
+        if self._key_revealed:
+            self._key.setEchoMode(QLineEdit.EchoMode.Password)
+            self._key_revealed = False
+            self._reveal.setIcon(svg_icon("eye", C.TEXT_DIM))
+
+    def _refresh_models(self):
+        from core.provider_registry import list_provider_models
+        signature = self._signature()
+        provider, url, _model, key = signature
+        if provider not in {"ollama", "openai_compatible"} and not key:
+            self._set_status("Paste this provider's API key before loading its model list.", "warning")
+            return
+        if self._loading_models:
+            return
+        self._loading_models = True
+        self._refresh_btn.setEnabled(False)
+        self._set_status("Loading models available to this API key…", "working")
+
+        def worker():
+            try:
+                models = list_provider_models(provider, url, key or None)
+                self._models_result.emit({"signature": signature, "models": models, "error": None})
+            except Exception as exc:
+                self._models_result.emit({"signature": signature, "models": [], "error": str(exc)})
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_models(self, payload):
+        self._loading_models = False
+        self._refresh_btn.setEnabled(True)
+        loaded = payload.get("signature") or ("", "", "", "")
+        current_signature = self._signature()
+        if (loaded[0], loaded[1], loaded[3]) != (
+            current_signature[0], current_signature[1], current_signature[3]
+        ):
+            self._set_status("Provider, endpoint or key changed while models were loading. Load again.", "warning")
+            return
+        if payload.get("error"):
+            self._set_status(payload["error"], "error")
+            return
+        current = self._model.currentText().strip()
+        self._model.blockSignals(True)
+        self._model.clear()
+        self._model.addItems(payload["models"])
+        if current and current not in payload["models"]:
+            self._model.addItem(current)
+        self._model.setCurrentText(current if current else payload["models"][0])
+        self._model.blockSignals(False)
+        self._invalidate()
+        self._set_status(f"Loaded {len(payload['models'])} available model(s) from {self._provider.currentText()}.", "success")
+
+    def _test_connection(self):
+        from core.provider_registry import probe_provider
+        signature = self._signature()
+        provider, url, model, key = signature
+        if not url or not model:
+            self._set_status("Choose a provider, endpoint and model first.", "warning")
+            return
+        spec_has_key = provider not in {"ollama", "openai_compatible"}
+        if spec_has_key and not key:
+            self._set_status("Paste the provider API key before testing.", "warning")
+            return
+        self._test_btn.setEnabled(False)
+        self._save_btn.setEnabled(False)
+        self._set_status("Testing the selected model with a live request…", "working")
+
+        def worker():
+            result = probe_provider(provider, url, model, key or None)
+            self._test_result.emit({"signature": signature, "result": result})
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_test(self, payload):
+        self._test_btn.setEnabled(True)
+        signature = payload.get("signature")
+        result = payload.get("result") or {}
+        if signature != self._signature():
+            self._set_status("Inputs changed during the test. Run the test again.", "warning")
+            return
+        if result.get("ok"):
+            self._tested_signature = signature
+            self._save_btn.setEnabled(True)
+            self._set_status(f"TEST PASSED · {result.get('latency_ms', 0)} ms · {result.get('model', '')}", "success")
+        else:
+            self._tested_signature = None
+            self._save_btn.setEnabled(False)
+            self._set_status(f"TEST FAILED · {result.get('error') or 'No model response'}", "error")
+
+    def _save_profile(self):
+        from core.provider_registry import save_provider_settings, has_provider_profile
+        signature = self._signature()
+        if signature != self._tested_signature:
+            self._set_status("Test the exact provider, model and key before saving.", "warning")
+            return
+        try:
+            provider, url, model, key = signature
+            save_provider_settings(API_FILE, provider, url, model, key, profile=self.profile)
+        except Exception as exc:
+            self._set_status(f"Could not save settings: {type(exc).__name__}: {exc}", "error")
+            return
+        self._tested_signature = signature
+        if self.profile == "powerful" and hasattr(self, "_inherit_note"):
+            self._inherit_note.hide()
+        self._key_hint.setText(self._secret_preview(key))
+        self._set_status("Saved. EDITH will use this provider and model for this Brain profile.", "success")
+        self.saved.emit()
+
+
+class _VoiceProviderTab(_ApiTabBase):
+    """Gemini Live voice provider settings with real model response validation."""
+
+    saved = pyqtSignal()
+    _models_result = pyqtSignal(object)
+    _test_result = pyqtSignal(object)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._tested_signature = None
+        self._loading_models = False
+        self._key_revealed = False
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 18)
+        layout.setSpacing(12)
+
+        title_row = QHBoxLayout()
+        icon = QLabel()
+        icon.setFixedSize(36, 36)
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon.setPixmap(svg_icon("mic", C.PRI).pixmap(QSize(20, 20)))
+        icon.setStyleSheet(f"background: {C.PANEL2}; border-radius: 12px;")
+        title_row.addWidget(icon)
+        title_col = QVBoxLayout()
+        title = QLabel("Voice connection")
+        title.setFont(QFont(FONT_MAIN, 12, QFont.Weight.Bold))
+        title_col.addWidget(title)
+        hint = QLabel("The current EDITH audio transport supports Google Gemini Live.")
+        hint.setFont(QFont(FONT_MAIN, 8))
+        hint.setStyleSheet(f"color: {C.TEXT_DIM};")
+        title_col.addWidget(hint)
+        title_row.addLayout(title_col, 1)
+        layout.addLayout(title_row)
+
+        layout.addWidget(self._label("Voice provider"))
+        self._provider = QComboBox()
+        self._provider.addItem("Google Gemini Live", "gemini_live")
+        self._provider.setAccessibleName("Voice API provider")
+        self._provider.setFixedHeight(42)
+        self._provider.setStyleSheet(self._field_style())
+        layout.addWidget(self._provider)
+
+        layout.addWidget(self._label("Voice model"))
+        model_row = QHBoxLayout()
+        self._model = QComboBox()
+        self._model.setEditable(True)
+        self._model.setFixedHeight(42)
+        self._model.setStyleSheet(self._field_style())
+        model_row.addWidget(self._model, 1)
+        self._refresh_btn = self._button("LOAD MODELS")
+        self._refresh_btn.clicked.connect(self._refresh_models)
+        model_row.addWidget(self._refresh_btn)
+        layout.addLayout(model_row)
+
+        layout.addWidget(self._label("Voice API key"))
+        key_row = QHBoxLayout()
+        self._key = QLineEdit()
+        self._key.setEchoMode(QLineEdit.EchoMode.Password)
+        self._key.setPlaceholderText("Paste Gemini Live API key")
+        self._key.setFixedHeight(42)
+        self._key.setStyleSheet(self._field_style())
+        key_row.addWidget(self._key, 1)
+        self._reveal = self._button("")
+        self._reveal.setIcon(svg_icon("eye", C.TEXT_DIM))
+        self._reveal.setIconSize(QSize(18, 18))
+        self._reveal.setFixedSize(44, 42)
+        self._reveal.setAccessibleName("Preview Voice API key")
+        self._reveal.clicked.connect(self._toggle_reveal)
+        key_row.addWidget(self._reveal)
+        layout.addLayout(key_row)
+        self._key_hint = QLabel("No saved key")
+        self._key_hint.setFont(QFont(FONT_MAIN, 8))
+        self._key_hint.setStyleSheet(f"color: {C.TEXT_DIM};")
+        layout.addWidget(self._key_hint)
+
+        self._status = QLabel("Test the selected Live model before saving or updating the key.")
+        self._status.setWordWrap(True)
+        self._status.setMinimumHeight(36)
+        self._status.setFont(QFont(FONT_MAIN, 8))
+        self._status.setStyleSheet(f"color: {C.TEXT_DIM};")
+        layout.addWidget(self._status)
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+        self._test_btn = self._button("TEST VOICE")
+        self._save_btn = self._button("SAVE / UPDATE", primary=True)
+        self._save_btn.setEnabled(False)
+        self._test_btn.clicked.connect(self._test_voice)
+        self._save_btn.clicked.connect(self._save_voice)
+        actions.addWidget(self._test_btn)
+        actions.addWidget(self._save_btn)
+        layout.addLayout(actions)
+        layout.addStretch(1)
+
+        self._models_result.connect(self._finish_models)
+        self._test_result.connect(self._finish_test)
+        self._model.currentTextChanged.connect(self._invalidate)
+        self._key.textChanged.connect(self._on_key_changed)
+        self._load_current()
+
+    def _signature(self):
+        return (str(self._provider.currentData() or "gemini_live"),
+                self._model.currentText().strip(), self._key.text().strip())
+
+    def _invalidate(self, *_args):
+        self._tested_signature = None
+        self._save_btn.setEnabled(False)
+
+    def _on_key_changed(self, *_args):
+        self._key_hint.setText("Unsaved key changes · test before saving")
+        self._invalidate()
+
+    def _load_current(self):
+        from core.provider_registry import load_voice_settings
+        from core.secrets import get_gemini_api_key
+        settings = load_voice_settings(API_FILE)
+        self._model.addItem(settings["model"])
+        key = get_gemini_api_key(API_FILE) or ""
+        self._key.setText(key)
+        self._key_hint.setText(self._secret_preview(key))
+
+    def _toggle_reveal(self):
+        self._key_revealed = not self._key_revealed
+        self._key.setEchoMode(QLineEdit.EchoMode.Normal if self._key_revealed else QLineEdit.EchoMode.Password)
+        self._reveal.setIcon(svg_icon("eye-off" if self._key_revealed else "eye", C.TEXT_DIM))
+
+    def _refresh_models(self):
+        from core.provider_registry import list_voice_models
+        key = self._key.text().strip()
+        if not key:
+            self._set_status("Paste the Voice API key before loading account models.", "warning")
+            return
+        if self._loading_models:
+            return
+        self._loading_models = True
+        self._refresh_btn.setEnabled(False)
+        self._set_status("Loading Live models available to this API key…", "working")
+        def worker():
+            try:
+                models = list_voice_models(key)
+                self._models_result.emit({"key": key, "models": models, "error": None})
+            except Exception as exc:
+                self._models_result.emit({"key": key, "models": [], "error": str(exc)})
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_models(self, payload):
+        self._loading_models = False
+        self._refresh_btn.setEnabled(True)
+        if payload.get("key") != self._key.text().strip():
+            self._set_status("Voice key changed while models were loading. Load again.", "warning")
+            return
+        if payload.get("error"):
+            self._set_status(payload["error"], "error")
+            return
+        current = self._model.currentText().strip()
+        self._model.blockSignals(True)
+        self._model.clear()
+        self._model.addItems(payload["models"])
+        if current and current not in payload["models"]:
+            self._model.addItem(current)
+        self._model.setCurrentText(current if current else payload["models"][0])
+        self._model.blockSignals(False)
+        self._invalidate()
+        self._set_status(f"Loaded {len(payload['models'])} Live model(s).", "success")
+
+    def _test_voice(self):
+        from core.provider_registry import probe_voice_provider
+        signature = self._signature()
+        if not signature[1] or not signature[2]:
+            self._set_status("Choose a Live model and paste the Voice API key.", "warning")
+            return
+        self._test_btn.setEnabled(False)
+        self._save_btn.setEnabled(False)
+        self._set_status("Opening a real Gemini Live session and waiting for model output…", "working")
+        def worker():
+            result = probe_voice_provider(*signature)
+            self._test_result.emit({"signature": signature, "result": result})
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_test(self, payload):
+        self._test_btn.setEnabled(True)
+        signature = payload.get("signature")
+        result = payload.get("result") or {}
+        if signature != self._signature():
+            self._set_status("Inputs changed during the test. Test the current Voice setup again.", "warning")
+            return
+        if result.get("ok"):
+            self._tested_signature = signature
+            self._save_btn.setEnabled(True)
+            self._set_status(f"TEST PASSED · Live model responded in {result.get('latency_ms', 0)} ms.", "success")
+        else:
+            self._tested_signature = None
+            self._save_btn.setEnabled(False)
+            self._set_status(f"TEST FAILED · {result.get('error') or 'No Live response'}", "error")
+
+    def _save_voice(self):
+        from core.provider_registry import save_voice_settings
+        signature = self._signature()
+        if signature != self._tested_signature:
+            self._set_status("Test the exact Voice provider, model and key before saving.", "warning")
+            return
+        try:
+            status = save_voice_settings(API_FILE, signature[0], signature[1], signature[2])
+        except Exception as exc:
+            self._set_status(f"Could not save Voice settings: {type(exc).__name__}", "error")
+            return
+        self._key_hint.setText(self._secret_preview(signature[2]))
+        tone = "warning" if status.storage == "legacy" else "success"
+        self._set_status("Voice settings saved. EDITH will use this Live model on reconnect.", tone)
+        self.saved.emit()
+
+
+class _RealtimeSearchTab(_ApiTabBase):
+    """Test and securely store the selected live search API."""
+
+    saved = pyqtSignal()
+    _test_result = pyqtSignal(object)
+    _PROVIDERS = (
+        ("Tavily Search", "tavily"),
+        ("Brave Search API", "brave"),
+        ("SerpAPI", "serpapi"),
+        ("Exa", "exa"),
+    )
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._tested_signature = None
+        self._key_revealed = False
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 18)
+        layout.setSpacing(12)
+        title_row = QHBoxLayout()
+        icon = QLabel()
+        icon.setFixedSize(36, 36)
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon.setPixmap(svg_icon("search", C.PRI).pixmap(QSize(20, 20)))
+        icon.setStyleSheet(f"background: {C.PANEL2}; border-radius: 12px;")
+        title_row.addWidget(icon)
+        text_col = QVBoxLayout()
+        title = QLabel("Real-time search engine")
+        title.setFont(QFont(FONT_MAIN, 12, QFont.Weight.Bold))
+        text_col.addWidget(title)
+        hint = QLabel("Live web results for current information. Separate from local file search.")
+        hint.setFont(QFont(FONT_MAIN, 8))
+        hint.setStyleSheet(f"color: {C.TEXT_DIM};")
+        text_col.addWidget(hint)
+        title_row.addLayout(text_col, 1)
+        layout.addLayout(title_row)
+
+        layout.addWidget(self._label("Search provider"))
+        self._provider = QComboBox()
+        for label, provider in self._PROVIDERS:
+            self._provider.addItem(label, provider)
+        self._provider.setAccessibleName("Real-time search provider")
+        self._provider.setFixedHeight(42)
+        self._provider.setStyleSheet(self._field_style())
+        layout.addWidget(self._provider)
+
+        layout.addWidget(self._label("API key"))
+        key_row = QHBoxLayout()
+        self._key = QLineEdit()
+        self._key.setEchoMode(QLineEdit.EchoMode.Password)
+        self._key.setPlaceholderText("Paste real-time search API key")
+        self._key.setFixedHeight(42)
+        self._key.setStyleSheet(self._field_style())
+        key_row.addWidget(self._key, 1)
+        self._reveal = self._button("")
+        self._reveal.setIcon(svg_icon("eye", C.TEXT_DIM))
+        self._reveal.setIconSize(QSize(18, 18))
+        self._reveal.setFixedSize(44, 42)
+        self._reveal.setAccessibleName("Preview real-time search API key")
+        self._reveal.clicked.connect(self._toggle_reveal)
+        key_row.addWidget(self._reveal)
+        layout.addLayout(key_row)
+        self._key_hint = QLabel("No saved key")
+        self._key_hint.setFont(QFont(FONT_MAIN, 8))
+        self._key_hint.setStyleSheet(f"color: {C.TEXT_DIM};")
+        layout.addWidget(self._key_hint)
+
+        note = QLabel("Test sends a small live query to the selected provider. Save is available only after a successful response.")
+        note.setWordWrap(True)
+        note.setFont(QFont(FONT_MAIN, 8))
+        note.setStyleSheet(f"color: {C.TEXT_DIM};")
+        layout.addWidget(note)
+        self._status = QLabel("Choose a provider and test its API key.")
+        self._status.setWordWrap(True)
+        self._status.setMinimumHeight(36)
+        self._status.setFont(QFont(FONT_MAIN, 8))
+        self._status.setStyleSheet(f"color: {C.TEXT_DIM};")
+        layout.addWidget(self._status)
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+        self._test_btn = self._button("TEST SEARCH")
+        self._save_btn = self._button("SAVE / UPDATE", primary=True)
+        self._save_btn.setEnabled(False)
+        self._test_btn.clicked.connect(self._test_search)
+        self._save_btn.clicked.connect(self._save_search)
+        actions.addWidget(self._test_btn)
+        actions.addWidget(self._save_btn)
+        layout.addLayout(actions)
+        layout.addStretch(1)
+
+        self._test_result.connect(self._finish_test)
+        self._provider.currentIndexChanged.connect(self._provider_changed)
+        self._key.textChanged.connect(self._key_changed)
+        self._load_current()
+
+    def _signature(self):
+        return (str(self._provider.currentData() or "tavily"), self._key.text().strip())
+
+    def _invalidate(self):
+        self._tested_signature = None
+        self._save_btn.setEnabled(False)
+
+    def _key_changed(self, *_args):
+        self._key_hint.setText("Unsaved key changes · test before saving")
+        self._invalidate()
+
+    def _load_current(self):
+        from core.provider_registry import load_realtime_search_settings, realtime_search_api_key
+        settings = load_realtime_search_settings(API_FILE)
+        self._provider.blockSignals(True)
+        self._provider.setCurrentIndex(max(0, self._provider.findData(settings["provider"])))
+        self._provider.blockSignals(False)
+        key = realtime_search_api_key(settings["provider"], API_FILE) or ""
+        self._key.setText(key)
+        self._key_hint.setText(self._secret_preview(key))
+
+    def _provider_changed(self, *_args):
+        from core.provider_registry import realtime_search_api_key
+        provider = str(self._provider.currentData() or "tavily")
+        key = realtime_search_api_key(provider, API_FILE) or ""
+        self._key.blockSignals(True)
+        self._key.setText(key)
+        self._key.blockSignals(False)
+        self._key_hint.setText(self._secret_preview(key))
+        self._invalidate()
+        if self._key_revealed:
+            self._key.setEchoMode(QLineEdit.EchoMode.Password)
+            self._key_revealed = False
+            self._reveal.setIcon(svg_icon("eye", C.TEXT_DIM))
+
+    def _toggle_reveal(self):
+        self._key_revealed = not self._key_revealed
+        self._key.setEchoMode(QLineEdit.EchoMode.Normal if self._key_revealed else QLineEdit.EchoMode.Password)
+        self._reveal.setIcon(svg_icon("eye-off" if self._key_revealed else "eye", C.TEXT_DIM))
+
+    def _test_search(self):
+        from core.provider_registry import probe_realtime_search
+        signature = self._signature()
+        if not signature[1]:
+            self._set_status("Paste the selected search provider API key first.", "warning")
+            return
+        self._test_btn.setEnabled(False)
+        self._save_btn.setEnabled(False)
+        self._set_status("Testing a real-time query against the selected search engine…", "working")
+        def worker():
+            result = probe_realtime_search(*signature)
+            self._test_result.emit({"signature": signature, "result": result})
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_test(self, payload):
+        self._test_btn.setEnabled(True)
+        signature = payload.get("signature")
+        result = payload.get("result") or {}
+        if signature != self._signature():
+            self._set_status("Provider or key changed during the test. Test again.", "warning")
+            return
+        if result.get("ok"):
+            self._tested_signature = signature
+            self._save_btn.setEnabled(True)
+            self._set_status(f"TEST PASSED · {result.get('result_count', 0)} live result · {result.get('latency_ms', 0)} ms.", "success")
+        else:
+            self._tested_signature = None
+            self._save_btn.setEnabled(False)
+            self._set_status(f"TEST FAILED · {result.get('error') or 'No search results returned'}", "error")
+
+    def _save_search(self):
+        from core.provider_registry import save_realtime_search_settings
+        signature = self._signature()
+        if signature != self._tested_signature:
+            self._set_status("Test the exact search provider and key before saving.", "warning")
+            return
+        try:
+            status = save_realtime_search_settings(API_FILE, *signature)
+        except Exception as exc:
+            self._set_status(f"Could not save search settings: {type(exc).__name__}", "error")
+            return
+        self._key_hint.setText(self._secret_preview(signature[1]))
+        tone = "warning" if status.storage == "legacy" else "success"
+        self._set_status("Real-time search provider and key saved. EDITH will use it for live search.", tone)
+        self.saved.emit()
+
+
+class ApiProviderWorkspace(QWidget):
+    """Four-tab provider workspace for Voice, both Brain profiles and live search."""
+
+    settings_saved = pyqtSignal()
+    voice_saved = pyqtSignal()
+    _OW, _OH = 900, 720
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        _glass_shadow(self)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(f"""
+            ApiProviderWorkspace {{
+                background: {C.SHEET};
+                border: 0;
+                border-radius: 22px;
+            }}
+        """)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(22, 16, 22, 20)
+        root.setSpacing(12)
+
+        header = QHBoxLayout()
+        mark = QLabel()
+        mark.setFixedSize(40, 40)
+        mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        mark.setPixmap(svg_icon("key", C.PRI).pixmap(QSize(22, 22)))
+        mark.setStyleSheet(f"background: {C.PANEL2}; border-radius: 13px;")
+        header.addWidget(mark)
+        text_col = QVBoxLayout()
+        text_col.setSpacing(2)
+        title = QLabel("API PROVIDERS")
+        title.setFont(QFont(FONT_MAIN, 16, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
+        text_col.addWidget(title)
+        subtitle = QLabel("Manage credentials, select models and verify every connection")
+        subtitle.setFont(QFont(FONT_MAIN, 8))
+        subtitle.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        text_col.addWidget(subtitle)
+        header.addLayout(text_col, 1)
+
+        close_btn = QPushButton()
+        close_btn.setAccessibleName("Close API Providers")
+        close_btn.setToolTip("Close API Providers")
+        close_btn.setIcon(svg_icon("x", C.TEXT_DIM))
+        close_btn.setIconSize(QSize(18, 18))
+        close_btn.setFixedSize(40, 40)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{ background: {C.PANEL2}; border: 0; border-radius: 13px; }}
+            QPushButton:hover {{ background: {C.DANGER_BG}; }}
+        """)
+        close_btn.clicked.connect(self.hide)
+        header.addWidget(close_btn)
+        root.addLayout(header)
+
+        self._tabs = QTabWidget(self)
+        self._tabs.setDocumentMode(True)
+        self._tabs.setMovable(False)
+        self._tabs.setStyleSheet(f"""
+            QTabWidget::pane {{ border: 0; background: transparent; top: 0; }}
+            QTabBar {{ background: transparent; }}
+            QTabBar::tab {{
+                background: transparent; color: {C.TEXT_DIM};
+                border: 0; border-bottom: 2px solid transparent;
+                padding: 13px 17px; margin-right: 8px;
+                font-family: "{FONT_MAIN}"; font-size: 9pt; font-weight: 700;
+            }}
+            QTabBar::tab:selected {{ color: {C.PRI}; border-bottom: 2px solid {C.PRI}; }}
+            QTabBar::tab:hover:!selected {{ color: {C.TEXT}; }}
+        """)
+        self._voice = _VoiceProviderTab()
+        self._main_brain = _ProviderProfileTab("main")
+        self._powerful_brain = _ProviderProfileTab("powerful")
+        self._search = _RealtimeSearchTab()
+        self._tabs.addTab(self._voice, svg_icon("mic", C.PRI), "VOICE")
+        self._tabs.addTab(self._main_brain, svg_icon("brain-circuit", C.PRI), "MAIN BRAIN")
+        self._tabs.addTab(self._powerful_brain, svg_icon("cpu", C.PRI), "POWERFUL BRAIN")
+        self._tabs.addTab(self._search, svg_icon("search", C.PRI), "REAL-TIME SEARCH")
+        root.addWidget(self._tabs, 1)
+
+        self._voice.saved.connect(self._on_voice_saved)
+        self._main_brain.saved.connect(self.settings_saved.emit)
+        self._powerful_brain.saved.connect(self.settings_saved.emit)
+        self._search.saved.connect(self.settings_saved.emit)
+
+    def _on_voice_saved(self):
+        self.settings_saved.emit()
+        self.voice_saved.emit()
+
+
 class SetupOverlay(QWidget):
     done = pyqtSignal(str, str)
 
@@ -1977,7 +2806,7 @@ class SetupOverlay(QWidget):
         sep.setStyleSheet(f"color: {C.BORDER};"); layout.addWidget(sep)
         layout.addSpacing(4)
 
-        layout.addWidget(_lbl("GEMINI API KEY", 8, color=C.TEXT_DIM,
+        layout.addWidget(_lbl("VOICE API KEY", 8, color=C.TEXT_DIM,
                                align=Qt.AlignmentFlag.AlignLeft))
         self._key_input = QLineEdit()
         self._key_input.setEchoMode(QLineEdit.EchoMode.Password)
@@ -2066,164 +2895,69 @@ class SetupOverlay(QWidget):
         self.done.emit(key, self._sel_os)
 
 
-class HueWheel(QWidget):
-    """
-    Dairesel renk seçici. Kullanıcı tutamacı (küçük beyaz daire) çarkın
-    çevresinde sürükleyerek TÜM renk tonları arasından seçim yapar.
-    Merkezdeki dolu daire seçilen rengin canlı önizlemesidir.
-    """
-
-    hue_picked    = pyqtSignal(str)   # sürükleme sırasında (canlı)
-    hue_committed = pyqtSignal(str)   # tutamaç bırakıldığında
-
-    _RING = 14   # halka kalınlığı (px)
-
-    def __init__(self, initial_hex: str = DEFAULT_UI_COLOR, parent=None):
-        super().__init__(parent)
-        self.setFixedSize(140, 140)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._hue  = 0.53
-        self._drag = False
-        self.set_color(initial_hex)
-
-    # ── API ──────────────────────────────────────────────────────────────────
-    def color(self) -> str:
-        return QColor.fromHsvF(self._hue, 1.0, 1.0).name()
-
-    def set_color(self, hex_str: str):
-        c = QColor((hex_str or "").strip())
-        if c.isValid() and c.hsvHueF() >= 0:
-            self._hue = c.hsvHueF()
-            self.update()
-
-    # ── geometri yardımcıları ────────────────────────────────────────────────
-    def _ring_rect(self) -> QRectF:
-        m = self._RING / 2 + 3
-        return QRectF(self.rect()).adjusted(m, m, -m, -m)
-
-    def _hue_from_pos(self, pos: QPointF) -> float:
-        c  = QRectF(self.rect()).center()
-        dx = pos.x() - c.x()
-        dy = c.y() - pos.y()          # ekran y'si aşağı — matematiksel eksene çevir
-        ang = math.atan2(dy, dx)      # [-π, π], saat yönünün tersi
-        return (ang / (2 * math.pi)) % 1.0
-
-    # ── çizim ────────────────────────────────────────────────────────────────
-    def paintEvent(self, _):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect   = self._ring_rect()
-        center = rect.center()
-
-        grad = QConicalGradient(center, 0)
-        for i in range(0, 361, 20):
-            grad.setColorAt(i / 360.0, QColor.fromHsvF((i % 360) / 360.0, 1.0, 1.0))
-        p.setPen(QPen(QBrush(grad), self._RING))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawEllipse(rect)
-
-        # merkez önizleme dairesi
-        preview = QColor.fromHsvF(self._hue, 1.0, 1.0)
-        inner   = rect.adjusted(28, 28, -28, -28)
-        p.setPen(QPen(qcol(C.BORDER_B), 1))
-        p.setBrush(QBrush(preview))
-        p.drawEllipse(inner)
-
-        # sürüklenen tutamaç
-        r   = rect.width() / 2
-        ang = self._hue * 2 * math.pi
-        hx  = center.x() + r * math.cos(ang)
-        hy  = center.y() - r * math.sin(ang)
-        p.setPen(QPen(QColor(C.BG), 2))
-        p.setBrush(QBrush(QColor("#ffffff")))
-        p.drawEllipse(QPointF(hx, hy), 7.0, 7.0)
-
-    # ── fare ─────────────────────────────────────────────────────────────────
-    def mousePressEvent(self, e):
-        self._drag = True
-        self._hue  = self._hue_from_pos(e.position())
-        self.update()
-        self.hue_picked.emit(self.color())
-
-    def mouseMoveEvent(self, e):
-        if self._drag:
-            self._hue = self._hue_from_pos(e.position())
-            self.update()
-            self.hue_picked.emit(self.color())
-
-    def mouseReleaseEvent(self, e):
-        if self._drag:
-            self._drag = False
-            self.hue_committed.emit(self.color())
-
-
 class CustomizeOverlay(QWidget):
-    """Floating overlay — change assistant name, user name and UI colour."""
+    """Minimal preferences sheet: identity and system appearance only."""
 
-    saved = pyqtSignal(str, str, str)   # assistant_name, user_name, ui_color
+    saved = pyqtSignal(str, str)
     theme_saved = pyqtSignal(str)
-    _OW, _OH = 400, 530
+    _OW, _OH = 420, 300
 
     def __init__(self, assistant_name="EDITH", user_name="",
-                 ui_color=DEFAULT_UI_COLOR, theme_preference="system", parent=None):
+                 theme_preference="system", parent=None):
         super().__init__(parent)
         _glass_shadow(self)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"""
             CustomizeOverlay {{
                 background: {C.SHEET};
-                border: 1px solid {C.BORDER_B};
-                border-radius: 18px;
+                border: 0;
+                border-radius: 20px;
             }}
         """)
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(28, 22, 28, 22)
-        lay.setSpacing(10)
+        lay.setContentsMargins(24, 20, 24, 22)
+        lay.setSpacing(12)
 
-        def _lbl(txt, fs=9, bold=False, color=C.PRI, align=Qt.AlignmentFlag.AlignCenter):
-            w = QLabel(txt); w.setAlignment(align)
-            w.setFont(QFont(FONT_MAIN, fs,
-                            QFont.Weight.Bold if bold else QFont.Weight.Normal))
-            w.setStyleSheet(f"color: {color}; background: transparent;")
-            return w
-
-        _fs = (f"QLineEdit {{ background: {C.INPUT}; color: {C.TEXT}; "
-               f"border: 1px solid {C.BORDER}; border-radius: 9px; padding: 6px 10px; }}"
-               f"QLineEdit:focus {{ border: 1px solid {C.PRI}; }}")
-
-        title_row = QHBoxLayout()
-        settings_icon = QLabel()
-        settings_icon.setPixmap(svg_icon("settings", C.PRI).pixmap(QSize(22, 22)))
-        title_row.addWidget(settings_icon)
-        title_row.addWidget(_lbl("PREFERENCES", 13, True), 1)
+        header = QHBoxLayout()
+        icon_lbl = QLabel()
+        icon_lbl.setPixmap(svg_icon("settings", C.PRI).pixmap(QSize(22, 22)))
+        header.addWidget(icon_lbl)
+        title = QLabel("PREFERENCES")
+        title.setFont(QFont(FONT_MAIN, 13, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
+        header.addWidget(title, 1)
         self._close_btn = QPushButton()
         self._close_btn.setAccessibleName("Close preferences")
         self._close_btn.setToolTip("Close")
         self._close_btn.setIcon(svg_icon("x", C.TEXT_DIM))
         self._close_btn.setIconSize(QSize(18, 18))
-        self._close_btn.setFixedSize(36, 36)
-        self._close_btn.setStyleSheet(f"QPushButton {{ background:{C.PANEL2}; border:1px solid {C.BORDER}; border-radius:11px; }} QPushButton:hover {{ background:{C.DANGER_BG}; border-color:{C.RED}; }}")
+        self._close_btn.setFixedSize(38, 38)
+        self._close_btn.setStyleSheet(f"""
+            QPushButton {{ background: {C.PANEL2}; border: 0; border-radius: 13px; }}
+            QPushButton:hover {{ background: {C.DANGER_BG}; }}
+        """)
         self._close_btn.clicked.connect(self._cancel)
-        title_row.addWidget(self._close_btn)
-        lay.addLayout(title_row)
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
-        lay.addWidget(sep)
+        header.addWidget(self._close_btn)
+        lay.addLayout(header)
 
-        # Assistant display identity is intentionally fixed and unbranded.
-        lay.addSpacing(4)
-        lay.addWidget(_lbl("YOUR NAME (Optional)", 8,
-                            color=C.TEXT_DIM, align=Qt.AlignmentFlag.AlignLeft))
+        def _label(text: str):
+            w = QLabel(text.upper())
+            w.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
+            w.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+            return w
+
+        lay.addWidget(_label("Your name (optional)"))
         self._user_input = QLineEdit(user_name)
         self._user_input.setPlaceholderText("Your name")
-        self._user_input.setFont(QFont(FONT_MAIN, 10))
-        self._user_input.setFixedHeight(34)
-        self._user_input.setStyleSheet(_fs)
+        self._user_input.setFixedHeight(42)
+        self._user_input.setStyleSheet(f"""
+            QLineEdit {{ background: {C.INPUT}; color: {C.TEXT}; border: 0;
+                         border-radius: 11px; padding: 8px 12px; }}
+            QLineEdit:focus {{ background: {C.PANEL2}; }}
+        """)
         lay.addWidget(self._user_input)
 
-        lay.addSpacing(4)
-        lay.addWidget(_lbl("APPEARANCE", 8, color=C.TEXT_DIM,
-                           align=Qt.AlignmentFlag.AlignLeft))
+        lay.addWidget(_label("Appearance"))
         self._initial_theme = str(theme_preference or "system").lower()
         if self._initial_theme not in {"system", "dark", "light"}:
             self._initial_theme = "system"
@@ -2234,138 +2968,59 @@ class CustomizeOverlay(QWidget):
         self._theme_picker.addItem("Light", "light")
         self._theme_picker.setCurrentIndex(("system", "dark", "light").index(self._sel_theme))
         self._theme_picker.setAccessibleName("EDITH appearance theme")
+        self._theme_picker.setFixedHeight(42)
         self._theme_picker.setStyleSheet(f"""
-            QComboBox {{ background: {C.INPUT}; color: {C.TEXT}; border: 1px solid {C.BORDER};
-                         border-radius: 9px; padding: 5px 10px; }}
-            QComboBox:hover, QComboBox:focus {{ border-color: {C.PRI}; }}
-            QComboBox QAbstractItemView {{ background: {C.SHEET}; color: {C.TEXT};
-                                           selection-background-color: {C.HOVER}; }}
+            QComboBox {{ background: {C.INPUT}; color: {C.TEXT}; border: 0;
+                         border-radius: 11px; padding: 8px 12px; }}
+            QComboBox:focus {{ background: {C.PANEL2}; }}
+            QComboBox QAbstractItemView {{ background: {C.PANEL}; color: {C.TEXT};
+                                           border: 0; selection-background-color: {C.PRI_GHO}; }}
         """)
         self._theme_picker.currentIndexChanged.connect(self._on_theme_changed)
         lay.addWidget(self._theme_picker)
 
-        # ── UI colour — renk çarkı ───────────────────────────────────────────
-        lay.addSpacing(4)
-        clr_hdr = QHBoxLayout()
-        clr_hdr.addWidget(_lbl("UI COLOUR THEME", 8,
-                               color=C.TEXT_DIM, align=Qt.AlignmentFlag.AlignLeft))
-        clr_hdr.addStretch()
-        df_btn = QPushButton("DEFAULT")
-        df_btn.setFixedSize(64, 20)
-        df_btn.setFont(QFont(FONT_MAIN, 7, QFont.Weight.Bold))
-        df_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        df_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; color: {C.TEXT_MED};
-                border: 1px solid {C.BORDER}; border-radius: 3px;
-            }}
-            QPushButton:hover {{ color: {C.TEXT}; border-color: {C.BORDER_B}; }}
+        note = QLabel("Accent colours are managed by EDITH's system theme.")
+        note.setFont(QFont(FONT_MAIN, 8))
+        note.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        lay.addWidget(note)
+        lay.addStretch(1)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        cancel = QPushButton("CANCEL")
+        cancel.setFixedHeight(40)
+        cancel.setStyleSheet(f"""
+            QPushButton {{ background: {C.PANEL2}; color: {C.TEXT_MED}; border: 0;
+                           border-radius: 11px; padding: 0 16px; }}
+            QPushButton:hover {{ background: {C.HOVER}; }}
         """)
-        df_btn.clicked.connect(lambda: self._set_color(DEFAULT_UI_COLOR))
-        clr_hdr.addWidget(df_btn)
-        lay.addLayout(clr_hdr)
-
-        self._initial_color = (ui_color or DEFAULT_UI_COLOR).strip().lower()
-        self._sel_color     = self._initial_color
-        self.on_preview     = None   # callable(hex) — canlı önizleme; MainWindow bağlar
-
-        self._wheel = HueWheel(self._sel_color)
-        wheel_row = QHBoxLayout()
-        wheel_row.addStretch(); wheel_row.addWidget(self._wheel); wheel_row.addStretch()
-        lay.addLayout(wheel_row)
-        self._wheel.hue_picked.connect(self._on_wheel_pick)
-        self._wheel.hue_committed.connect(self._on_wheel_commit)
-
-        self._hex_input = QLineEdit(self._sel_color)
-        self._hex_input.setPlaceholderText("#A5B4FC")
-        self._hex_input.setFont(QFont(FONT_MONO, 10))
-        self._hex_input.setFixedHeight(30)
-        self._hex_input.setStyleSheet(_fs)
-        self._hex_input.textEdited.connect(self._on_hex_edited)
-        lay.addWidget(self._hex_input)
-
-        lay.addSpacing(6)
-        btn_row = QHBoxLayout(); btn_row.setSpacing(8)
-
-        save_btn = QPushButton("▸  APPLY CHANGES")
-        save_btn.setFixedHeight(36)
-        save_btn.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
-        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        save_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; color: {C.PRI};
-                border: 1px solid {C.PRI_DIM}; border-radius: 4px;
-            }}
-            QPushButton:hover {{ background: {C.PRI_GHO}; border: 1px solid {C.PRI}; }}
+        cancel.clicked.connect(self._cancel)
+        save = QPushButton("SAVE CHANGES")
+        save.setFixedHeight(40)
+        save.setStyleSheet(f"""
+            QPushButton {{ background: {C.PRI}; color: {C.DARK}; border: 0;
+                           border-radius: 11px; padding: 0 18px; font-weight: 700; }}
+            QPushButton:hover {{ background: {C.PRI_DIM}; }}
         """)
-        save_btn.clicked.connect(self._save)
-        btn_row.addWidget(save_btn)
+        save.clicked.connect(self._save)
+        buttons.addWidget(cancel)
+        buttons.addWidget(save)
+        lay.addLayout(buttons)
 
-        cancel_btn = QPushButton("CANCEL")
-        cancel_btn.setFixedHeight(36)
-        cancel_btn.setFont(QFont(FONT_MAIN, 9))
-        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; color: {C.TEXT_MED};
-                border: 1px solid {C.BORDER}; border-radius: 4px;
-            }}
-            QPushButton:hover {{ color: {C.TEXT}; border-color: {C.BORDER_B}; }}
-        """)
-        cancel_btn.clicked.connect(self._cancel)
-        btn_row.addWidget(cancel_btn)
-        lay.addLayout(btn_row)
-
-    # ── renk akışı ───────────────────────────────────────────────────────────
-    def _set_color(self, hx: str, update_wheel: bool = True, preview: bool = True):
-        """Seçili rengi günceller; hex kutusu + çark senkron kalır, tema canlı önizlenir."""
-        self._sel_color = hx.strip().lower()
-        self._hex_input.blockSignals(True)
-        self._hex_input.setText(self._sel_color)
-        self._hex_input.blockSignals(False)
-        if update_wheel:
-            self._wheel.set_color(self._sel_color)
-        if preview and self.on_preview:
-            self.on_preview(self._sel_color)
-
-    def _on_wheel_pick(self, hx: str):
-        # Sürükleme sırasında: hex kutusunu güncelle, temayı henüz uygulama
-        self._sel_color = hx
-        self._hex_input.blockSignals(True)
-        self._hex_input.setText(hx)
-        self._hex_input.blockSignals(False)
-
-    def _on_wheel_commit(self, hx: str):
-        # Tutamaç bırakıldı → tüm arayüzü canlı önizle
-        self._set_color(hx, update_wheel=False)
-
-    def _on_hex_edited(self, text: str):
-        t = text.strip().lower()
-        if t.startswith("#") and len(t) == 7:
-            try:
-                int(t[1:], 16)
-            except ValueError:
-                return
-            self._set_color(t, update_wheel=True, preview=True)
+        self.on_theme_preview = None
 
     def _cancel(self):
-        # Önizleme uygulandıysa açılıştaki renge geri dön
         if getattr(self, "on_theme_preview", None):
             self.on_theme_preview(None)
-        if self.on_preview and self._sel_color != self._initial_color:
-            self.on_preview(self._initial_color)
         self.hide()
 
     def _save(self):
-        name = "EDITH"
-        user = self._user_input.text().strip()
-        self.saved.emit(name, user, self._sel_color or DEFAULT_UI_COLOR)
+        self.saved.emit("EDITH", self._user_input.text().strip())
         self.theme_saved.emit(self._sel_theme)
         self.hide()
 
     def _on_theme_changed(self, index: int):
-        value = self._theme_picker.itemData(index)
-        self._sel_theme = str(value or "system")
+        self._sel_theme = str(self._theme_picker.itemData(index) or "system")
         if getattr(self, "on_theme_preview", None):
             self.on_theme_preview(self._sel_theme)
 
@@ -3188,11 +3843,8 @@ class MainWindow(QMainWindow):
         self._display_name = _display
 
         # Keep the new default theme when an older installation saved the old cyan default.
-        _ui_color = (_cfg.get("ui_color") or "").strip()
-        if _ui_color.lower() in {"#00e5ff", "#61dff5"}:
-            _ui_color = DEFAULT_UI_COLOR
-        self._ui_accent = _ui_color if _ui_color and _ui_color.lower() != DEFAULT_UI_COLOR else DEFAULT_UI_COLOR
-        apply_ui_theme(self._resolved_theme(), self._ui_accent)
+        # Appearance follows the system palette; manual accent editing is intentionally unavailable.
+        apply_ui_theme(self._resolved_theme())
         apply_dark_theme(QApplication.instance(), C)
 
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowTitleHint
@@ -3219,7 +3871,7 @@ class MainWindow(QMainWindow):
         self._current_file: str | None = None
         self._remote_overlay: RemoteKeyOverlay | None = None
         self._customize_overlay: CustomizeOverlay | None = None
-        self._api_key_overlay: ApiKeyOverlay | None = None
+        self._api_key_overlay: ApiProviderWorkspace | None = None
         self._voice_mode = str(_cfg.get("voice_mode") or "female").lower()
         if self._voice_mode not in {"female", "male"}:
             self._voice_mode = "female"
@@ -3396,7 +4048,7 @@ class MainWindow(QMainWindow):
     def _render_theme(self, preference: str | None = None) -> None:
         """Repaint native widgets in place without changing their geometry."""
         old = current_palette()
-        apply_ui_theme(self._resolved_theme(preference), self._ui_accent)
+        apply_ui_theme(self._resolved_theme(preference))
         retheme_all_widgets(old, current_palette())
         self.setWindowIcon(svg_icon("edith-app", C.PRI))
 
@@ -4368,8 +5020,10 @@ class MainWindow(QMainWindow):
         self._motion_btn.toggled.connect(self._toggle_reduced_motion)
         lay.addWidget(self._motion_btn)
 
-        key_btn = QPushButton("KEY  GEMINI API KEY")
-        key_btn.setFixedHeight(30)
+        key_btn = QPushButton("API PROVIDERS")
+        _set_theme_icon(key_btn, "key", "PRI")
+        key_btn.setIconSize(QSize(15, 15))
+        key_btn.setFixedHeight(32)
         key_btn.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
         key_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         key_btn.setStyleSheet(_BTN_STYLE_DIM)
@@ -4459,26 +5113,30 @@ class MainWindow(QMainWindow):
             """)
 
     def _open_api_key_settings(self):
-        current = get_gemini_api_key(API_FILE) or ""
         if self._api_key_overlay:
             self._api_key_overlay.hide()
         cw = self.centralWidget()
-        ov = ApiKeyOverlay(str(current or ""), parent=cw)
-        ov.saved.connect(self._on_api_key_saved)
+        ov = ApiProviderWorkspace(parent=cw)
+        ov.voice_saved.connect(self._on_api_key_saved)
+        ov.settings_saved.connect(self._on_api_provider_saved)
+        width = min(ApiProviderWorkspace._OW, max(560, cw.width() - 24))
+        height = min(ApiProviderWorkspace._OH, max(440, cw.height() - 24))
         ov.setGeometry(
-            max(8, (cw.width() - ApiKeyOverlay._OW) // 2),
-            max(8, (cw.height() - ApiKeyOverlay._OH) // 2),
-            min(ApiKeyOverlay._OW, cw.width() - 16),
-            min(ApiKeyOverlay._OH, cw.height() - 16),
+            max(8, (cw.width() - width) // 2),
+            max(8, (cw.height() - height) // 2),
+            width, height,
         )
         ov.show()
         ov.raise_()
         self._api_key_overlay = ov
 
     def _on_api_key_saved(self):
-        self._log.append_log("SYS: Gemini API key saved after Live API validation.")
+        self._log.append_log("SYS: Voice API provider and key saved after a successful Live test.")
         if self.on_api_key_saved:
             self.on_api_key_saved()
+
+    def _on_api_provider_saved(self):
+        self._log.append_log("SYS: API provider settings saved after a successful connection test.")
 
     def _toggle_drawer(self, checked: bool):
         if checked:
@@ -5048,8 +5706,7 @@ class MainWindow(QMainWindow):
         ov = CustomizeOverlay(
             self._display_name,
             cfg.get("user_name", ""),
-            cfg.get("ui_color", "") or DEFAULT_UI_COLOR,
-            self._theme_preference,
+            theme_preference=self._theme_preference,
             parent=cw,
         )
         ow, oh = CustomizeOverlay._OW, CustomizeOverlay._OH
@@ -5059,21 +5716,14 @@ class MainWindow(QMainWindow):
             (cw.height() - oh) // 2,
             ow, oh,
         )
-        ov.on_preview = self._preview_ui_color
         ov.on_theme_preview = self._preview_theme_preference
         ov.saved.connect(self._apply_name_update)
         ov.theme_saved.connect(self._save_theme_preference)
         ov.show()
         self._customize_overlay = ov
 
-    def _preview_ui_color(self, hex_color: str):
-        """Canlı önizleme — tüm arayüzü yeni renge boyar (config'e YAZMAZ)."""
-        old = current_palette()
-        if apply_ui_accent(hex_color):
-            retheme_all_widgets(old, current_palette())
-
-    def _apply_name_update(self, name: str, user_name: str, ui_color: str = ""):
-        """Update all name/theme-dependent UI elements and persist to config."""
+    def _apply_name_update(self, name: str, user_name: str):
+        """Update identity fields without exposing manual accent controls."""
         self._assistant_name = "EDITH"
         self._display_name = UI_BRAND
         display = self._display_name
@@ -5082,28 +5732,15 @@ class MainWindow(QMainWindow):
         self._sub_lbl.setText("PERSONAL ASSISTANT SYSTEM  •  VOICE  •  VISION")
         self._log._ai_name_lc = self._assistant_name.lower()
         self.hud._assistant_name = display
-
-        color_changed = False
-        if ui_color:
-            old = current_palette()
-            if apply_ui_accent(ui_color):
-                self._ui_accent = ui_color.strip().lower()
-                # Tüm arayüzü (paneller, butonlar, kenarlıklar, HUD) canlı boya
-                retheme_all_widgets(old, current_palette())
-                color_changed = old["PRI"] != C.PRI
-
         try:
             data = _read_full_config()
             data["assistant_name"] = self._assistant_name
             data["user_name"] = user_name.strip()
-            if ui_color:
-                data["ui_color"] = ui_color.strip().lower()
+            data.pop("ui_color", None)
             API_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
             self._log.append_log(f"SYS: Identity updated — {display}")
-            if color_changed:
-                self._log.append_log(f"SYS: UI colour applied — {ui_color}")
-        except Exception as e:
-            self._log.append_log(f"ERR: Config save failed — {e}")
+        except Exception as exc:
+            self._log.append_log(f"ERR: Config save failed — {type(exc).__name__}")
 
     def _open_plugin_manager(self):
         plugins = self.get_plugins() if self.get_plugins else []

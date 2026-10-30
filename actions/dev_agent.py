@@ -2,7 +2,7 @@ from core.branding import prepare_projects_dir
 import subprocess
 import shutil
 from core.execution import SERVICE, format_execution, stopped
-from core.secrets import get_gemini_api_key
+from types import SimpleNamespace
 import sys
 import json
 import re
@@ -23,20 +23,14 @@ MAX_FIX_ATTEMPTS = 5
 MODEL_PLANNER    = "gemini-flash-latest"
 MODEL_WRITER     = "gemini-flash-latest"
 
-def _get_api_key() -> str:
-    key = get_gemini_api_key(API_CONFIG_PATH)
-    if not key:
-        raise RuntimeError("Gemini API key is not configured.")
-    return key
-
-
-def _get_model(model_name: str):
-    from google import genai
-    _c = genai.Client(api_key=_get_api_key())
+def _get_model(model_name: str | None = None):
+    """Use the independently configured Powerful Brain for coding/planning work."""
+    from core.llm_client import call_llm_text
 
     class _W:
         def generate_content(self, contents):
-            return _c.models.generate_content(model=model_name, contents=contents)
+            prompt = str(contents or "")
+            return SimpleNamespace(text=call_llm_text(prompt, model=None, profile="powerful"))
 
     return _W()
 
