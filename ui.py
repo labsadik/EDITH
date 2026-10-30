@@ -1998,6 +1998,7 @@ class _ProviderProfileTab(_ApiTabBase):
         self._tested_signature = None
         self._loading_models = False
         self._key_revealed = False
+        self._previous_provider: str | None = None
 
         layout = self._create_scroll_form()
 
@@ -2147,21 +2148,26 @@ class _ProviderProfileTab(_ApiTabBase):
         self._key.setText(key)
         self._key.blockSignals(False)
         self._key_hint.setText(self._secret_preview(key))
+        self._previous_provider = settings["provider"]
         self._provider_changed()
 
     def _provider_changed(self, *_args):
         from core.provider_registry import provider_spec, provider_api_key
         provider = str(self._provider.currentData() or "ollama")
         spec = provider_spec(provider)
-        self._url.setText(spec.default_url)
+        if provider != self._previous_provider:
+            self._url.setText(spec.default_url)
+            self._model.blockSignals(True)
+            self._model.clear()
+            self._model.addItem(spec.default_model)
+            self._model.setCurrentText(spec.default_model)
+            self._model.blockSignals(False)
+            self._previous_provider = provider
         saved_key = provider_api_key(provider, API_FILE, self.profile) or ""
         self._key.blockSignals(True)
         self._key.setText(saved_key)
         self._key.blockSignals(False)
         self._key_hint.setText(self._secret_preview(saved_key))
-        self._model.clear()
-        self._model.addItem(spec.default_model)
-        self._model.setCurrentText(spec.default_model)
         self._model.setEnabled(True)
         self._refresh_btn.setEnabled(True)
         self._key.setPlaceholderText("Not required for this local provider" if not spec.secret_name
