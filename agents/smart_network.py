@@ -250,8 +250,9 @@ def scan_wifi_networks() -> dict[str, Any]:
         if not interfaces.get("available"):
             return {
                 "ok": False, "platform": system, "adapters": [], "networks": [],
-                "count": 0, "error": interfaces.get("reason") or interfaces.get("output")
-                         or "Windows WLAN service or netsh is unavailable.",
+                "count": 0, "error": "Windows WLAN service or netsh is unavailable: "
+                         + str(interfaces.get("reason") or interfaces.get("output")
+                               or "No scan command result was returned."),
             }
         names = re.findall(r"(?im)^\s*Name\s*:\s*(.*?)\s*$",
                            str(interfaces.get("output") or ""))
@@ -305,8 +306,10 @@ def scan_wifi_networks() -> dict[str, Any]:
             return {
                 "ok": False, "platform": system, "adapters": [], "networks": [],
                 "count": 0,
-                "error": scan.get("reason") or scan.get("output")
-                         or "NetworkManager nmcli is unavailable. Install/enable NetworkManager or provide an OS-supported Wi-Fi scan tool.",
+                "error": "NetworkManager nmcli is unavailable: "
+                         + str(scan.get("reason") or scan.get("output")
+                               or "No scan command result was returned.")
+                         + " Install/enable NetworkManager or provide an OS-supported Wi-Fi scan tool.",
             }
         networks = _parse_nmcli_wifi_networks(str(scan.get("output") or ""))
         return {
