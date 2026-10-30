@@ -14,7 +14,7 @@ type Handle = *mut c_void;
 type Sid = *mut c_void;
 const SE_FILE_OBJECT: u32 = 1;
 const DACL_SECURITY_INFORMATION: u32 = 0x00000004;
-const GRANT_ACCESS: u32 = 1;
+const SET_ACCESS: u32 = 2;
 const TRUSTEE_IS_SID: u32 = 0;
 const TRUSTEE_IS_UNKNOWN: u32 = 0;
 const OBJECT_INHERIT_ACE: u32 = 0x1;
@@ -93,7 +93,7 @@ fn grant_acl(path: &Path, sid: Sid, permissions: u32, inheritance: u32) -> Resul
     if query != 0 { return Err(format!("Cannot inspect ACL for {}: error {query}", path.display())); }
     let mut entry = ExplicitAccessW {
         grfAccessPermissions: permissions,
-        grfAccessMode: GRANT_ACCESS,
+        grfAccessMode: SET_ACCESS,
         grfInheritance: inheritance,
         Trustee: TrusteeW { pMultipleTrustee: null_mut(), MultipleTrusteeOperation: 0, TrusteeForm: TRUSTEE_IS_SID, TrusteeType: TRUSTEE_IS_UNKNOWN, ptstrName: sid.cast() },
     };
@@ -116,6 +116,49 @@ fn grant_path(path: &Path, sid: Sid, writable: bool) -> Result<(), String> {
     let access = if writable { FILE_ALL_ACCESS } else { GENERIC_READ | GENERIC_EXECUTE };
     let inherit = if path.is_dir() { OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE } else { 0 };
     grant_acl(path, sid, access, inherit)
+}
+
+fn grant_tree(root: &Path, sid: Sid, writable: bool) -> Result<(), String> {
+    let mut pending = vec![root.to_path_buf()];
+    let mut visited = 0usize;
+    while let Some(path) = pending.pop() {
+        let metadata = std::fs::symlink_metadata(&path)
+            .map_err(|e| format!("Cannot inspect sandbox ACL path {}: {e}", path.display()))?;
+        let kind = metadata.file_type();
+        if kind.is_symlink() {
+            continue;
+        }
+        visited += 1;
+        if visited > 40000 {
+            return Err(format!("Sandbox ACL path {} exceeds the 40000-entry safety limit", root.display()));
+        }
+        let is_directory = kind.is_dir();
+        let permissions = if writable { FILE_ALL_ACCESS } else { GENERIC_READ | GENERIC_EXECUTE };
+        let inheritance = if is_directory { OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE } else { 0 };
+        grant_acl(&path, sid, permissions, inheritance)?;
+        if is_directory {
+            for entry in std::fs::read_dir(&path)
+                .map_err(|e| format!("Cannot enumerate sandbox directory {}: {e}", path.display()))?
+            {
+                let entry = entry.map_err(|e| format!("Cannot read sandbox directory entry: {e}"))?;
+                let child_type = entry.file_type()
+                    .map_err(|e| format!("Cannot inspect sandbox directory entry: {e}"))?;
+                // Do not follow symlinks/reparse-like directory entries outside the
+                // selected workspace or read-only runtime directory.
+                if !child_type.is_symlink() {
+                    pending.push(entry.path());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_windows_system_directory(path: &Path) -> bool {
+    let root = std::env::var("SYSTEMROOT").or_else(|_| std::env::var("WINDIR"))
+        .unwrap_or_else(|_| r"C:\\Windows".to_string());
+    let system = PathBuf::from(root).join("System32");
+    path.to_string_lossy().to_lowercase() == system.to_string_lossy().to_lowercase()
 }
 
 fn appcontainer_sid(workspace: &Path) -> Result<Sid, String> {
@@ -202,16 +245,22 @@ pub fn run(options: &Options) -> Result<i32, String> {
     }
     let sid = appcontainer_sid(workspace)?;
     let result = (|| {
-        grant_path(workspace, sid, true)?;
-        grant_path(&temp, sid, true)?;
-        for path in &options.read_only { grant_path(path, sid, false)?; }
+        grant_tree(workspace, sid, true)?;
+        for path in &options.read_only {
+            if path.exists() && !path.starts_with(workspace) && !is_windows_system_directory(path) {
+                grant_tree(path, sid, false)?;
+            }
+        }
         let app = if options.program.is_absolute() { options.program.clone() } else {
             std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
                 .map(|dir| dir.join(&options.program)).find(|p| p.is_file())
                 .ok_or_else(|| format!("Sandbox executable not found: {}", options.program.display()))?
         };
         if !app.is_file() { return Err(format!("Sandbox executable does not exist: {}", app.display())); }
-        if !app.starts_with(workspace) { grant_path(app.parent().ok_or("Executable has no parent directory")?, sid, false)?; }
+        if !app.starts_with(workspace) && !is_windows_system_directory(app.parent().unwrap_or(Path::new(""))) {
+            grant_path(app.parent().ok_or("Executable has no parent directory")?, sid, false)?;
+            grant_acl(&app, sid, GENERIC_READ | GENERIC_EXECUTE, 0)?;
+        }
         let mut capabilities = Vec::<SidAndAttributes>::new();
         let mut internet_sid: Sid = null_mut();
         if options.network {
