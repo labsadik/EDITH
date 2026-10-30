@@ -143,6 +143,26 @@ The selected Powerful Brain provider powers the text-reasoning/specialist-agent 
 The current real-time voice transport remains Google Gemini Live; a generic OpenAI API
 key or Ollama endpoint does not itself provide the Live audio transport.
 
+## Smart Network Wi-Fi scan and Home Assistant pairing
+
+Open **Plugins → Agents → Smart Network**. Choose **PAIR HA** to enter the
+Home Assistant base URL and a long-lived access token. EDITH first verifies
+that `/api/config` responds successfully; credentials are not saved when
+the URL or token is invalid. On success, the token is stored in the OS keychain
+when available. **UPDATE HA** re-verifies and replaces the pairing.
+
+Use the Smart Network action `wifi_scan` to enumerate nearby SSIDs, BSSIDs,
+signal and channel information from the Wi-Fi adapters exposed by the OS.
+Windows scans every visible WLAN interface (including supported USB dongles),
+Linux uses NetworkManager's Wi-Fi rescan, and macOS uses the OS airport scan
+utility where present. A dongle must have a working OS driver and its OS WLAN
+service must be enabled. EDITH reports a specific unsupported/unavailable
+reason instead of claiming a scan succeeded. Scanning only reads beacon
+information; it does not join a network or test Wi-Fi passwords.
+
+Home Assistant entity reads and controls remain unavailable until pairing
+succeeds. This is separate from local Wi-Fi scanning and LAN-neighbor discovery.
+
 ## Smart Network and embedded browser recovery
 
 Passive local network discovery does not require Home Assistant. Home Assistant entity
