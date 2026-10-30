@@ -175,12 +175,28 @@ def _split_nmcli_fields(line: str) -> list[str]:
 
 
 def _parse_nmcli_wifi_networks(output: str) -> list[dict[str, Any]]:
+    """Parse nmcli terse rows, including MAC colons and escaped SSID colons."""
     networks: list[dict[str, Any]] = []
     for line in output.splitlines():
         fields = _split_nmcli_fields(line)
         if len(fields) < 8:
             continue
-        in_use, ssid, bssid, channel, frequency, rate, signal, security = fields[:8]
+        in_use = fields[0]
+        # Some nmcli builds escape BSSID colons into one field; others leave
+        # the six octets separated by the terse output delimiter. Parse from
+        # the right because channel/frequency/rate/signal/security are stable.
+        if len(fields) >= 13 and all(
+            re.fullmatch(r"(?i)[0-9a-f]{2}", item or "")
+            for item in fields[-11:-5]
+        ):
+            ssid = ":".join(fields[1:-11])
+            bssid = ":".join(fields[-11:-5])
+            channel, frequency, rate, signal, security = fields[-5:]
+        else:
+            ssid, bssid, channel, frequency, rate, signal, security = fields[1:8]
+            if len(fields) > 8:
+                # Keep unexpected trailing output as a useful security label.
+                security = ":".join(fields[7:])
         try:
             signal_value = max(0, min(100, int(signal)))
         except (TypeError, ValueError):
@@ -197,7 +213,6 @@ def _parse_nmcli_wifi_networks(output: str) -> list[dict[str, Any]]:
             "security": security or "Open",
         })
     return networks[:256]
-
 
 def _parse_macos_wifi_networks(output: str, interface: str) -> list[dict[str, Any]]:
     """Parse the tabular output of Apple's airport -s scan command."""
