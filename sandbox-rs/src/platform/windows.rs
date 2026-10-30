@@ -59,6 +59,7 @@ extern "system" {
 #[link(name = "advapi32")]
 extern "system" {
     fn ConvertStringSidToSidW(string_sid: *const u16, sid: *mut Sid) -> i32;
+    fn FreeSid(sid: Sid) -> Sid;
     fn GetNamedSecurityInfoW(name: *mut u16, object_type: u32, security_info: u32, owner: *mut Sid, group: *mut Sid, dacl: *mut *mut c_void, sacl: *mut *mut c_void, descriptor: *mut *mut c_void) -> u32;
     fn SetEntriesInAclW(count: u32, entries: *mut ExplicitAccessW, old_acl: *mut c_void, new_acl: *mut *mut c_void) -> u32;
     fn SetNamedSecurityInfoW(name: *mut u16, object_type: u32, security_info: u32, owner: Sid, group: Sid, dacl: *mut c_void, sacl: *mut c_void) -> u32;
@@ -99,7 +100,7 @@ fn grant_acl(path: &Path, sid: Sid, permissions: u32, inheritance: u32) -> Resul
     };
     let mut new_acl: *mut c_void = null_mut();
     let update = unsafe { SetEntriesInAclW(1, &mut entry, old_acl, &mut new_acl) };
-    unsafe { LocalFree(descriptor); if !old_acl.is_null() { LocalFree(old_acl); } }
+    unsafe { LocalFree(descriptor); }
     if update != 0 { return Err(format!("Cannot construct sandbox ACL for {}: error {update}", path.display())); }
     let set = unsafe { SetNamedSecurityInfoW(name.as_mut_ptr(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, null_mut(), null_mut(), new_acl, null_mut()) };
     unsafe { LocalFree(new_acl); }
@@ -164,7 +165,7 @@ fn is_windows_system_directory(path: &Path) -> bool {
 fn appcontainer_sid(workspace: &Path) -> Result<Sid, String> {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     workspace.to_string_lossy().to_lowercase().hash(&mut hasher);
-    let name = wide(&format!("EDITH.AgentSandbox.{:016x}", hasher.finish()));
+    let name = wide(&format!("EDITH-AgentSandbox-{:016x}", hasher.finish()));
     let display = wide("EDITH Agent Sandbox");
     let description = wide("Non-admin, workspace-confined execution environment for EDITH agents");
     let mut sid: Sid = null_mut();
@@ -330,6 +331,6 @@ pub fn run(options: &Options) -> Result<i32, String> {
         unsafe { CloseHandle(process.hThread); CloseHandle(process.hProcess); CloseHandle(job); }
         Ok(code)
     })();
-    unsafe { LocalFree(sid); }
+    unsafe { FreeSid(sid); }
     result
 }
