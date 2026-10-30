@@ -6,7 +6,7 @@
 #endif
 
 [Setup]
-AppId={{E1D17E20-B8DB-4A45-8C7A-ED17ED17ED17}}
+AppId={{E1D17E20-B8DB-4A45-8C7A-ED17ED17ED17}
 AppName=EDITH — Neuron Intelligence
 AppVersion={#AppVersion}
 AppVerName=EDITH — Neuron Intelligence {#AppVersion}
