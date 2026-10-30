@@ -7,6 +7,45 @@ from agents import smart_network
 
 
 class HomeAssistantSetupTests(unittest.TestCase):
+    def test_valid_home_assistant_credentials_are_verified_without_persisting(self):
+        response = type("Response", (), {
+            "status_code": 200,
+            "json": lambda self: {"location_name": "Home"},
+            "raise_for_status": lambda self: None,
+        })()
+        with patch.object(smart_network.requests, "get", return_value=response) as get:
+            result = smart_network.test_home_assistant_connection(
+                "http://ha.local:8123/", "token-secret"
+            )
+        self.assertTrue(result["ok"])
+        args, kwargs = get.call_args
+        self.assertEqual(args[0], "http://ha.local:8123/api/config")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer token-secret")
+        self.assertFalse(kwargs.get("allow_redirects", True) is True)
+
+    def test_invalid_home_assistant_token_is_rejected_before_pairing(self):
+        response = type("Response", (), {"status_code": 401})()
+        with patch.object(smart_network.requests, "get", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "rejected this token"):
+                smart_network.test_home_assistant_connection(
+                    "http://ha.local:8123", "bad-token"
+                )
+
+    def test_home_assistant_redirect_is_not_followed_silently(self):
+        response = type("Response", (), {"status_code": 302})()
+        with patch.object(smart_network.requests, "get", return_value=response) as get:
+            with self.assertRaisesRegex(RuntimeError, "redirected"):
+                smart_network.test_home_assistant_connection(
+                    "http://ha.local:8123", "token"
+                )
+            self.assertFalse(get.call_args.kwargs["allow_redirects"])
+
+    def test_home_assistant_url_with_embedded_credentials_is_rejected(self):
+        with self.assertRaises(ValueError):
+            smart_network.test_home_assistant_connection(
+                "http://user:pass@ha.local:8123", "token"
+            )
+
     def test_status_without_pairing_is_a_structured_setup_state(self):
         with (
             patch.object(smart_network, "_ha_credentials", return_value=None),
