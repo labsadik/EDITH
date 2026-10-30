@@ -61,13 +61,18 @@ class SecretStorageTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         for relative in (
             "main.py", "dashboard/server.py", "actions/code_helper.py",
-            "actions/dev_agent.py", "actions/file_processor.py", "actions/screen_processor.py",
+            "actions/file_processor.py", "actions/screen_processor.py",
             "actions/web_search.py", "actions/youtube_video.py", "actions/flight_finder.py",
             "actions/upload_video.py", "actions/desktop.py", "actions/computer_control.py",
             "actions/computer_settings.py", "ui.py",
         ):
             with self.subTest(path=relative):
                 self.assertIn("get_gemini_api_key", (root / relative).read_text(encoding="utf-8"))
+        # Coding/planning now uses the Powerful Brain profile, whose provider
+        # credentials are resolved by the shared provider_registry secret helper.
+        dev_agent = (root / "actions/dev_agent.py").read_text(encoding="utf-8")
+        self.assertIn('profile="powerful"', dev_agent)
+        self.assertIn("call_llm_text", dev_agent)
 
 
 if __name__ == "__main__":
