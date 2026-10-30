@@ -45,6 +45,25 @@ class SmartNetworkHomeAssistantTests(unittest.TestCase):
         self.assertFalse(result["home_assistant_paired"])
         self.assertFalse(result["control_available"])
 
+    def test_smart_device_writes_always_force_interactive_approval_even_unattended(self):
+        from edith.platform.permissions import requires_local_confirmation
+        self.assertTrue(requires_local_confirmation("smart_network", {"action": "control"}))
+        self.assertTrue(requires_local_confirmation("smart_network", {"action": "mqtt_publish"}))
+        self.assertFalse(requires_local_confirmation("smart_network", {"action": "mqtt_read"}))
+        self.assertFalse(requires_local_confirmation("smart_network", {"action": "discover"}))
+
+    def test_mqtt_read_is_read_only_tier_zero_and_publish_requires_confirmation(self):
+        from edith.platform.permissions import tool_tier
+        self.assertEqual(tool_tier("smart_network", {"action": "mqtt_status"}), 0)
+        self.assertEqual(tool_tier("smart_network", {"action": "mqtt_read"}), 0)
+        self.assertEqual(tool_tier("smart_network", {"action": "mqtt_publish"}), 2)
+        from core.action_guard import confirmation_requirement
+        prompt = confirmation_requirement(
+            "smart_network", {"action": "mqtt_publish", "topic": "home/light", "payload": "ON"}
+        )
+        self.assertIn("home/light", prompt)
+        self.assertIn("ON", prompt)
+
     def test_temperature_and_entity_domain_are_validated(self):
         state = {"entity_id": "climate.living_room", "state": "heat", "attributes": {}}
         with patch.object(smart_network, "_ha_request", return_value=state):

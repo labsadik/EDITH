@@ -12,6 +12,34 @@ from core import sandbox_runner
 
 
 class SandboxRunnerTests(unittest.TestCase):
+    def test_named_profiles_have_bounded_resource_presets(self):
+        safe = sandbox_runner.sandbox_profile_limits("safe", timeout=999)
+        self.assertEqual(safe, (45, 512, 30))
+        build = sandbox_runner.sandbox_profile_limits("build", timeout=999, memory_mb=8192, cpu_seconds=3600)
+        self.assertEqual(build, (600, 4096, 600))
+        standard = sandbox_runner.sandbox_profile_limits("standard", timeout=17)
+        self.assertEqual(standard, (17, 2048, 17))
+        with self.assertRaises(ValueError):
+            sandbox_runner.sandbox_profile_limits("unrestricted")
+
+    def test_runner_profile_is_passed_as_safe_resource_limits(self):
+        with tempfile.TemporaryDirectory() as folder:
+            workspace = Path(folder)
+            binary = Path(folder) / "edith-sandbox"
+            binary.write_text("test stub", encoding="utf-8")
+            completed = subprocess.CompletedProcess(["sandbox"], 0, "ok", "")
+            with (
+                patch.object(sandbox_runner, "ensure_sandbox_ready", return_value=binary),
+                patch.object(sandbox_runner.subprocess, "run", return_value=completed) as run,
+            ):
+                sandbox_runner.run_sandboxed(
+                    ["python", "main.py"], workspace=workspace, timeout=120, profile="safe"
+                )
+            command = run.call_args.args[0]
+            self.assertEqual(command[command.index("--timeout") + 1], "45")
+            self.assertEqual(command[command.index("--memory-mb") + 1], "512")
+            self.assertEqual(command[command.index("--cpu-seconds") + 1], "30")
+
     def test_runner_passes_workspace_timeout_network_and_exact_argv(self):
         with tempfile.TemporaryDirectory() as folder:
             workspace = Path(folder)

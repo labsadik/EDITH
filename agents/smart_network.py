@@ -248,10 +248,17 @@ def _home_assistant(action: str, entity_id: str = "", service: str = "",
     return {"ok": True, "entity_id": entity_id, "service": f"{domain}.{service_name}", "result": result}
 
 
-def run_smart_network(action: str = "discover", entity_id: str = "",
-                      service: str = "", service_data: dict | None = None) -> str:
+def run_smart_network(
+    action: str = "discover", entity_id: str = "", service: str = "",
+    service_data: dict | None = None, topic: str = "", payload: str = "",
+) -> str:
+    """Run passive inventory, paired HA operations or locally allowlisted MQTT."""
     action = str(action or "discover").strip().lower()
-    result = discover_local_devices() if action == "discover" else _home_assistant(
-        action, entity_id=entity_id, service=service, service_data=service_data
-    )
+    if action.startswith("mqtt_"):
+        from agents.mqtt_bridge import run_mqtt_action
+        result = run_mqtt_action(action, topic=topic, payload=payload)
+    else:
+        result = discover_local_devices() if action == "discover" else _home_assistant(
+            action, entity_id=entity_id, service=service, service_data=service_data
+        )
     return json.dumps(result, ensure_ascii=False, indent=2)

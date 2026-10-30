@@ -3742,6 +3742,7 @@ class RemoteKeyOverlay(QWidget):
 
 class MainWindow(QMainWindow):
     browser_open_signal = pyqtSignal(str)
+    browser_action_signal = pyqtSignal(object)
     _url_prompt_sig = pyqtSignal(object)
     voice_mode_signal = pyqtSignal(str)
     open_api_key_settings_signal = pyqtSignal()
@@ -3773,6 +3774,7 @@ class MainWindow(QMainWindow):
         self._confirmation_queue = []
         self.voice_mode_signal.connect(self.set_voice_mode_display)
         self.browser_open_signal.connect(self._open_embedded_browser)
+        self.browser_action_signal.connect(self._execute_embedded_browser_action)
         self._embedded_browser_dialog = None
         self.task_status_signal.connect(self._update_task_status)
         self.task_detail_signal.connect(self._update_task_details)
@@ -5757,18 +5759,39 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self._log.append_log(f"ERR: Config save failed — {type(exc).__name__}")
 
+    def _ensure_embedded_browser(self):
+        from core.embedded_browser import EmbeddedBrowserDialog
+        if self._embedded_browser_dialog is None:
+            self._embedded_browser_dialog = EmbeddedBrowserDialog(self)
+        return self._embedded_browser_dialog
+
     def _open_embedded_browser(self, url: str = "about:blank"):
         """Open or reuse EDITH's persistent embedded browser window."""
         try:
-            from core.embedded_browser import EmbeddedBrowserDialog
-            if self._embedded_browser_dialog is None:
-                self._embedded_browser_dialog = EmbeddedBrowserDialog(self)
-            self._embedded_browser_dialog.navigate(url)
+            self._ensure_embedded_browser().navigate(url)
         except Exception as exc:
             self._log.append_log(
                 f"ERR: Embedded browser unavailable ({type(exc).__name__}). "
                 "Install PyQt6-WebEngine and restart EDITH."
             )
+
+    def _execute_embedded_browser_action(self, request: dict):
+        """Qt-thread slot; always releases the worker waiting on its result."""
+        state = request.get("state") if isinstance(request, dict) else None
+        if not isinstance(state, dict):
+            return
+        def finish(value):
+            state["result"] = value
+            state["event"].set()
+        try:
+            dialog = self._ensure_embedded_browser()
+            dialog.execute_action(
+                str(request.get("action") or ""),
+                request.get("arguments") if isinstance(request.get("arguments"), dict) else {},
+                finish,
+            )
+        except Exception as exc:
+            finish({"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:180]}"})
 
     def _open_plugin_manager(self):
         plugins = self.get_plugins() if self.get_plugins else []
@@ -6115,6 +6138,22 @@ class EdithUI:
     def open_embedded_browser(self, url: str = "about:blank") -> None:
         """Thread-safe request to open EDITH's embedded browser."""
         self._emit_if_open("browser_open_signal", str(url or "about:blank"))
+
+    def execute_embedded_browser_action(
+        self, action: str, arguments: dict | None = None, timeout: float = 15.0
+    ):
+        """Execute one embedded-browser action on Qt's thread and return its receipt."""
+        state = {"event": threading.Event(), "result": None}
+        request = {
+            "action": str(action or ""),
+            "arguments": dict(arguments or {}),
+            "state": state,
+        }
+        if not self._emit_if_open("browser_action_signal", request):
+            return {"ok": False, "error": "Embedded browser UI is closed"}
+        if not state["event"].wait(max(1.0, min(float(timeout), 30.0))):
+            return {"ok": False, "error": "Embedded browser action timed out"}
+        return state.get("result")
 
     def confirm_sensitive_action(self, title: str, details: str, timeout: float = 180.0) -> bool:
         """Ask the user through the Qt GUI; timeout/cancellation never authorizes the action."""

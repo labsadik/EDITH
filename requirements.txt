@@ -38,3 +38,4 @@ lancedb>=0.20.0
 pypdf>=5.0.0
 python-docx>=1.1.0
 PyQt6-WebEngine>=6.7.0
+paho-mqtt>=2.1.0

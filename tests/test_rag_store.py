@@ -75,6 +75,32 @@ class _LanceDB:
 
 
 class RagStoreTests(unittest.TestCase):
+
+    def test_real_lancedb_index_survives_reopen_and_semantic_search(self):
+        try:
+            import lancedb  # noqa: F401
+            from langchain_core.documents import Document  # noqa: F401
+            from langchain_text_splitters import RecursiveCharacterTextSplitter  # noqa: F401
+        except ImportError:
+            self.skipTest("Install RAG dependencies to run the persistent LanceDB integration test")
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch.object(rag_store, "VECTOR_DB_PATH", Path(directory)),
+                patch.object(rag_store, "_embed", return_value=[[0.1, 0.2, 0.3]]),
+            ):
+                result = rag_store.index_text(
+                    "Persistent EDITH knowledge survives closing and reopening the vector database.",
+                    "persistent-fixture",
+                )
+                self.assertTrue(result["ok"])
+                # Each call reconnects through lancedb.connect(), proving the
+                # table is not merely retained in an in-memory test double.
+                stats = rag_store.knowledge_stats()
+                self.assertEqual(stats["chunks"], result["chunks_indexed"])
+                found = rag_store.search_knowledge("EDITH persistent knowledge", limit=3)
+                self.assertTrue(found)
+                self.assertEqual(found[0]["source"], "persistent-fixture")
+
     def test_index_text_uses_real_embedding_dimension_and_searches(self):
         with tempfile.TemporaryDirectory() as directory:
             fake_db = _LanceDB()

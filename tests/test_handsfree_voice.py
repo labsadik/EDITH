@@ -54,6 +54,21 @@ class HandsFreeVoiceTests(unittest.TestCase):
         self.assertIsNone(requested_voice_mode("Why did the voice switch to another place?"))
         self.assertIsNone(requested_voice_mode("What are the male voice options?"))
 
+    def test_asr_variant_turn_into_female_is_a_direct_voice_request(self):
+        self.assertEqual(requested_voice_mode("Turn into female blessings"), "female")
+
+    def test_explicit_voice_change_is_saved_even_when_live_is_offline(self):
+        handler = main_method("_on_text_command")
+        class State:
+            _loop = None
+            session = None
+            ui = Mock()
+            _request_voice_mode_from_ui = Mock()
+        state = State()
+        self.assertTrue(handler(state, "Turn into female blessings"))
+        state._request_voice_mode_from_ui.assert_called_once_with("female")
+        state.ui.write_log.assert_not_called()
+
     def test_microphone_gate_covers_device_playback_and_tail(self):
         gate = main_method("_mic_can_send")
         class State:
