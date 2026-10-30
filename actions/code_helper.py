@@ -1,4 +1,5 @@
 import subprocess
+import shutil
 import shlex
 from core.execution import stopped
 from core.secrets import get_gemini_api_key
@@ -254,11 +255,11 @@ def _run_file(path: Path, args: list, timeout: int) -> str:
     stdout = (receipt.stdout or "").strip()
     stderr = (receipt.stderr or "").strip()
     if receipt.returncode != 0:
-        return f"Execution failed (exit {receipt.returncode}).\\n{stdout}\\n{stderr}".strip()
+        return f"Execution failed (exit {receipt.returncode}).\n{stdout}\n{stderr}".strip()
     return (
-        "Exit code: 0\\n"
-        + (f"STDOUT:\\n{stdout}" if stdout else "")
-        + (f"\\nSTDERR:\\n{stderr}" if stderr else "")
+        "Exit code: 0\n"
+        + (f"STDOUT:\n{stdout}" if stdout else "")
+        + (f"\nSTDERR:\n{stderr}" if stderr else "")
     )
 
 
