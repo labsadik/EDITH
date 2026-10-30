@@ -35,7 +35,16 @@ def _write(payload: dict[str, Any]) -> None:
             temp.unlink(missing_ok=True)
 
 def _project_id(value: str) -> str:
-    slug = re.sub(r"[^a-z0-9_-]+", "-", str(value or "").strip().lower()).strip("-_")[:48]
+    raw = str(value or "").strip()
+    from pathlib import PureWindowsPath
+    windows_path = PureWindowsPath(raw)
+    if (
+        not raw or ".." in Path(raw).parts or ".." in windows_path.parts
+        or Path(raw).is_absolute() or windows_path.is_absolute()
+        or bool(windows_path.drive) or "/" in raw or "\\" in raw
+    ):
+        raise ValueError("Project id must be a simple local identifier, not a path.")
+    slug = re.sub(r"[^a-z0-9_-]+", "-", raw.lower()).strip("-_")[:48]
     if len(slug) < 2 or not _SLUG.fullmatch(slug):
         raise ValueError("Project id must contain 2-48 letters, numbers, hyphens or underscores.")
     return slug
