@@ -18,10 +18,13 @@ _AGENT_ID = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
 # A disabled agent's tools are not advertised to the voice model.
 TOOL_AGENT_MAP: dict[str, str] = {
     "dev_agent": "software_development", "code_helper": "software_development",
+    "shell_execute": "software_development", "devsecops_audit": "devsecops_security",
+    "project_manager": "project_manager",
     "browser_control": "browser_computer", "computer_control": "browser_computer",
+    "desktop_control": "browser_computer", "computer_settings": "browser_computer",
     "screen_process": "browser_computer", "open_app": "browser_computer",
     "file_controller": "file_workspace", "file_processor": "file_workspace",
-    "web_search": "research", "flight_finder": "research",
+    "web_search": "research", "flight_finder": "research", "weather_report": "research",
     "system_status": "system_monitor", "performance_metrics": "system_monitor",
     "platform_system": "system_monitor", "device_security": "device_security",
     "smart_network": "smart_network",
