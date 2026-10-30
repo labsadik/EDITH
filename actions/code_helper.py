@@ -30,12 +30,16 @@ def _get_api_key() -> str:
 
 
 def _get_gemini(model: str = GEMINI_MODEL):
-    from google import genai
-    _c = genai.Client(api_key=_get_api_key())
+    """Compatibility wrapper: all text/code reasoning uses the Powerful Brain."""
+    from types import SimpleNamespace
+    from core.brain_router import call_brain_text
 
     class _W:
         def generate_content(self, contents):
-            return _c.models.generate_content(model=model, contents=contents)
+            prompt = contents if isinstance(contents, str) else str(contents)
+            return SimpleNamespace(text=call_brain_text(
+                prompt, workload="software_development"
+            ))
 
     return _W()
 
