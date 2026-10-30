@@ -41,6 +41,32 @@ class WorkspaceTests(unittest.TestCase):
         self.app.processEvents()
 
 
+    def test_modern_workspace_surfaces_and_provider_panels(self):
+        from PyQt6.QtWidgets import QScrollArea
+        from ui import PluginManagerOverlay, ProviderSettingsOverlay
+
+        self.assertIn("border-radius: 18px", self.window._left_panel.styleSheet())
+        self.assertIn("border-radius: 18px", self.window._right_panel.styleSheet())
+        self.assertIn("PERSONAL AI WORKSPACE", self.window._sub_lbl.text())
+
+        provider = ProviderSettingsOverlay(parent=self.window.centralWidget())
+        self.assertIsNotNone(provider._provider)
+        self.assertIsNotNone(provider._url)
+        self.assertIsNotNone(provider._model)
+        self.assertIsNotNone(provider._key)
+        provider.deleteLater()
+
+        catalog = PluginManagerOverlay([
+            {"name": "sample_mcp", "kind": "mcp", "icon": "MCP",
+             "description": "Trusted connector", "valid": True, "enabled": False},
+            {"name": "sample_tool", "kind": "python",
+             "description": "Local tool", "valid": True, "enabled": True},
+        ], parent=self.window.centralWidget())
+        self.assertEqual(len(catalog.findChildren(QScrollArea)), 1)
+        self.assertEqual(len(catalog.findChildren(QFrame)), 2)
+        catalog.deleteLater()
+        self.app.processEvents()
+
     def test_remove_attachment_clears_all_selection_state(self):
         window = self.window
         window._drop_zone._set_file(str(self.ui.API_FILE))
