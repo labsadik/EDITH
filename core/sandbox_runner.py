@@ -232,8 +232,13 @@ def run_sandboxed(
             creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
         )
     except subprocess.TimeoutExpired as exc:
+        detail = exc.stderr or exc.stdout or ""
+        if isinstance(detail, bytes):
+            detail = detail.decode("utf-8", errors="replace")
+        detail = str(detail).strip()
+        diagnostic = f"\\nSandbox diagnostics:\\n{detail[-4000:]}" if detail else ""
         raise SandboxUnavailable(
-            "Sandbox supervisor timed out; child execution was terminated."
+            "Sandbox supervisor timed out; child execution was terminated." + diagnostic
         ) from exc
     if result.returncode == 125:
         raise SandboxUnavailable(

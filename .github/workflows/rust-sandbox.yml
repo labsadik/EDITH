@@ -35,6 +35,51 @@ jobs:
         run: cargo check --manifest-path sandbox-rs/Cargo.toml
       - name: Build release helper
         run: cargo build --release --manifest-path sandbox-rs/Cargo.toml
+      - name: Run native sandbox unit tests
+        run: cargo test --manifest-path sandbox-rs/Cargo.toml
+      - name: Set up Python for sandbox bridge smoke test
+        if: runner.os == 'Windows'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Smoke-test Windows AppContainer through Python bridge
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $workspace = Join-Path $env:RUNNER_TEMP "edith-appcontainer-smoke-$env:GITHUB_RUN_ID"
+          New-Item -ItemType Directory -Path $workspace -Force | Out-Null
+          $env:EDITH_SANDBOX_BIN = Join-Path $PWD "sandbox-rs/target/release/edith-sandbox.exe"
+          $env:EDITH_SANDBOX_DEBUG = "1"
+          $env:EDITH_SANDBOX_SMOKE_WORKSPACE = $workspace
+          try {
+            @'
+          import os
+          from pathlib import Path
+          from core.sandbox_runner import run_project_command
+
+          workspace = Path(os.environ["EDITH_SANDBOX_SMOKE_WORKSPACE"])
+          marker = workspace / ".edith-sandbox-smoke-ok"
+          result = run_project_command(
+              'echo EDITH_SANDBOX_CI_OK>.edith-sandbox-smoke-ok',
+              workspace=workspace,
+              timeout=20,
+              profile="safe",
+          )
+          print(result)
+          if result.startswith("Execution failed"):
+              raise SystemExit(result)
+          if not marker.is_file():
+              raise SystemExit("Sandbox child did not create its workspace marker.")
+          if marker.read_text(encoding="utf-8").strip() != "EDITH_SANDBOX_CI_OK":
+              raise SystemExit("Unexpected workspace marker content.")
+          marker.unlink()
+          print("PASS: Python bridge launched a Windows AppContainer child in its isolated workspace.")
+          '@ | python -
+            if ($LASTEXITCODE -ne 0) { throw "Python bridge AppContainer smoke test failed." }
+          }
+          finally {
+            Remove-Item -LiteralPath $workspace -Recurse -Force -ErrorAction SilentlyContinue
+          }
       - name: Check native binary version (Unix)
         if: runner.os != 'Windows'
         run: ./sandbox-rs/target/release/edith-sandbox --version

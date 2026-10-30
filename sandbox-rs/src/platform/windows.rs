@@ -6,6 +6,7 @@ use std::mem::{size_of, zeroed};
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::ptr::{null, null_mut};
+use std::time::Instant;
 use crate::Options;
 
 type Handle = *mut c_void;
@@ -84,6 +85,16 @@ extern "system" {
 fn wide(value: &str) -> Vec<u16> { std::ffi::OsStr::new(value).encode_wide().chain(Some(0)).collect() }
 fn check_win(ok: i32, label: &str) -> Result<(), String> { if ok == 0 { Err(format!("{label} failed with Windows error {}", std::io::Error::last_os_error())) } else { Ok(()) } }
 
+fn debug_step(started: &Instant, label: &str) {
+    if std::env::var_os("EDITH_SANDBOX_DEBUG").is_some() {
+        eprintln!(
+            "EDITH_SANDBOX_DEBUG {} elapsed_ms={}",
+            label,
+            started.elapsed().as_millis()
+        );
+    }
+}
+
 fn grant_acl(path: &Path, sid: Sid, permissions: u32, inheritance: u32) -> Result<(), String> {
     let mut name: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
     let mut old_acl: *mut c_void = null_mut();
@@ -124,12 +135,129 @@ fn grant_tree(root: &Path, sid: Sid, writable: bool) -> Result<(), String> {
     grant_acl(root, sid, permissions, inheritance)
 }
 
+fn normalize_windows_path(path: &Path) -> String {
+    // canonicalize() commonly returns the Win32 extended-length prefix (\\?\).
+    // Strip that prefix before comparing protected OS paths so System32 is
+    // never mistaken for an ordinary runtime directory and modified by ACL.
+    let mut value = path.to_string_lossy().replace('/', "\\").to_ascii_lowercase();
+    if let Some(rest) = value.strip_prefix("\\\\?\\unc\\") {
+        value = format!("\\\\{rest}");
+    } else if let Some(rest) = value.strip_prefix("\\\\?\\") {
+        value = rest.to_string();
+    } else if let Some(rest) = value.strip_prefix("\\\\.\\") {
+        value = rest.to_string();
+    }
+    value.trim_end_matches('\\').to_string()
+}
+
 fn is_windows_system_directory(path: &Path) -> bool {
     let root = std::env::var("SYSTEMROOT")
         .or_else(|_| std::env::var("WINDIR"))
         .unwrap_or_else(|_| r"C:\Windows".to_string());
     let system = PathBuf::from(root).join("System32");
-    path.to_string_lossy().to_lowercase() == system.to_string_lossy().to_lowercase()
+    windows_path_is_within(path, &system)
+}
+
+fn windows_path_is_within(path: &Path, root: &Path) -> bool {
+    let path = normalize_windows_path(path);
+    let root = normalize_windows_path(root);
+    path == root || path.strip_prefix(&root).is_some_and(|suffix| suffix.starts_with('\\'))
+}
+
+fn is_windows_default_readonly_path(path: &Path) -> bool {
+    if is_windows_system_directory(path) {
+        return true;
+    }
+    // Windows' standard Program Files ACLs already provide package read/execute
+    // access. Avoid propagating a new inheritable ACE through huge SDK/runtime
+    // trees (for example .NET), which is slow and unnecessary. These paths are
+    // never granted write access by EDITH.
+    ["ProgramFiles", "ProgramFiles(x86)"].iter().any(|name| {
+        std::env::var(name)
+            .ok()
+            .is_some_and(|root| windows_path_is_within(path, Path::new(&root)))
+    })
+}
+
+fn win32_path(path: &Path) -> PathBuf {
+    // Keep filesystem/ACL operations on canonical paths, but pass ordinary
+    // DOS/UNC paths to CreateProcess and child environment variables. cmd.exe
+    // treats a \\?\ current directory as an unsupported UNC working directory.
+    let value = path.to_string_lossy().replace('/', "\\");
+    if let Some(rest) = value.strip_prefix("\\\\?\\UNC\\") {
+        PathBuf::from(format!("\\\\{rest}"))
+    } else if let Some(rest) = value.strip_prefix("\\\\?\\") {
+        PathBuf::from(rest)
+    } else if let Some(rest) = value.strip_prefix("\\\\.\\") {
+        PathBuf::from(rest)
+    } else {
+        PathBuf::from(value)
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+
+    #[test]
+    fn extended_length_system32_path_is_recognized() {
+        let root = std::env::var("SYSTEMROOT")
+            .or_else(|_| std::env::var("WINDIR"))
+            .unwrap_or_else(|_| r"C:\Windows".to_string());
+        let system = PathBuf::from(root).join("System32");
+        let extended = PathBuf::from(format!("\\\\?\\{}", system.display()));
+
+        assert!(is_windows_system_directory(&system));
+        assert!(is_windows_system_directory(&extended));
+    }
+
+    #[test]
+    fn system32_descendants_are_protected_from_acl_updates() {
+        let root = std::env::var("SYSTEMROOT")
+            .or_else(|_| std::env::var("WINDIR"))
+            .unwrap_or_else(|_| r"C:\Windows".to_string());
+        let powershell = PathBuf::from(root)
+            .join("System32")
+            .join("WindowsPowerShell")
+            .join("v1.0");
+        assert!(is_windows_system_directory(&powershell));
+    }
+
+    #[test]
+    fn windows_path_comparison_ignores_case_and_trailing_separator() {
+        let regular = Path::new(r"C:\Windows\System32\\");
+        let differently_cased = Path::new(r"c:\WINDOWS\system32");
+        assert_eq!(
+            normalize_windows_path(regular),
+            normalize_windows_path(differently_cased)
+        );
+    }
+
+    #[test]
+    fn program_files_subtrees_are_detected_without_prefix_collisions() {
+        let root = Path::new(r"C:\Program Files");
+        assert!(windows_path_is_within(
+            Path::new(r"c:\program files\dotnet"),
+            root
+        ));
+        assert!(windows_path_is_within(root, root));
+        assert!(!windows_path_is_within(
+            Path::new(r"C:\Program FilesBackup\tool"),
+            root
+        ));
+    }
+
+    #[test]
+    fn process_path_strips_extended_length_prefix() {
+        let extended = Path::new(r"\\?\D:\work\project");
+        assert_eq!(win32_path(extended), PathBuf::from(r"D:\work\project"));
+    }
+
+    #[test]
+    fn process_path_converts_extended_unc_prefix() {
+        let extended = Path::new(r"\\?\UNC\server\share\project");
+        assert_eq!(win32_path(extended), PathBuf::from(r"\\server\share\project"));
+    }
 }
 
 fn appcontainer_sid(workspace: &Path) -> Result<Sid, String> {
@@ -161,6 +289,8 @@ fn quote_arg(value: &str) -> String {
 }
 
 fn safe_environment(options: &Options, temp: &Path) -> Vec<u16> {
+    let workspace = win32_path(&options.workspace);
+    let temp = win32_path(temp);
     let mut values: BTreeMap<String, String> = BTreeMap::new();
     for key in [
         "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT",
@@ -180,20 +310,20 @@ fn safe_environment(options: &Options, temp: &Path) -> Vec<u16> {
     values.insert("WINDIR".into(), system_root.clone());
     values.insert("COMSPEC".into(), format!(r"{system_root}\System32\cmd.exe"));
     let mut path_dirs = vec![PathBuf::from(format!(r"{system_root}\System32"))];
-    path_dirs.extend(options.path_dirs.iter().cloned());
-    path_dirs.push(options.workspace.join(".venv/Scripts"));
-    path_dirs.push(options.workspace.clone());
+    path_dirs.extend(options.path_dirs.iter().map(|path| win32_path(path)));
+    path_dirs.push(workspace.join(".venv/Scripts"));
+    path_dirs.push(workspace.clone());
     values.insert(
         "PATH".into(),
         std::env::join_paths(path_dirs).unwrap_or_default().to_string_lossy().to_string(),
     );
-    values.insert("USERPROFILE".into(), options.workspace.join(".edith-home").to_string_lossy().to_string());
-    values.insert("HOMEDRIVE".into(), options.workspace.to_string_lossy().chars().take(2).collect());
-    values.insert("HOMEPATH".into(), options.workspace.join(".edith-home").to_string_lossy().to_string());
+    values.insert("USERPROFILE".into(), workspace.join(".edith-home").to_string_lossy().to_string());
+    values.insert("HOMEDRIVE".into(), workspace.to_string_lossy().chars().take(2).collect());
+    values.insert("HOMEPATH".into(), workspace.join(".edith-home").to_string_lossy().to_string());
     values.insert("TEMP".into(), temp.to_string_lossy().to_string());
     values.insert("TMP".into(), temp.to_string_lossy().to_string());
-    values.insert("APPDATA".into(), options.workspace.join(".edith-appdata").to_string_lossy().to_string());
-    values.insert("LOCALAPPDATA".into(), options.workspace.join(".edith-local").to_string_lossy().to_string());
+    values.insert("APPDATA".into(), workspace.join(".edith-appdata").to_string_lossy().to_string());
+    values.insert("LOCALAPPDATA".into(), workspace.join(".edith-local").to_string_lossy().to_string());
     values.insert("PYTHONDONTWRITEBYTECODE".into(), "1".into());
     values.insert("PYTHONUNBUFFERED".into(), "1".into());
     values.insert("PYTHONNOUSERSITE".into(), "1".into());
@@ -223,17 +353,25 @@ fn make_job(timeout: u64, memory_mb: u64) -> Result<Handle, String> {
 }
 
 pub fn run(options: &Options) -> Result<i32, String> {
+    let started = Instant::now();
+    debug_step(&started, "prepare workspace");
     let workspace = &options.workspace;
     let temp = workspace.join(".edith-tmp");
     for path in [&temp, &workspace.join(".edith-home"), &workspace.join(".edith-appdata"), &workspace.join(".edith-local")] {
         std::fs::create_dir_all(path).map_err(|e| format!("Cannot prepare sandbox directory {}: {e}", path.display()))?;
     }
+    debug_step(&started, "create AppContainer profile");
     let sid = appcontainer_sid(workspace)?;
+    debug_step(&started, "created AppContainer profile");
     let result = (|| {
+        debug_step(&started, "grant workspace ACL");
         grant_tree(workspace, sid, true)?;
+        debug_step(&started, "granted workspace ACL");
         for path in &options.read_only {
-            if path.exists() && !path.starts_with(workspace) && !is_windows_system_directory(path) {
+            if path.exists() && !path.starts_with(workspace) && !is_windows_default_readonly_path(path) {
+                debug_step(&started, &format!("grant read-only ACL {}", path.display()));
                 grant_tree(path, sid, false)?;
+                debug_step(&started, &format!("granted read-only ACL {}", path.display()));
             }
         }
         let app = if options.program.is_absolute() { options.program.clone() } else {
@@ -241,8 +379,9 @@ pub fn run(options: &Options) -> Result<i32, String> {
                 .map(|dir| dir.join(&options.program)).find(|p| p.is_file())
                 .ok_or_else(|| format!("Sandbox executable not found: {}", options.program.display()))?
         };
+        let app = win32_path(&app);
         if !app.is_file() { return Err(format!("Sandbox executable does not exist: {}", app.display())); }
-        if !app.starts_with(workspace) && !is_windows_system_directory(app.parent().unwrap_or(Path::new(""))) {
+        if !app.starts_with(workspace) && !is_windows_default_readonly_path(app.parent().unwrap_or(Path::new(""))) {
             grant_path(app.parent().ok_or("Executable has no parent directory")?, sid, false)?;
             grant_acl(&app, sid, GENERIC_READ | GENERIC_EXECUTE, 0)?;
         }
@@ -273,7 +412,8 @@ pub fn run(options: &Options) -> Result<i32, String> {
         let command_line = std::iter::once(app.to_string_lossy().to_string()).chain(options.args.iter().cloned()).map(|arg| quote_arg(&arg)).collect::<Vec<_>>().join(" ");
         let app_wide: Vec<u16> = app.as_os_str().encode_wide().chain(Some(0)).collect();
         let mut command_wide: Vec<u16> = command_line.encode_utf16().chain(Some(0)).collect();
-        let mut cwd: Vec<u16> = workspace.as_os_str().encode_wide().chain(Some(0)).collect();
+        let cwd_path = win32_path(workspace);
+        let mut cwd: Vec<u16> = cwd_path.as_os_str().encode_wide().chain(Some(0)).collect();
         let mut env_block = safe_environment(options, &temp);
         let mut startup: StartupInfoExW = unsafe { zeroed() };
         startup.StartupInfo.cb = size_of::<StartupInfoExW>() as u32;
@@ -283,7 +423,9 @@ pub fn run(options: &Options) -> Result<i32, String> {
         startup.StartupInfo.hStdError = unsafe { GetStdHandle(STD_ERROR_HANDLE) };
         startup.lpAttributeList = attributes;
         let mut process: ProcessInformation = unsafe { zeroed() };
+        debug_step(&started, "create AppContainer child process");
         let created = unsafe { CreateProcessW(app_wide.as_ptr(), command_wide.as_mut_ptr(), null_mut(), null_mut(), 1, EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT, env_block.as_mut_ptr().cast(), cwd.as_mut_ptr(), (&mut startup as *mut StartupInfoExW).cast(), &mut process) };
+        debug_step(&started, "created AppContainer child process");
         unsafe { DeleteProcThreadAttributeList(attributes); if !internet_sid.is_null() { LocalFree(internet_sid); } }
         check_win(created, "CreateProcessW(AppContainer)")?;
         let job = match make_job(options.cpu_seconds, options.memory_mb) {
@@ -301,7 +443,9 @@ pub fn run(options: &Options) -> Result<i32, String> {
             return Err(error);
         }
         let wait_ms = (options.timeout.saturating_mul(1000)).min(u32::MAX as u64 - 1) as u32;
+        debug_step(&started, "wait for AppContainer child");
         let wait = unsafe { WaitForSingleObject(process.hProcess, wait_ms) };
+        debug_step(&started, "AppContainer child wait completed");
         let code = if wait == WAIT_TIMEOUT {
             unsafe { TerminateJobObject(job, 124); WaitForSingleObject(process.hProcess, 5000); }
             124
