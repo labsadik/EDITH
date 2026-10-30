@@ -99,7 +99,7 @@ fn grant_acl(path: &Path, sid: Sid, permissions: u32, inheritance: u32) -> Resul
     };
     let mut new_acl: *mut c_void = null_mut();
     let update = unsafe { SetEntriesInAclW(1, &mut entry, old_acl, &mut new_acl) };
-    unsafe { LocalFree(descriptor); }
+    unsafe { LocalFree(descriptor); if !old_acl.is_null() { LocalFree(old_acl); } }
     if update != 0 { return Err(format!("Cannot construct sandbox ACL for {}: error {update}", path.display())); }
     let set = unsafe { SetNamedSecurityInfoW(name.as_mut_ptr(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, null_mut(), null_mut(), new_acl, null_mut()) };
     unsafe { LocalFree(new_acl); }
@@ -186,7 +186,7 @@ fn make_job() -> Result<Handle, String> {
     let mut info: JobExtendedLimitInformation = unsafe { zeroed() };
     info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_ACTIVE_PROCESS | JOB_OBJECT_LIMIT_PROCESS_MEMORY | JOB_OBJECT_LIMIT_JOB_MEMORY | JOB_OBJECT_LIMIT_PROCESS_TIME;
     info.BasicLimitInformation.ActiveProcessLimit = 64;
-    info.BasicLimitInformation.PerProcessUserTimeLimit = 60i64 * 10_000_000;
+    info.BasicLimitInformation.PerProcessUserTimeLimit = (options.timeout.min(3600) as i64) * 10_000_000;
     info.ProcessMemoryLimit = 2 * 1024 * 1024 * 1024usize;
     info.JobMemoryLimit = 4 * 1024 * 1024 * 1024usize;
     let ok = unsafe { SetInformationJobObject(job, JOB_OBJECT_EXTENDED_LIMIT_INFORMATION, (&mut info as *mut JobExtendedLimitInformation).cast(), size_of::<JobExtendedLimitInformation>() as u32) };
@@ -237,6 +237,7 @@ pub fn run(options: &Options) -> Result<i32, String> {
             return Err(format!("Could not apply AppContainer capability boundary: {}", std::io::Error::last_os_error()));
         }
         let command_line = std::iter::once(app.to_string_lossy().to_string()).chain(options.args.iter().cloned()).map(|arg| quote_arg(&arg)).collect::<Vec<_>>().join(" ");
+        let mut app_wide: Vec<u16> = app.as_os_str().encode_wide().chain(Some(0)).collect();
         let mut command_wide: Vec<u16> = command_line.encode_utf16().chain(Some(0)).collect();
         let mut cwd: Vec<u16> = workspace.as_os_str().encode_wide().chain(Some(0)).collect();
         let mut env_block = safe_environment(options, &temp);
@@ -248,7 +249,7 @@ pub fn run(options: &Options) -> Result<i32, String> {
         startup.StartupInfo.hStdError = unsafe { GetStdHandle(STD_ERROR_HANDLE) };
         startup.lpAttributeList = attributes;
         let mut process: ProcessInformation = unsafe { zeroed() };
-        let created = unsafe { CreateProcessW(app.as_ptr(), command_wide.as_mut_ptr(), null_mut(), null_mut(), 1, EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT, env_block.as_mut_ptr().cast(), cwd.as_mut_ptr(), (&mut startup as *mut StartupInfoExW).cast(), &mut process) };
+        let created = unsafe { CreateProcessW(app_wide.as_ptr(), command_wide.as_mut_ptr(), null_mut(), null_mut(), 1, EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT, env_block.as_mut_ptr().cast(), cwd.as_mut_ptr(), (&mut startup as *mut StartupInfoExW).cast(), &mut process) };
         unsafe { DeleteProcThreadAttributeList(attributes); if !internet_sid.is_null() { LocalFree(internet_sid); } }
         check_win(created, "CreateProcessW(AppContainer)")?;
         let job = match make_job() {
