@@ -930,7 +930,10 @@ class EdithLive:
                 config = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
             except Exception:
                 config = {}
-            home_assistant_url = str(config.get("home_assistant_url") or "")
+            home_assistant_url = str(
+                config.get("home_assistant_url")
+                or (credentials[0] if credentials else "")
+            )
         except Exception:
             credentials = None
             home_assistant_url = ""
