@@ -31,14 +31,14 @@ from PyQt6.QtGui import (
 from PyQt6.QtWidgets import (
     QApplication, QFileDialog, QComboBox, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
     QGraphicsDropShadowEffect, QMainWindow, QPushButton, QScrollArea, QSizePolicy, QSplitter,
-    QStackedWidget, QTextEdit, QVBoxLayout, QWidget, QProgressBar, QInputDialog,
+    QStackedWidget, QTextEdit, QVBoxLayout, QWidget, QProgressBar, QInputDialog, QTabWidget,
 )
 
 from core.icons import svg_icon
 from core.window_controls import initial_geometry
 from core.video_visual import LoopingVideo, draw_blended_video
 from core.dark_theme import apply_dark_theme
-from core.secrets import get_gemini_api_key, save_gemini_api_key
+from core.secrets import get_gemini_api_key, save_gemini_api_key, get_config_secret, save_config_secret
 from core.theme_service import SystemThemeMonitor, normalise_theme
 
 def _base_dir() -> Path:
@@ -1053,7 +1053,13 @@ class ApiKeyOverlay(QWidget):
     _local_connection_result = pyqtSignal(bool, str, str, str, str)
     _local_test_result = pyqtSignal(bool, str, str, int)
 
-    _OW, _OH = 620, 660
+    _OW, _OH = 860, 760
+    _SEARCH_SECRET_NAMES = {
+        "tavily": "tavily_api_key",
+        "brave": "brave_search_api_key",
+        "serpapi": "serpapi_api_key",
+        "exa": "exa_api_key",
+    }
 
     def __init__(self, current_key: str = "", parent=None):
         super().__init__(parent)
@@ -1073,9 +1079,45 @@ class ApiKeyOverlay(QWidget):
         self._local_url = "http://localhost:11434"
         self._local_model = "llama3.2"
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(26, 22, 26, 22)
-        layout.setSpacing(10)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 14, 20, 16)
+        root.setSpacing(8)
+
+        close_row = QHBoxLayout()
+        close_row.addStretch(1)
+        self._close_btn = QPushButton()
+        self._close_btn.setAccessibleName("Close API settings")
+        self._close_btn.setToolTip("Close")
+        self._close_btn.setIcon(svg_icon("x", C.TEXT_DIM))
+        self._close_btn.setIconSize(QSize(18, 18))
+        self._close_btn.setFixedSize(38, 38)
+        self._close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._close_btn.setStyleSheet(f"""
+            QPushButton {{ background: {C.PANEL2}; border: 1px solid {C.BORDER};
+                           border-radius: 12px; }}
+            QPushButton:hover {{ background: {C.DANGER_BG}; border-color: {C.RED}; }}
+        """)
+        self._close_btn.clicked.connect(self.hide)
+        close_row.addWidget(self._close_btn)
+        root.addLayout(close_row)
+
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet(f"""
+            QScrollArea {{ background: transparent; border: none; }}
+            QScrollBar:vertical {{ background: transparent; width: 8px; margin: 4px 0; }}
+            QScrollBar::handle:vertical {{ background: {C.BORDER_B}; border-radius: 4px; min-height: 26px; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+        """)
+        body = QWidget()
+        body.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(6, 4, 10, 10)
+        layout.setSpacing(12)
+        scroll.setWidget(body)
+        root.addWidget(scroll, 1)
 
         eyebrow = QLabel("LLM & API CONNECTION")
         eyebrow.setFont(QFont(FONT_MAIN, 8, QFont.Weight.Bold))
@@ -1130,12 +1172,6 @@ class ApiKeyOverlay(QWidget):
         self._local_test_btn.setToolTip("Run a real inference request through EDITH's existing core.llm_client configuration.")
         self._local_test_btn.clicked.connect(self._test_local_llm)
         local_row.addWidget(self._local_test_btn)
-        self._provider_settings_btn = QPushButton("PROVIDERS…")
-        self._provider_settings_btn.setFixedHeight(32)
-        self._provider_settings_btn.setStyleSheet(self._secondary_style())
-        self._provider_settings_btn.setToolTip("Configure and test Ollama, OpenAI, Anthropic, xAI, or an OpenAI-compatible server.")
-        self._provider_settings_btn.clicked.connect(self._open_provider_settings)
-        local_row.addWidget(self._provider_settings_btn)
         layout.addLayout(local_row)
 
         local_hint = QLabel("Uses the existing llm_provider / llm_url / llm_model settings from config/api_keys.json. Server reachability and a real model response are checked separately.")
@@ -1143,6 +1179,36 @@ class ApiKeyOverlay(QWidget):
         local_hint.setFont(QFont(FONT_MAIN, 8))
         local_hint.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
         layout.addWidget(local_hint)
+
+        brain_heading = QLabel("BRAIN PROVIDER")
+        brain_heading.setFont(QFont(FONT_MAIN, 11, QFont.Weight.Bold))
+        brain_heading.setStyleSheet(f"color: {C.TEXT}; background: transparent; padding-top: 5px;")
+        layout.addWidget(brain_heading)
+        self._brain_panel = ProviderSettingsOverlay(parent=body, embedded=True)
+        self._brain_panel.saved.connect(self._provider_settings_saved)
+        self._brain_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout.addWidget(self._brain_panel)
+
+        voice_heading = QLabel("VOICE PROVIDER")
+        voice_heading.setFont(QFont(FONT_MAIN, 11, QFont.Weight.Bold))
+        voice_heading.setStyleSheet(f"color: {C.TEXT}; background: transparent; padding-top: 5px;")
+        layout.addWidget(voice_heading)
+        self._voice_provider = QComboBox()
+        self._voice_provider.addItem("Google Gemini Live", "gemini_live")
+        self._voice_provider.setAccessibleName("Voice provider")
+        self._voice_provider.setFixedHeight(40)
+        self._voice_provider.setStyleSheet(f"""
+            QComboBox {{ background: {C.INPUT}; color: {C.TEXT}; border: 1px solid {C.BORDER};
+                        border-radius: 10px; padding: 8px 12px; }}
+            QComboBox:focus {{ border-color: {C.PRI}; }}
+            QComboBox::drop-down {{ border: 0; width: 28px; }}
+        """)
+        voice_note = QLabel("Gemini Live is the voice transport currently enabled in this build.")
+        voice_note.setWordWrap(True)
+        voice_note.setFont(QFont(FONT_MAIN, 8))
+        voice_note.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        layout.addWidget(self._voice_provider)
+        layout.addWidget(voice_note)
 
         self._key_input = QLineEdit(current_key)
         self._key_input.setEchoMode(QLineEdit.EchoMode.Password)
@@ -1205,12 +1271,78 @@ class ApiKeyOverlay(QWidget):
         row.addWidget(self._save_btn)
         layout.addLayout(row)
 
-        close_btn = QPushButton("CLOSE")
-        close_btn.setFixedHeight(28)
-        close_btn.setStyleSheet(self._secondary_style())
-        close_btn.clicked.connect(self.hide)
-        layout.addWidget(close_btn)
+        search_card = QFrame(body)
+        search_card.setStyleSheet(
+            f"QFrame {{ background: {C.GLASS_CARD}; border: 1px solid {C.BORDER}; border-radius: 16px; }}"
+        )
+        search_layout = QVBoxLayout(search_card)
+        search_layout.setContentsMargins(16, 14, 16, 14)
+        search_layout.setSpacing(9)
+        search_title_row = QHBoxLayout()
+        search_icon = QLabel()
+        search_icon.setPixmap(svg_icon("wifi", C.ACC).pixmap(QSize(20, 20)))
+        search_title_row.addWidget(search_icon)
+        search_title = QLabel("REAL-TIME SEARCH")
+        search_title.setFont(QFont(FONT_MAIN, 11, QFont.Weight.Bold))
+        search_title.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
+        search_title_row.addWidget(search_title, 1)
+        search_layout.addLayout(search_title_row)
+        search_note = QLabel("Connect a live web-search API. This is separate from local file or normal application search.")
+        search_note.setWordWrap(True)
+        search_note.setFont(QFont(FONT_MAIN, 8))
+        search_note.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        search_layout.addWidget(search_note)
 
+        self._search_provider = QComboBox()
+        for label, identifier in (
+            ("Tavily Search", "tavily"),
+            ("Brave Search API", "brave"),
+            ("SerpAPI", "serpapi"),
+            ("Exa", "exa"),
+        ):
+            self._search_provider.addItem(label, identifier)
+        self._search_provider.setAccessibleName("Real-time search provider")
+        self._search_provider.setFixedHeight(40)
+        self._search_provider.setStyleSheet(f"""
+            QComboBox {{ background: {C.INPUT}; color: {C.TEXT}; border: 1px solid {C.BORDER};
+                        border-radius: 10px; padding: 8px 12px; }}
+            QComboBox:focus {{ border-color: {C.PRI}; }}
+            QComboBox::drop-down {{ border: 0; width: 28px; }}
+        """)
+        search_layout.addWidget(QLabel("SEARCH PROVIDER"))
+        search_layout.addWidget(self._search_provider)
+        self._search_key = QLineEdit()
+        self._search_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self._search_key.setPlaceholderText("Paste real-time search API key")
+        self._search_key.setFixedHeight(42)
+        self._search_key.setStyleSheet(f"""
+            QLineEdit {{ background: {C.INPUT}; color: {C.TEXT}; border: 1px solid {C.BORDER};
+                        border-radius: 10px; padding: 9px 12px; }}
+            QLineEdit:focus {{ border-color: {C.PRI}; }}
+        """)
+        search_layout.addWidget(QLabel("API KEY"))
+        search_layout.addWidget(self._search_key)
+        search_actions = QHBoxLayout()
+        search_actions.addStretch(1)
+        self._search_save_btn = QPushButton("SAVE SEARCH KEY")
+        self._search_save_btn.setFixedHeight(38)
+        self._search_save_btn.setStyleSheet(f"""
+            QPushButton {{ background: {C.PRI}; color: {C.DARK}; border: 1px solid {C.PRI};
+                           border-radius: 10px; padding: 0 16px; font-weight: 700; }}
+            QPushButton:hover {{ background: {C.PRI_DIM}; }}
+        """)
+        self._search_save_btn.clicked.connect(self._save_realtime_search_settings)
+        search_actions.addWidget(self._search_save_btn)
+        search_layout.addLayout(search_actions)
+        self._search_status = QLabel("No search provider key loaded.")
+        self._search_status.setWordWrap(True)
+        self._search_status.setFont(QFont(FONT_MAIN, 8))
+        self._search_status.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        search_layout.addWidget(self._search_status)
+        layout.addWidget(search_card)
+
+        self._search_provider.currentIndexChanged.connect(self._on_search_provider_changed)
+        self._load_realtime_search_settings()
         self._key_input.textChanged.connect(self._on_key_edited)
         self._test_result.connect(self._finish_test)
         self._local_connection_result.connect(self._finish_local_connection)
@@ -1601,6 +1733,50 @@ class ApiKeyOverlay(QWidget):
             f"color: {C.ACC2}; background: transparent; border: none; font-weight: 700;"
         )
 
+    def _load_realtime_search_settings(self):
+        data = _read_full_config()
+        provider = str(data.get("realtime_search_provider") or "tavily").strip().lower()
+        index = self._search_provider.findData(provider)
+        self._search_provider.setCurrentIndex(max(0, index))
+        self._on_search_provider_changed()
+
+    def _on_search_provider_changed(self, *_args):
+        provider = str(self._search_provider.currentData() or "tavily")
+        secret_name = self._SEARCH_SECRET_NAMES.get(provider)
+        saved = get_config_secret(secret_name, API_FILE).value if secret_name else None
+        self._search_key.setText(saved or "")
+        if saved:
+            self._search_status.setText(f"{self._search_provider.currentText()} key loaded from local credential storage.")
+        else:
+            self._search_status.setText(f"Paste a {self._search_provider.currentText()} API key, then save it.")
+        self._search_status.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+
+    def _save_realtime_search_settings(self):
+        provider = str(self._search_provider.currentData() or "")
+        secret_name = self._SEARCH_SECRET_NAMES.get(provider)
+        key = self._search_key.text().strip()
+        if not secret_name or not key:
+            self._search_status.setText("Choose a provider and paste its API key before saving.")
+            self._search_status.setStyleSheet(f"color: {C.ACC2}; background: transparent;")
+            return
+        try:
+            status = save_config_secret(secret_name, key, API_FILE)
+            data = _read_full_config()
+            data["realtime_search_provider"] = provider
+            API_FILE.parent.mkdir(parents=True, exist_ok=True)
+            API_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
+        except Exception as exc:
+            self._search_status.setText(f"Could not save search settings: {type(exc).__name__}.")
+            self._search_status.setStyleSheet(f"color: {C.RED}; background: transparent;")
+            return
+        if status.storage == "legacy":
+            self._search_status.setText("Search key saved locally; OS keychain is unavailable on this machine.")
+            self._search_status.setStyleSheet(f"color: {C.ACC2}; background: transparent;")
+        else:
+            self._search_status.setText("Search provider and API key saved to local credential storage.")
+            self._search_status.setStyleSheet(f"color: {C.GREEN}; background: transparent;")
+        self._search_key.clear()
+        self._search_key.setPlaceholderText("Saved securely · paste a new key to replace")
 
 class ProviderSettingsOverlay(QWidget):
     """Provider-specific endpoint/model/key editor; the Gemini Live editor remains above."""
@@ -1609,9 +1785,11 @@ class ProviderSettingsOverlay(QWidget):
     _test_result = pyqtSignal(object)
     _OW, _OH = 620, 620
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, embedded: bool = False):
         super().__init__(parent)
-        _glass_shadow(self)
+        self._embedded = bool(embedded)
+        if not self._embedded:
+            _glass_shadow(self)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"""
             ProviderSettingsOverlay {{ background: {C.SHEET}; border: 1px solid {C.BORDER_B}; border-radius: 20px; }}
@@ -1621,10 +1799,22 @@ class ProviderSettingsOverlay(QWidget):
         layout.setContentsMargins(28, 24, 28, 24)
         layout.setSpacing(11)
 
+        title_row = QHBoxLayout()
         title = QLabel("BRAIN  /  TEXT MODEL PROVIDERS")
         title.setFont(QFont(FONT_MAIN, 16, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
-        layout.addWidget(title)
+        title_row.addWidget(title, 1)
+        if not self._embedded:
+            close_btn = QPushButton()
+            close_btn.setAccessibleName("Close Brain provider settings")
+            close_btn.setToolTip("Close")
+            close_btn.setIcon(svg_icon("x", C.TEXT_DIM))
+            close_btn.setIconSize(QSize(18, 18))
+            close_btn.setFixedSize(36, 36)
+            close_btn.setStyleSheet(f"QPushButton {{ background:{C.PANEL2}; border:1px solid {C.BORDER}; border-radius:11px; }} QPushButton:hover {{ background:{C.DANGER_BG}; border-color:{C.RED}; }}")
+            close_btn.clicked.connect(self.hide)
+            title_row.addWidget(close_btn)
+        layout.addLayout(title_row)
         hint = QLabel("Choose the reasoning model EDITH uses for text tasks. Voice is configured separately. Credentials use the OS keychain when available.")
         hint.setWordWrap(True); hint.setFont(QFont(FONT_MAIN, 8))
         hint.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
@@ -1647,14 +1837,14 @@ class ProviderSettingsOverlay(QWidget):
         self._status.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
         layout.addWidget(self._status)
         row = QHBoxLayout(); row.setSpacing(8)
-        test = QPushButton("TEST CONNECTION"); save = QPushButton("SAVE PROVIDER"); close = QPushButton("CLOSE")
+        test = QPushButton("TEST CONNECTION"); save = QPushButton("SAVE PROVIDER")
         test.setMinimumWidth(142); save.setMinimumWidth(142)
         self._test = test; self._save = save
-        for button in (test, close): button.setStyleSheet(ApiKeyOverlay._secondary_style()); button.setFixedHeight(40)
-        save.setStyleSheet(f"QPushButton {{ background:{C.PRI}; color:{C.DARK}; border:1px solid {C.PRI}; border-radius:6px; font-weight:700; padding:0 12px; }} QPushButton:disabled {{ background:{C.PANEL2}; color:{C.TEXT_DIM}; border-color:{C.BORDER}; }}")
+        test.setStyleSheet(ApiKeyOverlay._secondary_style()); test.setFixedHeight(40)
+        save.setStyleSheet(f"QPushButton {{ background:{C.PRI}; color:{C.DARK}; border:1px solid {C.PRI}; border-radius:10px; font-weight:700; padding:0 12px; }} QPushButton:disabled {{ background:{C.PANEL2}; color:{C.TEXT_DIM}; border-color:{C.BORDER}; }}")
         save.setFixedHeight(40); save.setEnabled(False)
-        test.clicked.connect(self._test_connection); save.clicked.connect(self._save_provider); close.clicked.connect(self.hide)
-        row.addWidget(test); row.addWidget(save); row.addWidget(close); layout.addLayout(row)
+        test.clicked.connect(self._test_connection); save.clicked.connect(self._save_provider)
+        row.addWidget(test); row.addWidget(save); layout.addLayout(row)
         self._provider.currentIndexChanged.connect(self._provider_changed)
         for field in (self._url, self._model, self._key): field.textChanged.connect(lambda _text: self._save.setEnabled(False))
         self._test_result.connect(self._finish_test)
@@ -1732,7 +1922,9 @@ class ProviderSettingsOverlay(QWidget):
             self._status.setStyleSheet(f"color: {C.RED}; background: transparent;"); return
         self._status.setText("Provider settings saved. The next local-agent request uses this provider.")
         self._status.setStyleSheet(f"color: {C.GREEN}; background: transparent;")
-        self.saved.emit(); self.hide()
+        self.saved.emit()
+        if not self._embedded:
+            self.hide()
 
 
 class SetupOverlay(QWidget):
@@ -2168,6 +2360,7 @@ class MCPConnectionDialog(QDialog):
         self.record = record
         self.setWindowTitle(f"Connect {record.get('name', 'MCP')}")
         self.setModal(True)
+        self.setWindowFlag(Qt.WindowType.WindowCloseButtonHint, True)
         self.setMinimumWidth(560)
         self.resize(640, 430)
         self.setStyleSheet(f"""
@@ -2180,10 +2373,26 @@ class MCPConnectionDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(26, 22, 26, 22)
         layout.setSpacing(12)
-        title = QLabel(f"{record.get('icon') or 'MCP'}  {record.get('name', 'MCP')}")
+        title_row = QHBoxLayout()
+        mark = QLabel()
+        mark.setPixmap(svg_icon("wifi", C.PRI).pixmap(QSize(23, 23)))
+        mark.setFixedSize(34, 34)
+        mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_row.addWidget(mark)
+        title = QLabel(str(record.get("name") or "MCP Server"))
         title.setFont(QFont(FONT_MAIN, 15, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {C.PRI};")
-        layout.addWidget(title)
+        title.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+        title_row.addWidget(title, 1)
+        self._close_btn = QPushButton()
+        self._close_btn.setAccessibleName("Close MCP connection dialog")
+        self._close_btn.setToolTip("Cancel and close")
+        self._close_btn.setIcon(svg_icon("x", C.TEXT_DIM))
+        self._close_btn.setIconSize(QSize(18, 18))
+        self._close_btn.setFixedSize(36, 36)
+        self._close_btn.setStyleSheet(f"QPushButton {{ background:{C.PANEL2}; border:1px solid {C.BORDER}; border-radius:11px; }} QPushButton:hover {{ background:{C.DANGER_BG}; border-color:{C.RED}; }}")
+        self._close_btn.clicked.connect(self.reject)
+        title_row.addWidget(self._close_btn)
+        layout.addLayout(title_row)
         note = QLabel(
             "Open the provider setup page, finish its OAuth/API consent, then paste only the issued access token. "
             "The token is stored in your OS keychain when available."
@@ -2314,13 +2523,12 @@ class PluginManagerOverlay(QWidget):
 
         head = QHBoxLayout()
         head.setSpacing(12)
-        mark = QLabel("✣")
+        mark = QLabel()
         mark.setFixedSize(42, 42)
         mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        mark.setFont(QFont(FONT_MAIN, 18, QFont.Weight.Bold))
+        mark.setPixmap(svg_icon("puzzle", C.PRI).pixmap(QSize(22, 22)))
         mark.setStyleSheet(
-            f"color: {C.PRI}; background: {C.PRI_GHO}; border: 1px solid {C.BORDER}; "
-            "border-radius: 13px;"
+            f"background: {C.PRI_GHO}; border: 1px solid {C.BORDER}; border-radius: 13px;"
         )
         head.addWidget(mark)
         title_col = QVBoxLayout()
@@ -2341,6 +2549,19 @@ class PluginManagerOverlay(QWidget):
             f"border: 1px solid {C.BORDER}; border-radius: 9px; padding: 7px 10px;"
         )
         head.addWidget(count, 0, Qt.AlignmentFlag.AlignTop)
+        close_btn = QPushButton()
+        close_btn.setAccessibleName("Close Plugins manager")
+        close_btn.setToolTip("Close")
+        close_btn.setIcon(svg_icon("x", C.TEXT_DIM))
+        close_btn.setIconSize(QSize(18, 18))
+        close_btn.setFixedSize(36, 36)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{ background: {C.PANEL2}; border: 1px solid {C.BORDER}; border-radius: 11px; }}
+            QPushButton:hover {{ background: {C.DANGER_BG}; border-color: {C.RED}; }}
+        """)
+        close_btn.clicked.connect(self.hide)
+        head.addWidget(close_btn, 0, Qt.AlignmentFlag.AlignTop)
         root.addLayout(head)
 
         divider = QFrame()
@@ -2348,51 +2569,31 @@ class PluginManagerOverlay(QWidget):
         divider.setStyleSheet(f"color: {C.BORDER};")
         root.addWidget(divider)
 
-        catalog = QScrollArea()
-        catalog.setWidgetResizable(True)
-        catalog.setFrameShape(QFrame.Shape.NoFrame)
-        catalog.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        catalog.setStyleSheet(f"""
-            QScrollArea {{ background: transparent; border: none; }}
-            QScrollBar:vertical {{ background: transparent; width: 8px; margin: 4px 0; }}
-            QScrollBar::handle:vertical {{ background: {C.BORDER_B}; border-radius: 4px; min-height: 28px; }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+        self._tabs = QTabWidget(self)
+        self._tabs.setDocumentMode(True)
+        self._tabs.setMovable(False)
+        self._tabs.setStyleSheet(f"""
+            QTabWidget::pane {{ border: 1px solid {C.BORDER}; border-radius: 14px; background: transparent; top: -1px; }}
+            QTabBar::tab {{ background: {C.PANEL2}; color: {C.TEXT_DIM}; border: 1px solid {C.BORDER};
+                           padding: 11px 18px; margin-right: 6px; border-top-left-radius: 10px;
+                           border-top-right-radius: 10px; font-weight: 700; }}
+            QTabBar::tab:selected {{ background: {C.PRI_GHO}; color: {C.PRI}; border-color: {C.PRI_DIM}; }}
+            QTabBar::tab:hover:!selected {{ color: {C.TEXT}; }}
         """)
-        catalog_body = QWidget()
-        catalog_body.setStyleSheet("background: transparent;")
-        catalog_layout = QVBoxLayout(catalog_body)
-        catalog_layout.setContentsMargins(2, 2, 8, 8)
-        catalog_layout.setSpacing(9)
-
-        if not plugins:
-            empty = QFrame()
-            empty.setStyleSheet(
-                f"background: {C.GLASS_CARD}; border: 1px dashed {C.BORDER_B}; border-radius: 14px;"
-            )
-            empty_layout = QVBoxLayout(empty)
-            empty_layout.setContentsMargins(18, 22, 18, 22)
-            empty_title = QLabel("No tools discovered yet")
-            empty_title.setFont(QFont(FONT_MAIN, 11, QFont.Weight.Bold))
-            empty_title.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
-            empty_layout.addWidget(empty_title)
-            empty_note = QLabel("Add a Python plugin or configure a trusted MCP server to get started.")
-            empty_note.setWordWrap(True)
-            empty_note.setFont(QFont(FONT_MAIN, 9))
-            empty_note.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
-            empty_layout.addWidget(empty_note)
-            catalog_layout.addWidget(empty)
-        else:
-            # MCP services are visually grouped before local Python tools.
-            ordered = sorted(
-                plugins,
-                key=lambda item: (0 if item.get("kind") == "mcp" else 1,
-                                  str(item.get("name") or "").casefold()),
-            )
-            for item in ordered:
-                catalog_layout.addWidget(self._build_row(item))
-        catalog_layout.addStretch(1)
-        catalog.setWidget(catalog_body)
-        root.addWidget(catalog, 1)
+        mcp_items = [item for item in plugins if str(item.get("kind") or "").lower() == "mcp"]
+        agent_items = [item for item in plugins if str(item.get("kind") or "").lower() != "mcp"]
+        self._mcp_tab = self._build_catalog_tab(
+            mcp_items, "No MCP servers configured",
+            "Trusted remote MCP servers will appear here after they are discovered."
+        )
+        self._agents_tab = self._build_catalog_tab(
+            agent_items, "No agents discovered",
+            "Local agents and Python tools will appear here after they are discovered."
+        )
+        self._tabs.addTab(self._mcp_tab, svg_icon("wifi", C.PRI), "MCP SERVERS")
+        self._tabs.addTab(self._agents_tab, svg_icon("puzzle", C.PRI), "AGENTS")
+        self._tabs.setAccessibleName("Plugin categories")
+        root.addWidget(self._tabs, 1)
 
         footer = QHBoxLayout()
         footer.setSpacing(8)
@@ -2417,6 +2618,50 @@ class PluginManagerOverlay(QWidget):
         root.addLayout(footer)
         self.adjustSize()
 
+    def _build_catalog_tab(self, records: list[dict], empty_title: str, empty_note: str) -> QScrollArea:
+        catalog = QScrollArea(self)
+        catalog.setWidgetResizable(True)
+        catalog.setFrameShape(QFrame.Shape.NoFrame)
+        catalog.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        catalog.setStyleSheet(f"""
+            QScrollArea {{ background: transparent; border: none; }}
+            QScrollBar:vertical {{ background: transparent; width: 8px; margin: 4px 0; }}
+            QScrollBar::handle:vertical {{ background: {C.BORDER_B}; border-radius: 4px; min-height: 28px; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+        """)
+        body = QWidget()
+        body.setStyleSheet("background: transparent;")
+        content = QVBoxLayout(body)
+        content.setContentsMargins(10, 10, 10, 10)
+        content.setSpacing(9)
+        if records:
+            ordered = sorted(records, key=lambda item: str(item.get("name") or "").casefold())
+            for item in ordered:
+                content.addWidget(self._build_row(item))
+        else:
+            empty = QFrame()
+            empty.setStyleSheet(
+                f"background: {C.GLASS_CARD}; border: 1px dashed {C.BORDER_B}; border-radius: 14px;"
+            )
+            empty_layout = QVBoxLayout(empty)
+            empty_layout.setContentsMargins(18, 22, 18, 22)
+            icon = QLabel()
+            icon.setPixmap(svg_icon("wifi" if "MCP" in empty_title else "puzzle", C.PRI).pixmap(QSize(24, 24)))
+            empty_layout.addWidget(icon)
+            title = QLabel(empty_title)
+            title.setFont(QFont(FONT_MAIN, 11, QFont.Weight.Bold))
+            title.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
+            empty_layout.addWidget(title)
+            note = QLabel(empty_note)
+            note.setWordWrap(True)
+            note.setFont(QFont(FONT_MAIN, 9))
+            note.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+            empty_layout.addWidget(note)
+            content.addWidget(empty)
+        content.addStretch(1)
+        catalog.setWidget(body)
+        return catalog
+
     def _build_row(self, record: dict) -> QWidget:
         card = QFrame()
         card.setObjectName("PluginCard")
@@ -2431,15 +2676,13 @@ class PluginManagerOverlay(QWidget):
         row.setContentsMargins(12, 10, 12, 10)
         row.setSpacing(11)
 
-        kind = str(record.get("kind") or "python")
-        icon_text = str(record.get("icon") or ("MCP" if kind == "mcp" else "PY"))[:4]
-        badge = QLabel(icon_text)
+        kind = str(record.get("kind") or "python").lower()
+        badge = QLabel()
         badge.setFixedSize(40, 40)
         badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        badge.setFont(QFont(FONT_MONO, 8, QFont.Weight.Bold))
+        badge.setPixmap(svg_icon("wifi" if kind == "mcp" else "puzzle", C.PRI).pixmap(QSize(21, 21)))
         badge.setStyleSheet(
-            f"color: {C.PRI}; background: {C.PRI_GHO}; "
-            f"border: 1px solid {C.BORDER}; border-radius: 11px;"
+            f"background: {C.PRI_GHO}; border: 1px solid {C.BORDER}; border-radius: 11px;"
         )
         row.addWidget(badge)
 
