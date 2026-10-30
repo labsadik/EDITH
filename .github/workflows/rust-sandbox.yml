@@ -37,6 +37,25 @@ jobs:
         run: cargo build --release --manifest-path sandbox-rs/Cargo.toml
       - name: Run native sandbox unit tests
         run: cargo test --manifest-path sandbox-rs/Cargo.toml
+      - name: Smoke-test Windows AppContainer execution
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $workspace = Join-Path $env:RUNNER_TEMP "edith-appcontainer-smoke-$env:GITHUB_RUN_ID"
+          New-Item -ItemType Directory -Path $workspace -Force | Out-Null
+          $marker = Join-Path $workspace ".edith-sandbox-smoke-ok"
+          $helper = Join-Path $PWD "sandbox-rs/target/release/edith-sandbox.exe"
+          $cmd = Join-Path $env:WINDIR "System32/cmd.exe"
+          try {
+            & $helper run --workspace $workspace --timeout 20 --memory-mb 256 --cpu-seconds 15 --network deny -- $cmd /d /c "echo EDITH_SANDBOX_CI_OK>.edith-sandbox-smoke-ok"
+            if ($LASTEXITCODE -ne 0) { throw "AppContainer exited with code $LASTEXITCODE" }
+            if (-not (Test-Path -LiteralPath $marker)) { throw "Sandbox child did not create its workspace marker." }
+            if ((Get-Content -Raw -LiteralPath $marker).Trim() -ne "EDITH_SANDBOX_CI_OK") { throw "Unexpected workspace marker content." }
+            Write-Host "PASS: Windows AppContainer wrote inside its isolated workspace."
+          }
+          finally {
+            Remove-Item -LiteralPath $workspace -Recurse -Force -ErrorAction SilentlyContinue
+          }
       - name: Check native binary version (Unix)
         if: runner.os != 'Windows'
         run: ./sandbox-rs/target/release/edith-sandbox --version
