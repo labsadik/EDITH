@@ -4528,12 +4528,12 @@ class MainWindow(QMainWindow):
 
         brand = QVBoxLayout()
         brand.setSpacing(2)
-        brand_title = QLabel("EDITH  /  WORKSPACE")
+        brand_title = QLabel("EDITH SYSTEMS")
         brand_title.setFont(QFont(FONT_MAIN, 9, QFont.Weight.Bold))
         brand_title.setStyleSheet(
             f"color: {C.TEXT}; background: transparent; letter-spacing: 1px;"
         )
-        brand_hint = QLabel("PERSONAL AI ASSISTANT")
+        brand_hint = QLabel("PERSONAL AI WORKSPACE")
         brand_hint.setFont(QFont(FONT_MAIN, 7))
         brand_hint.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
         brand.addWidget(brand_title)
@@ -4790,7 +4790,7 @@ class MainWindow(QMainWindow):
             QPushButton:disabled {{ color: {C.TEXT_DIM}; }}
         """)
         self._cancel_queued_btn.setToolTip(
-            "Cancel only tasks that have not started. Running OS actions continue."
+            "CANCEL WAITING — Cancel only tasks that have not started. Running OS actions continue."
         )
         self._cancel_queued_btn.setEnabled(False)
         self._cancel_queued_btn.clicked.connect(self._request_cancel_queued)
@@ -4857,7 +4857,7 @@ class MainWindow(QMainWindow):
         self._task_details_panel.hide()
         lay.addWidget(self._task_details_panel)
 
-        lay.addWidget(_sec("ACTIVITY"))
+        lay.addWidget(_sec("ACTIVITY LOG"))
         self._log = LogWidget()
         lay.addWidget(self._log, stretch=1)
 
