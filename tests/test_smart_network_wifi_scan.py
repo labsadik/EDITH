@@ -65,7 +65,7 @@ class WifiScanParserTests(unittest.TestCase):
 
     def test_nmcli_parser_preserves_escaped_colon_inside_ssid(self):
         rows = smart_network._parse_nmcli_wifi_networks(
-            r"*:Cafe\:Guest:aa:bb:cc:dd:ee:ff:44:5180 MHz:300 Mbit/s:82:WPA2"
+            "*:Cafe\\:Guest:aa:bb:cc:dd:ee:ff:44:5180 MHz:300 Mbit/s:82:WPA2"
         )
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["ssid"], "Cafe:Guest")
