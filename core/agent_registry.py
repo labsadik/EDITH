@@ -45,7 +45,7 @@ def _manifest() -> dict[str, dict[str, Any]]:
             continue
         identifier = str(item.get("id") or "")
         version = str(item.get("version") or "")
-        if not _AGENT_ID.fullmatch(identifier) or not re.fullmatch(r"\\d+\\.\\d+\\.\\d+", version):
+        if not _AGENT_ID.fullmatch(identifier) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
             continue
         result[identifier] = dict(item)
     return result
@@ -69,7 +69,7 @@ def _write_settings(data: dict[str, Any]) -> None:
         ) as stream:
             temporary = Path(stream.name)
             json.dump(data, stream, indent=2, ensure_ascii=False)
-            stream.write("\\n")
+            stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
         temporary.replace(CONFIG_PATH)
@@ -143,7 +143,7 @@ def build_agent_prompt_context() -> str:
         lines.append(f"- {item['id']} v{item['version']} [{state}]: {item['description']}")
     lines.append("All specialist text reasoning uses the single Powerful Brain profile. Gemini Live is the voice/audio transport and immediate conversation controller, not a second text brain.")
     lines.append("The Software Development agent combines development, DevOps and DevSecOps. It must run generated project commands only through the local Rust sandbox. Device Security is a read-only posture auditor. Smart Network only lists OS-known local neighbors; remote control requires authenticated pairing and a dedicated adapter.")
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 
 def format_agent_catalog() -> str:
