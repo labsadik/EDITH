@@ -109,11 +109,9 @@ fn grant_acl(path: &Path, sid: Sid, permissions: u32, inheritance: u32) -> Resul
 }
 
 fn grant_path(path: &Path, sid: Sid, writable: bool) -> Result<(), String> {
-    let mut ancestors: Vec<PathBuf> = path.ancestors().filter(|p| p.is_dir()).map(Path::to_path_buf).collect();
-    ancestors.reverse();
-    for parent in ancestors.iter().take(ancestors.len().saturating_sub(1)) {
-        grant_acl(parent, sid, FILE_TRAVERSE, 0)?;
-    }
+    // Change only the selected runtime directory/file. Windows normally grants
+    // traverse checking to applications; never try to rewrite drive-root or
+    // user-profile ancestor ACLs (which can require administrator privileges).
     let access = if writable { FILE_ALL_ACCESS } else { GENERIC_READ | GENERIC_EXECUTE };
     let inherit = if path.is_dir() { OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE } else { 0 };
     grant_acl(path, sid, access, inherit)
@@ -130,7 +128,7 @@ fn grant_tree(root: &Path, sid: Sid, writable: bool) -> Result<(), String> {
 
 fn is_windows_system_directory(path: &Path) -> bool {
     let root = std::env::var("SYSTEMROOT").or_else(|_| std::env::var("WINDIR"))
-        .unwrap_or_else(|_| r"C:\\Windows".to_string());
+        .unwrap_or_else(|_| r"C:\Windows".to_string());
     let system = PathBuf::from(root).join("System32");
     path.to_string_lossy().to_lowercase() == system.to_string_lossy().to_lowercase()
 }
@@ -171,8 +169,8 @@ fn safe_environment(options: &Options, temp: &Path) -> Vec<u16> {
     let system_root = values.get("SYSTEMROOT").or_else(|| values.get("WINDIR")).cloned().unwrap_or_else(|| r"C:\\Windows".into());
     values.insert("SYSTEMROOT".into(), system_root.clone());
     values.insert("WINDIR".into(), system_root.clone());
-    values.insert("COMSPEC".into(), format!(r"{system_root}\\System32\\cmd.exe"));
-    let mut path_dirs = vec![PathBuf::from(format!(r"{system_root}\\System32"))];
+    values.insert("COMSPEC".into(), format!(r"{system_root}\System32\cmd.exe"));
+    let mut path_dirs = vec![PathBuf::from(format!(r"{system_root}\System32"))];
     path_dirs.extend(options.path_dirs.iter().cloned());
     path_dirs.push(options.workspace.join(".venv/Scripts"));
     path_dirs.push(options.workspace.clone());
