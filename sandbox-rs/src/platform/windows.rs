@@ -164,8 +164,23 @@ fn windows_path_is_within(path: &Path, root: &Path) -> bool {
     path == root || path.strip_prefix(&root).is_some_and(|suffix| suffix.starts_with('\\'))
 }
 
+fn is_windows_program_files_path(path: &Path) -> bool {
+    // Program Files may be installed on a non-system drive (for example,
+    // D:\\Program Files\\Git). Environment variables only identify the
+    // machine's default install root, so also recognize the conventional
+    // root-level directory names on any drive. Match a complete first path
+    // component to avoid treating similarly named folders as protected.
+    let normalized = normalize_windows_path(path);
+    let bytes = normalized.as_bytes();
+    if bytes.len() < 3 || !bytes[0].is_ascii_alphabetic() || bytes[1] != b':' || bytes[2] != b'\\' {
+        return false;
+    }
+    let first_component = normalized[3..].split('\\').next().unwrap_or_default();
+    matches!(first_component, "program files" | "program files (x86)")
+}
+
 fn is_windows_default_readonly_path(path: &Path) -> bool {
-    if is_windows_system_directory(path) {
+    if is_windows_system_directory(path) || is_windows_program_files_path(path) {
         return true;
     }
     // Windows' standard Program Files ACLs already provide package read/execute
@@ -245,6 +260,22 @@ mod path_tests {
             Path::new(r"C:\Program FilesBackup\tool"),
             root
         ));
+    }
+
+    #[test]
+    fn program_files_on_nondefault_drives_are_protected_from_acl_updates() {
+        assert!(is_windows_default_readonly_path(Path::new(
+            r"D:\Program Files\Git\cmd"
+        )));
+        assert!(is_windows_default_readonly_path(Path::new(
+            r"\\?\D:\Program Files (x86)\Tool\bin"
+        )));
+        assert!(!is_windows_default_readonly_path(Path::new(
+            r"D:\Program FilesBackup\tool"
+        )));
+        assert!(!is_windows_default_readonly_path(Path::new(
+            r"D:\Development\Program Files\tool"
+        )));
     }
 
     #[test]
