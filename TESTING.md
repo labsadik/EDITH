@@ -1,95 +1,76 @@
 # EDITH — Full Verification Checklist
 
-This checklist separates automated repository checks from manual tests that must be run on the computer where EDITH will be used. Passing CI does **not** prove every OS-specific GUI action works on every machine.
-See [VERIFICATION.md](VERIFICATION.md) for the twelve-item release acceptance ledger.
+This checklist separates automated repository checks from manual tests that must be
+run on the computer where EDITH will be used. Passing CI does **not** prove that
+every OS-specific GUI action works on every machine. See [VERIFICATION.md](VERIFICATION.md)
+for the release acceptance ledger.
 
-## Phase 1 release gate — complete before Phase 2
+## 1. Get the source and prepare the environment
 
-Phase 1 is **not complete** until the repository checks pass **and** the user
-verifies the following on their actual Windows installation. Do not start Phase 2
-until the user explicitly confirms this release gate passed.
+### Copy the clone URL
 
-1. Update **only** `ui/edith-interface` using `git fetch origin`,
-   `git checkout ui/edith-interface`, and `git pull --ff-only origin ui/edith-interface`.
-   Do not create any new branch or merge the PR during testing.
-2. Activate the existing Python virtual environment (or create one) and run
-   `python -m pip install -r requirements.txt` followed by
-   `python -m core.startup_check`. Verify the previously reported
-   `sounddevice` startup problem no longer occurs.
-3. Run the full automated commands in section 2. Start with `python main.py`;
-   verify the **existing** EDITH design opens with the dedicated EDITH window
-   and taskbar icon. No UI layout redesign is part of Phase 1.
-4. In EDITH, click **CREATE DESKTOP SHORTCUT**. Check the desktop contains
-   `EDITH.lnk`, it uses the EDITH icon, and launching it opens EDITH. Old
-   shortcuts are removed automatically **only** if their target is positively
-   identified as this installation's `main.py`; verify any remaining old
-   shortcuts manually before removing them. Do not delete unknown shortcuts.
-5. Toggle Auto-start on and off once. Use the Windows Task Manager Startup
-   Apps page or inspect
-   `HKCU:\Software\Microsoft\Windows\CurrentVersion\Run`. A new
-   entry must be named `EDITH`, not the former product name. Existing
-   auto-start data is migrated only if it matches this installation.
-6. Open Remote Control, then check that `Downloads/EDITH Uploads` is used
-   for phone uploads. If the former uploads directory existed, its files
-   must survive migration. A same-name file collision must **not** overwrite
-   either file. If permissions or existing symlinks prevent migration, inspect
-   both folders and retain the old one until data has been checked.
-7. Check file screenshots, new reminders, generated projects, browser profiles,
-   notifications and optional scheduled game updates create **EDITH**-named
-   artifacts. Existing scheduled reminders must continue to work; their old
-   scheduling records may remain until they fire or are removed safely.
-8. Test the current cloud **Gemini Live** key and **Local LLM** inference
-   separately in settings. Confirm the saved `llm_provider`, `llm_url`,
-   `llm_model`, and `gemini_api_key` were not unexpectedly modified.
-9. Restart EDITH, repeat shortcut launch and API/Local LLM checks, then
-   report **PASS/FAIL** for each item. A Windows-level failure keeps Phase 1
-   open even when GitHub Actions passes.
-
-Do **not** post config secrets, browser cookies, microphone samples or private
-files with a bug report. Sanitized stack traces and shortcut targets are enough.
-
-## 0. Before you start
-
-- Use a computer you control, with Python 3.11 or 3.12.
-- Keep a backup of important data.
-- Do not use valuable files, work databases, real recipients, or an important project for destructive-action tests.
-- Have a test app available (for example, Calculator or a blank text editor) and a test messaging account/recipient only if you plan to check messaging.
-- Keep credentials/API keys private. Do not paste them into issue comments, logs, screenshots, or this checklist.
-
-## 1. Get the current branch
-
-From a terminal:
+1. Open this project's repository page in GitHub.
+2. Select **Code → HTTPS → Copy URL**.
+3. Paste the copied URL into the placeholder below. The documentation does not
+   store a fixed owner/repository URL; use the URL shown on your own repository page.
 
 ```bash
-git clone -b ui/edith-interface https://github.com/WorkRCS/Upgrade_Autonomous.git
-cd Upgrade_Autonomous
+git clone "<COPIED_HTTPS_REPOSITORY_URL>"
+cd "<CLONED_REPOSITORY_DIRECTORY>"
 ```
 
-If the repository is already cloned, protect any uncommitted work first, then run:
+Replace both placeholders before running the commands. Git creates the checkout
+folder from the repository URL; use the folder name printed by Git.
+
+For an existing checkout, first protect or commit any uncommitted work, then update
+the default branch:
 
 ```bash
 git status
+git switch main
 git fetch origin
-git checkout ui/edith-interface
-git pull --ff-only origin ui/edith-interface
+git pull --ff-only origin main
 ```
 
-Windows PowerShell setup:
+### Windows
+
+Use PowerShell with Python 3.11 (64-bit) and Rust stable installed. Rust native
+builds require the MSVC toolchain and the appropriate Visual Studio C++ Build Tools.
 
 ```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
+cargo build --release --manifest-path sandbox-rs/Cargo.toml
 ```
 
-macOS/Linux setup:
+### macOS
+
+Use macOS 13+, Python 3.11 and Rust stable. Grant microphone, camera, Screen
+Recording and Accessibility permissions only when testing the associated feature.
 
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
+cargo build --release --manifest-path sandbox-rs/Cargo.toml
+```
+
+### Linux
+
+Use Ubuntu 22.04+ or a compatible distribution, Python 3.11 and Rust stable.
+Install bubblewrap and enable unprivileged user namespaces for sandbox checks;
+install NetworkManager for Wi-Fi scan checks. Screen/window features differ between
+X11 and Wayland.
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+cargo build --release --manifest-path sandbox-rs/Cargo.toml
 ```
 
 ## 2. Run automated checks first
@@ -97,14 +78,14 @@ pip install -r requirements.txt
 Run these from the project root, in the activated environment:
 
 ```bash
-python -m compileall -q main.py ui.py setup.py actions core dashboard memory plugins tests config
+python -m compileall -q main.py ui.py actions core agents dashboard memory plugins tests config tools
 python -m unittest discover -s tests -v
 python tests/check_inline_js.py
 ```
 
 **Pass criteria:** all commands exit with code 0; the unit-test output ends with `OK`. If any command fails, stop here, save the error output with credentials and private text removed, and fix it before live testing.
 
-The GitHub Actions Quality checks workflow runs these same checks on the branch.
+The GitHub Actions Quality checks workflow runs the repository checks on supported CI runners.
 
 ## 3. Start the app and check basics
 
@@ -285,7 +266,7 @@ the Gemini Live model, or the sensitive-action confirmation rules.
 
 ### Automated checks
 
-Run the existing three automated commands in section 2 on ui/edith-interface.
+Run the existing automated commands in section 2 from the current default-branch checkout.
 The new tests in tests/test_task_scheduler.py cover four simultaneous independent
 jobs, worker limits, priorities, dependency barriers, queued cancellation,
 failure propagation, missing prerequisites, read-only classification, and
@@ -350,7 +331,7 @@ requesting audio hardware or connecting to Gemini/Local LLM.
 
 ### Windows visual and accessibility verification
 
-1. Run EDITH normally from the **same** `ui/edith-interface` branch. Confirm
+1. Run EDITH normally from the **same** current default-branch checkout. Confirm
    the recognizable original HUD, existing colors, title, microphone control,
    file upload, Activity Log, quick drawer, and voice controls are unchanged.
 2. Resize the window to its minimum size. Check neither side panel overlaps
@@ -412,7 +393,7 @@ your phone and Windows networking function together.
 
 ### Windows PC and phone testing (trusted LAN only)
 
-1. Update `ui/edith-interface`, activate the same Python environment used
+1. Update the current default branch, activate the same Python environment used
    in Phase 1, and start EDITH. Do not modify `config/api_keys.json` or
    re-enter previously saved credentials just to test this phase.
 2. Connect the phone to the PC's **trusted local Wi-Fi/LAN**, open Remote
@@ -460,8 +441,8 @@ internet access is not guaranteed or implicitly enabled.
 ## Phase 6 — Agent execution reliability release gate
 
 **Do not mark Phase 6 complete based only on CI.** Complete the on-device
-checks below, then approve Phase 6 explicitly. Stay on `ui/edith-interface`;
-do not merge into main or create a new branch. Preserve both Gemini Live and
+checks below, then approve Phase 6 explicitly. Use the current default-branch checkout for these checks; do not mix unrelated
+feature work into the test run. Preserve both Gemini Live and
 the existing local Ollama/OpenAI-compatible agent settings.
 
 ### Automated checks
@@ -482,7 +463,7 @@ These are mocked/local tests; they cannot confirm actual Windows GUI results.
 
 ### Windows and live-provider verification
 
-1. Update only `ui/edith-interface`, install dependencies into the selected
+1. Update the current default branch, install dependencies into the selected
    Python environment, and run `python -m core.startup_check`.
 2. Run `python main.py`. Confirm the **original** EDITH UI, name, icon,
    microphone, text input, settings and desktop shortcut all work as before.

@@ -1,7 +1,7 @@
 # Cross-platform glass desktop implementation plan
 
 Written after `AUDIT.md` and before implementation. Baseline:
-`a21c4b8ba59b7c96088349db2358a14d121fea34`, `ui/edith-interface`.
+`a21c4b8ba59b7c96088349db2358a14d121fea34` (an earlier UI development snapshot).
 The audit is a baseline, not a claim that unimplemented features already work.
 
 ## Targets and compatibility
@@ -144,8 +144,9 @@ implementation; trusted callback names remain stable.
 | Remote privilege exposure | Desktop bridge local-only, prevent remote navigation and arbitrary method evaluation; keep remote auth/confirmations |
 | Layout drift/fonts | Measured rectangle contract and box-sizing; screenshots and geometry tests, external screenshot match remains not verified |
 
-Publication stays on `ui/edith-interface`; merge to `main` requires owner testing
-and an explicit subsequent merge request. No fake pass for real OS/API/hardware checks.
+Publication should use the repository's active default branch. Merge decisions
+follow target-device testing and explicit project-owner approval; real OS/API/hardware
+checks must never be reported as passed without evidence.
 
 ## Owner constraint update: preserve reference video
 

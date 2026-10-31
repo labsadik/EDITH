@@ -1,6 +1,6 @@
 # Narration reliability
 
-Changes stay on `ui/edith-interface`; the UI and bundled visual are unchanged.
+This reliability work preserves the existing UI and bundled visual; it does not introduce a layout redesign.
 
 ## Why speech could skip
 
