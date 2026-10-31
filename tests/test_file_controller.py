@@ -1,8 +1,9 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from actions.file_controller import create_folders
+from actions.file_controller import _is_safe_path, _resolve_path, create_folders
 
 
 class CreateFoldersTests(unittest.TestCase):
@@ -36,6 +37,35 @@ class CreateFoldersTests(unittest.TestCase):
         self.assertTrue((self.parent / "3").is_dir())
         self.assertFalse((self.parent / "nested").exists())
         self.assertFalse((Path(self.temp.name).parent / "outside").exists())
+
+    def test_bare_relative_paths_are_anchored_to_user_home(self):
+        with patch("actions.file_controller.Path.home", return_value=self.parent):
+            resolved = _resolve_path("EDITH_Demo/Task_01_Research")
+        self.assertEqual(
+            resolved,
+            self.parent / "EDITH_Demo" / "Task_01_Research",
+        )
+        self.assertTrue(_is_safe_path(resolved))
+
+    def test_relative_path_traversal_remains_outside_safe_root_and_is_denied(self):
+        with (
+            patch("actions.file_controller.Path.home", return_value=self.parent),
+            patch("actions.file_controller._SAFE_ROOTS", [self.parent]),
+        ):
+            resolved = _resolve_path("../outside")
+            self.assertFalse(_is_safe_path(resolved))
+
+    def test_shortcut_relative_paths_use_the_known_user_folder(self):
+        with patch("actions.file_controller._get_documents", return_value=self.parent):
+            resolved = _resolve_path(r"documents\\EDITH_Demo\\Task_01_Research")
+        self.assertEqual(
+            resolved,
+            self.parent / "EDITH_Demo" / "Task_01_Research",
+        )
+
+    def test_dot_path_is_not_silently_redirected_to_home(self):
+        resolved = _resolve_path(".")
+        self.assertEqual(resolved, Path.cwd())
 
 
 if __name__ == "__main__":

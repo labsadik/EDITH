@@ -8,7 +8,7 @@ import json
 import re
 import time
 import tempfile
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 
 def get_base_dir():
@@ -18,7 +18,6 @@ def get_base_dir():
 
 BASE_DIR           = get_base_dir()
 API_CONFIG_PATH    = BASE_DIR / "config" / "api_keys.json"
-DESKTOP            = Path.home() / "Desktop"
 MAX_BUILD_ATTEMPTS = 3
 GEMINI_MODEL       = "gemini-flash-latest"
 
@@ -52,6 +51,12 @@ def _clean_code(text: str) -> str:
     return text.strip()
 
 
+def _code_workspace_dir() -> Path:
+    """Return the shared project directory used by the Development Agent."""
+    from core.branding import prepare_projects_dir
+    return prepare_projects_dir()
+
+
 def _resolve_save_path(output_path: str, language: str) -> Path:
     ext_map = {
         "python": ".py", "py": ".py",
@@ -62,11 +67,22 @@ def _resolve_save_path(output_path: str, language: str) -> Path:
         "bash": ".sh", "shell": ".sh", "powershell": ".ps1",
         "sql": ".sql", "json": ".json", "rust": ".rs", "go": ".go",
     }
+    workspace = _code_workspace_dir().expanduser().resolve()
     if output_path:
-        p = Path(output_path)
-        return p if p.is_absolute() else DESKTOP / p
+        requested = Path(output_path).expanduser()
+        windows_path = PureWindowsPath(output_path)
+        if not requested.is_absolute() and (windows_path.is_absolute() or windows_path.drive):
+            raise ValueError("Use a native absolute path for this operating system")
+        if requested.is_absolute():
+            return requested
+        if ".." in requested.parts or ".." in windows_path.parts:
+            raise ValueError("Relative output paths cannot escape the EDITH Projects workspace")
+        target = (workspace / requested).resolve()
+        if target != workspace and workspace not in target.parents:
+            raise ValueError("Relative output paths must stay inside the EDITH Projects workspace")
+        return target
     ext = ext_map.get((language or "python").lower(), ".py")
-    return DESKTOP / f"edith_code{ext}"
+    return workspace / f"edith_code{ext}"
 
 
 def _read_file(file_path: str) -> tuple[str, str]:
@@ -106,7 +122,9 @@ def _has_error(output: str) -> bool:
 def _take_screenshot() -> Path | None:
     try:
         import pyautogui
-        screenshot_path = Path.home() / "Desktop" / f"edith_debug_{int(time.time())}.png"
+        screenshot_dir = _code_workspace_dir() / "debug_screenshots"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        screenshot_path = screenshot_dir / f"edith_debug_{int(time.time())}.png"
         screenshot = pyautogui.screenshot()
         screenshot.save(str(screenshot_path))
         print(f"[Code] 📸 Screenshot: {screenshot_path}")
@@ -188,9 +206,13 @@ Description: {description}
 Code:"""
 
     response = model.generate_content(prompt)
-    code     = _clean_code(response.text)
-    path     = _resolve_save_path(output_path, lang)
-    _save_file(path, code)
+    code = _clean_code(response.text)
+    path = _resolve_save_path(output_path, lang)
+    status = _save_file(path, code)
+    if not status.startswith("Saved to:") or not path.is_file():
+        raise OSError(status if not status.startswith("Saved to:") else "Generated file was not found after saving")
+    if path.read_text(encoding="utf-8") != code:
+        raise OSError("Generated file read-back did not match the generated code")
     return code, path
 
 
@@ -316,7 +338,11 @@ def _build(description, language, output_path, args, timeout, speak=None, player
 
         try:
             code = _fix_code(code, last_output, description)
-            _save_file(path, code)
+            status = _save_file(path, code)
+            if not status.startswith("Saved to:") or not path.is_file():
+                raise OSError(status if not status.startswith("Saved to:") else "Fixed file was not found after saving")
+            if path.read_text(encoding="utf-8") != code:
+                raise OSError("Fixed file read-back did not match the updated code")
         except Exception as e:
             msg = f"Could not fix code on attempt {attempt}: {e}"
             if speak: speak(msg)
@@ -374,6 +400,8 @@ Updated code:"""
         return f"Could not edit code: {e}"
 
     status = _save_file(Path(file_path), edited)
+    if not status.startswith("Saved to:"):
+        return status
     print(f"[Code] ✅ Edited: {file_path}")
     return f"File edited. {status}\n\nPreview:\n{_preview(edited)}"
 
@@ -459,6 +487,8 @@ Optimized code:"""
         save_path = _resolve_save_path(output_path, lang)
 
     status = _save_file(save_path, optimized)
+    if not status.startswith("Saved to:"):
+        return status
     print(f"[Code] ✅ Optimized: {save_path}")
 
     original_lines  = len(code.splitlines())
@@ -543,9 +573,12 @@ Be specific and actionable. If you see an error message, quote it exactly."""
             if code_match:
                 fixed_code = code_match.group(1).strip()
                 save_path  = Path(file_path)
-                _save_file(save_path, fixed_code)
-                analysis += f"\n\n✅ Fixed code has been saved to: {file_path}"
-                print(f"[Code] ✅ Fixed code saved: {file_path}")
+                status = _save_file(save_path, fixed_code)
+                if status.startswith("Saved to:"):
+                    analysis += f"\n\n✅ Fixed code has been saved to: {file_path}"
+                    print(f"[Code] ✅ Fixed code saved: {file_path}")
+                else:
+                    analysis += f"\n\nThe suggested fix could not be saved: {status}"
 
         return analysis
 

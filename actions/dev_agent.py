@@ -152,17 +152,34 @@ def _classify_error(output: str) -> str:
 
 
 def _has_error(output: str, run_command: str) -> bool:
-    
     low = output.lower()
-
     if stopped(output) or low.startswith("execution failed"):
         return True
-
     if not output.strip():
         return False
+    return _classify_error(output) != "none"
 
-    error_type = _classify_error(output)
-    return error_type != "none"
+
+def _is_sandbox_environment_failure(output: str) -> bool:
+    """Recognize sandbox setup/ACL failures that generated-code repair cannot fix."""
+    low = str(output or "").casefold()
+    explicit_markers = (
+        "edith_sandbox_error",
+        "sandboxunavailable",
+        "cannot apply sandbox acl",
+        "failed to create appcontainer",
+        "appcontainer creation failed",
+        "sandbox helper failed",
+        "sandbox workspace is a symlink",
+    )
+    if any(marker in low for marker in explicit_markers):
+        return True
+    return any(marker in low for marker in (
+        "appcontainer access denied",
+        "appcontainer: access denied",
+        "appcontainer permission denied",
+        "appcontainer creation failed",
+    ))
 
 class RateLimitError(Exception):
     pass
@@ -527,39 +544,68 @@ def _build_project(
     sorted_files = sorted(files, key=_dep_sort_key)
 
     file_codes: dict[str, str] = {}
+    generation_failure = ""
 
     for file_info in sorted_files:
         file_path = file_info.get("path", "")
         if not file_path:
-            continue
+            generation_failure = "planner returned an empty file path"
+            break
 
         log(f"Writing {file_path}...")
-        for attempt in range(2):
-            try:
-                code = _write_file(
-                    file_info=file_info,
-                    project_description=description,
-                    all_files=files,
-                    language=language,
-                    project_dir=project_dir,
-                    already_written=file_codes,
-                )
-                file_codes[file_path] = code
-                time.sleep(0.4)
-                break
-            except RateLimitError:
-                if attempt == 0:
-                    log("Rate limit — waiting 20s...")
-                    time.sleep(20)
-                else:
-                    log(f"Rate limit retry failed for {file_path}, skipping.")
-            except Exception as e:
-                log(f"Failed to write {file_path}: {e}")
-                break
+        try:
+            code = _write_file(
+                file_info=file_info,
+                project_description=description,
+                all_files=files,
+                language=language,
+                project_dir=project_dir,
+                already_written=file_codes,
+            )
+            file_codes[file_path] = code
+            time.sleep(0.4)
+        except RateLimitError:
+            generation_failure = "LLM provider rate limit"
+            log(
+                f"Provider rate limit while writing {file_path}; stopping generation "
+                "to avoid repeated requests."
+            )
+            break
+        except Exception as e:
+            generation_failure = f"{file_path} ({type(e).__name__})"
+            log(f"Failed to write {file_path}: {type(e).__name__}")
+            break
 
     if not file_codes:
-        msg = "I could not write any project files, sir."
+        msg = "I could not write any project files, sir. No generated code was executed."
         if speak: speak(msg)
+        return msg
+
+    missing_files: list[str] = []
+    for file_info in files:
+        relative_path = str(file_info.get("path") or "")
+        try:
+            target = _safe_project_path(project_dir, relative_path)
+            if relative_path not in file_codes or not target.is_file():
+                missing_files.append(relative_path or "<empty path>")
+                continue
+            if target.read_text(encoding="utf-8") != file_codes[relative_path]:
+                missing_files.append(relative_path + " (read-back mismatch)")
+        except Exception:
+            missing_files.append(relative_path or "<invalid path>")
+
+    if missing_files:
+        missing_list = ", ".join(missing_files[:20])
+        msg = (
+            f"Project generation incomplete: wrote and verified "
+            f"{len(files) - len(missing_files)} of {len(files)} planned files. "
+            f"Missing or unverified: {missing_list}. "
+            + (f"Generation stopped because of {generation_failure}. " if generation_failure else "")
+            + "No dependencies were installed and no generated project code was executed."
+        )
+        log(msg)
+        if speak:
+            speak(msg)
         return msg
 
     if dependencies:
@@ -599,6 +645,18 @@ def _build_project(
 
         if stopped(last_output):
             return last_output
+
+        if _is_sandbox_environment_failure(last_output):
+            msg = (
+                "Sandbox execution failed; the project result is unverified. "
+                "Automatic source-code repair was stopped because the failure "
+                "originated in the sandbox environment, not confirmed project code.\n"
+                + last_output[:2500]
+            )
+            log(msg)
+            if speak:
+                speak(msg)
+            return msg
 
         if not _has_error(last_output, run_command):
             msg = (
