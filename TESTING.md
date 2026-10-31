@@ -97,7 +97,6 @@ The GitHub Actions Quality checks workflow runs the repository checks on support
 6. Run **TEST KEY**. The test should open a Gemini Live session, send a short prompt, wait for the first actual model output, and show the time to first response. A successful handshake without model output must not be reported as a passed test.
 7. Save/reconnect only if the Gemini model-response test succeeds. The local status check must not overwrite existing local-LLM settings.
 
-
 8. Confirm that the main EDITH UI opens, text input works, the microphone can be enabled/muted, the interrupt control responds, and the Activity Log remains visible.
 9. Inspect the main controls and file cards: icons should render as line icons rather than emoji placeholders.
 10. Close and restart EDITH normally once to check that the local configuration remains available.
