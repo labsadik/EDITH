@@ -38,4 +38,20 @@ supported targets. OS version support depends on installed Qt/PortAudio/browser
 runtime and distribution libraries. Do not interpret mocked adapter selection as
 Windows/macOS/Linux production certification.
 
+## LLM quality and provider dependency
+
+This behavior is not specific to Windows, macOS or Linux. Planning, coding, research
+synthesis and AI-driven tool selection depend on the selected model and the provider
+connection. Stronger reasoning/coding models with compatible tool/function calling
+can improve complex task quality, but EDITH still needs valid provider credentials,
+an available model, sufficient context and output-token budgets, and available
+provider quota. HTTP 429, exhausted credits, invalid credentials or temporary
+provider failures can stop model-dependent work regardless of the desktop OS.
+
+A paid provider tier can be a sensible choice for regular use when the available
+free quota is too restrictive; paid service is still subject to provider/model rate
+limits, account budgets and availability. Gemini Live voice/audio must be tested
+separately from Powerful Brain text reasoning. This matrix describes local OS
+capabilities and does not certify provider capacity or model quality.
+
 

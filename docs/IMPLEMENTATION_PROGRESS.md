@@ -3,6 +3,18 @@
 Only published, integrated changes count as implementation. Mocked OS results do
 not certify physical hardware. Keep the owner's reference video and layout.
 
+## AI provider dependency note
+
+The implementation ledger records EDITH's application-side behavior; overall task
+quality also depends on the configured LLM. Project testing found that fixes to tools
+and agent orchestration must be paired with a working provider connection, valid API
+credential, a model capable of the required reasoning/tool calls, sufficient context
+and output-token budgets, and available provider quota. Free quotas can be restrictive;
+a paid tier may suit repeated agent/code tasks better, but paid access is still subject
+to provider rate limits, model caps, budgets and outages. This is an operational
+requirement, not a guarantee that a more expensive model will make every action succeed.
+Gemini Live audio and Powerful Brain text reasoning remain separate paths.
+
 | Step | State | Evidence / next gate |
 | --- | --- | --- |
 | Audit/plan documents | Published | AUDIT.md, PLAN.md, CAPABILITY_MATRIX.md; full real-device tool certification remains open |
