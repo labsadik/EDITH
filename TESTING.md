@@ -142,6 +142,27 @@ Gemini Live is checked separately with **TEST KEY** because it supplies the live
 voice/audio session; a successful Powerful Brain text-model test does not certify
 the microphone, speaker or Gemini Live connection.
 
+### Optional local-model and offline-speech checks
+
+When testing a local Powerful Brain provider, confirm the selected local server is
+running, the exact model is installed, and **TEST LOCAL LLM** returns a real response.
+For Ollama, run `ollama list` to confirm the model is present and `ollama ps` while
+it is loaded to inspect the processor (GPU/CPU offload) and allocated context. Then
+test a multi-step plan and an agent action that needs tool/function calling; not every
+local chat model supports EDITH's tool schema.
+
+To verify local speech separately, select the configured local STT engine
+(faster-whisper or Vosk) and the Kokoro TTS engine, then test microphone transcription
+and speaker playback. Download/cache the speech models before disconnecting the
+network; their first setup may require internet access. Edge TTS and ElevenLabs are
+network/cloud TTS options, not offline local synthesis.
+
+**Vision boundary:** in the current build, screen/webcam image analysis uses the
+Gemini Live vision session. A local vision-capable Ollama model may accept image input
+through its own API, but EDITH's Powerful Brain text route does not currently send
+screen/webcam frames to that local model. Do not mark local vision as passed unless
+an explicit image-routing adapter has been added and tested end-to-end.
+
 ### Native glass appearance check
 
 1. In Preferences choose **System**. Switch the OS between Light and Dark. Within two seconds, verify the header, both side panels, metric cards, Activity Log, input, existing log text and popups switch together. The center reference video should continue playing on its dark stage.
