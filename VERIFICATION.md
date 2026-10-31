@@ -51,7 +51,9 @@ Additional completion gates from the staged plan:
   multi-step work when it supports EDITH's tool-call format; invalid credentials,
   insufficient token budgets, HTTP 429 responses or exhausted quota can prevent
   completion even when EDITH's local code is correct. A paid tier may be appropriate
-  for sustained use but is not unlimited. Test Gemini Live separately from text LLMs.
+  for sustained use but is not unlimited. A paid consumer chat subscription does not
+necessarily include API credits for EDITH; verify the API account's billing and quota
+separately. Test Gemini Live separately from text LLMs.
 - Memory: backup recovery and session replay semantics are covered by
   `tests/test_memory_durability.py`; long sessions and externally modified
   files still need practical validation.
