@@ -36,6 +36,27 @@ This model dependency does not weaken the local security boundary: the model can
 bypass tool policy, permission checks, DevSecOps review or the Rust sandbox. Gemini Live
 voice/audio remains separate and must be tested independently from Powerful Brain.
 
+### Local model and multimodal options
+
+The Powerful Brain text client supports local Ollama and OpenAI-compatible local
+servers (for example LM Studio, Jan, LocalAI or llama.cpp server). Local inference
+can keep text prompts on the device when the endpoint really is local, but it is
+bounded by available memory, compute, model context and tool-call compatibility.
+A larger model is useful only when the host can load it and return results at a
+usable speed.
+
+Optional local speech modules are present in `core/stt.py` and `core/tts.py`:
+faster-whisper and Vosk for speech recognition, and Kokoro for local speech synthesis.
+They need their optional packages and model assets; they are distinct from the
+current integrated Gemini Live voice session. Edge TTS uses the internet and
+ElevenLabs is cloud-based.
+
+The current screen/camera analysis route uses Gemini Live for image understanding.
+A local text-only LLM does not make that route local. A local vision-language model
+and an image-capable adapter are required before screen/camera frames can be analysed
+fully on-device. See [LOCAL_LLM_VISION_VOICE.md](LOCAL_LLM_VISION_VOICE.md) for
+the complete hardware and implementation guide.
+
 Built-in agents are versioned in `agents/manifest.json`. Ask EDITH **"list agents and versions"** to see their active state. `agent_manager` can also list, enable or disable a specialist. Local toggles are stored in `config/agents.json`.
 
 | Agent | Initial version | Responsibility |

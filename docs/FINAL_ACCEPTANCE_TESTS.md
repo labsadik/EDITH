@@ -81,6 +81,25 @@ Gemini Live is a separate realtime voice/audio dependency. Passing Powerful Brai
 text tests does not replace the Gemini Live voice check or the real microphone/speaker
 checks.
 
+### Optional local model and speech verification
+
+Only run these checks when you have deliberately configured local inference:
+
+1. Start the selected local server (Ollama or an OpenAI-compatible local server) and
+   confirm EDITH lists the expected model and receives a real response.
+2. Run a normal text question, a multi-step planning request and a harmless tool-call
+   task. Confirm the selected model can make the function/tool calls EDITH requires.
+3. Observe RAM/VRAM use, model loading time and response latency on the target device.
+   Reduce model size/quantization/context or use a hosted provider if the model does
+   not fit or is too slow.
+4. For optional local Whisper/Vosk/Kokoro engines, install the additional dependencies
+   and model assets separately, then test microphone/speaker operation. The base
+   `requirements.txt` does not install every optional speech model.
+5. Do not expect the current screen/camera analysis action to use a local VLM: that
+   route still uses Gemini Live. A local VLM needs a dedicated EDITH image adapter.
+
+See [LOCAL_LLM_VISION_VOICE.md](LOCAL_LLM_VISION_VOICE.md) for more detail.
+
 ## 4. Agents and LangGraph supervisor
 
 Ask EDITH: "list agents and versions". Confirm each built-in specialist has a version/status. Disable one non-critical agent in Plugins → Agents, confirm it is disabled, then enable it again.

@@ -19,6 +19,7 @@
 - [Security and execution boundaries](#security-and-execution-boundaries)
 - [Voice, audio and speech](#voice-audio-and-speech)
 - [Providers, APIs and MCP connectors](#providers-apis-and-mcp-connectors)
+- [Local LLM, Vision and Voice](docs/LOCAL_LLM_VISION_VOICE.md)
 - [Smart Network, Wi-Fi and Smart Home](#smart-network-wi-fi-and-smart-home)
 - [Desktop, browser and remote dashboard](#desktop-browser-and-remote-dashboard)
 - [Frameworks and technology stack](#frameworks-and-technology-stack)
@@ -273,14 +274,16 @@ The generic host `shell_execute` tool is a separate, permission-graded and audit
 
 ## Voice, audio and speech
 
-- The current live voice session uses Google's Gemini Live API.
+- The current integrated real-time voice conversation and audio transport uses Google's Gemini Live API.
 - The voice presets are **Kore** and **Orus**.
 - `sounddevice`/PortAudio and NumPy are used for local audio I/O and signal handling.
 - The narration writer uses mono 24 kHz PCM16 and writes in bounded 20 ms chunks.
 - The initial speech prebuffer is 60 ms. A genuine device output underrun increases the adaptive prebuffer gradually, up to 300 ms.
 - Generated speech chunks remain in order; they are not silently discarded to make the stream appear current.
 - A missing/disconnected output device is reported as unavailable. Stale buffered speech is cleared and is not replayed after device recovery.
-- Configurable STT engine packages include faster-whisper and Vosk. Configurable TTS package options include Edge TTS, Kokoro and ElevenLabs. These engine options are distinct from the current Gemini Live conversation transport.
+- Optional local speech engine implementations include faster-whisper (offline after the model is cached), Vosk (offline streaming with a local language model) and Kokoro (offline neural TTS after its model is cached). These are local STT/TTS building blocks, not an automatic replacement for the current Gemini Live full-duplex session.
+- Edge TTS needs internet; ElevenLabs is a cloud TTS service.
+- The current screen/camera visual-analysis path also uses Gemini Live. A local VLM is not yet a selectable backend for `screen_process`.
 
 Microphone, speaker and OS privacy permissions must be granted on the target device. CI tests use mocks for audio hardware and do not certify a particular audio driver or USB device.
 
@@ -298,6 +301,37 @@ Open **Controls → API Providers → Powerful Brain**. The supported provider p
 - OpenAI-compatible local or hosted endpoints
 
 Configure the endpoint and model, enter a provider key when required, run the real minimal connection/response test, and save only after verification. Powerful Brain settings and credentials are separate from Gemini Live voice credentials. A local Ollama profile does not require a cloud API key.
+
+### Local LLM and hardware-assisted options
+
+EDITH can also use a model that runs on the user's own computer. This is an advanced
+alternative for people with enough RAM/VRAM and a compatible local inference runtime.
+
+- **Local text reasoning:** Ollama is supported through its native API. LM Studio, Jan,
+  LocalAI and llama.cpp-style servers can connect through the OpenAI-compatible local
+  server profile. Use a model that supports the tool/function-call format required by
+  EDITH if you want agent planning and tool-assisted software development.
+- **Local speech components:** the source includes optional faster-whisper and Vosk
+  speech-to-text engines, plus Kokoro local text-to-speech. Whisper and Kokoro need
+  their model assets downloaded/cached first; Vosk needs a local language model.
+  Edge TTS requires internet, while ElevenLabs is a cloud service.
+- **Vision:** EDITH captures screen/camera images locally, but the current
+  `screen_process` analysis path sends those images through Gemini Live. Selecting a
+  local text LLM does not currently switch screen/camera analysis to a local vision
+  model. A local VLM and a dedicated image-routing adapter are needed for that.
+- **Hardware:** GPU VRAM affects how much of a model can be accelerated; system RAM
+  supports CPU inference and partial offload. Larger context windows, bigger models,
+  image understanding and parallel work need more memory. Quantized models can fit
+  smaller devices but may trade some quality or capability for lower memory use.
+
+**Recommended starting point:** Gemini Live for integrated voice and visual
+interaction, with a capable hosted Powerful Brain provider for reasoning and agent
+work. Users with a powerful workstation can add local text inference and local
+speech engines for workloads that fit their hardware. This hybrid approach does not
+pretend that the current screen/camera vision path is already fully local.
+
+See [Local LLM, Vision and Voice](docs/LOCAL_LLM_VISION_VOICE.md) for the complete
+hardware guide, current implementation boundaries and setup guidance.
 
 ### Gemini Live key
 
