@@ -32,8 +32,10 @@ also depends on the selected embedding model, indexed content, chunking and retr
 For multi-step supervisor tasks, use a capable reasoning model with tool/function-call
 support, valid provider credentials, enough context/output-token capacity and available
 provider quota. A paid API tier may be preferable for sustained usage if a free quota is
-restrictive, but all provider tiers can enforce rate limits and budgets. Gemini Live
-voice/audio is a separate service path and must be tested separately.
+restrictive, but all provider tiers can enforce rate limits and budgets. A paid
+consumer chat subscription does not necessarily include API credits for EDITH; check
+the provider's API billing and quota separately. Gemini Live voice/audio is a separate
+service path and must be tested separately.
 
 ## Authenticated smart-home integration
 
