@@ -152,17 +152,32 @@ def _classify_error(output: str) -> str:
 
 
 def _has_error(output: str, run_command: str) -> bool:
-    
     low = output.lower()
-
     if stopped(output) or low.startswith("execution failed"):
         return True
-
     if not output.strip():
         return False
+    return _classify_error(output) != "none"
 
-    error_type = _classify_error(output)
-    return error_type != "none"
+
+def _is_sandbox_environment_failure(output: str) -> bool:
+    """Recognize sandbox setup/ACL failures that generated-code repair cannot fix."""
+    low = str(output or "").casefold()
+    explicit_markers = (
+        "edith_sandbox_error",
+        "sandboxunavailable",
+        "cannot apply sandbox acl",
+        "failed to create appcontainer",
+        "appcontainer creation failed",
+        "sandbox helper failed",
+        "sandbox workspace is a symlink",
+    )
+    if any(marker in low for marker in explicit_markers):
+        return True
+    return (
+        "appcontainer" in low
+        and any(marker in low for marker in ("access denied", "access is denied", "permission denied", "failed", "cannot"))
+    )
 
 class RateLimitError(Exception):
     pass
@@ -558,8 +573,34 @@ def _build_project(
                 break
 
     if not file_codes:
-        msg = "I could not write any project files, sir."
+        msg = "I could not write any project files, sir. No generated code was executed."
         if speak: speak(msg)
+        return msg
+
+    missing_files: list[str] = []
+    for file_info in files:
+        relative_path = str(file_info.get("path") or "")
+        try:
+            target = _safe_project_path(project_dir, relative_path)
+            if relative_path not in file_codes or not target.is_file():
+                missing_files.append(relative_path or "<empty path>")
+                continue
+            if target.read_text(encoding="utf-8") != file_codes[relative_path]:
+                missing_files.append(relative_path + " (read-back mismatch)")
+        except Exception:
+            missing_files.append(relative_path or "<invalid path>")
+
+    if missing_files:
+        missing_list = ", ".join(missing_files[:20])
+        msg = (
+            f"Project generation incomplete: wrote and verified "
+            f"{len(files) - len(missing_files)} of {len(files)} planned files. "
+            f"Missing or unverified: {missing_list}. "
+            "No dependencies were installed and no generated project code was executed."
+        )
+        log(msg)
+        if speak:
+            speak(msg)
         return msg
 
     if dependencies:
@@ -599,6 +640,18 @@ def _build_project(
 
         if stopped(last_output):
             return last_output
+
+        if _is_sandbox_environment_failure(last_output):
+            msg = (
+                "Sandbox execution failed; the project result is unverified. "
+                "Automatic source-code repair was stopped because the failure "
+                "originated in the sandbox environment, not confirmed project code.\n"
+                + last_output[:2500]
+            )
+            log(msg)
+            if speak:
+                speak(msg)
+            return msg
 
         if not _has_error(last_output, run_command):
             msg = (

@@ -1,7 +1,7 @@
 import os
 import shutil
 import platform
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from datetime import datetime
 
 try:
@@ -71,6 +71,7 @@ def _get_videos() -> Path:
 
 
 def _resolve_path(raw: str) -> Path:
+    """Resolve shortcuts and relative paths consistently inside the user's home."""
     shortcuts: dict[str, Path] = {
         "desktop":   _get_desktop(),
         "downloads": _get_downloads(),
@@ -80,22 +81,34 @@ def _resolve_path(raw: str) -> Path:
         "videos":    _get_videos(),
         "home":      Path.home(),
     }
-    raw   = raw.strip().strip('"').strip("'")
-    lower = raw.lower()
+    raw = str(raw or "").strip().strip('"').strip("'")
+    if not raw:
+        raise ValueError("A file path is required")
+    if Path(raw).expanduser() == Path("."):
+        return Path.cwd()
+
+    lower = raw.casefold()
     if lower in shortcuts:
         return shortcuts[lower]
 
-    # "desktop/notlar/a.md" ve "desktop\notlar\a.md" — kisayol + alt yol.
-    # Bu dal olmadan tum dize asagidaki goreli-yol dalina dusuyor ve process'in
-    # CWD'sine gore cozuluyordu.  Proje home disindaysa _is_safe_path reddedip
-    # "Access denied" veriyor; home icindeyse daha kotusu oluyor ve dosya sessizce
-    # projenin icindeki olmayan bir "desktop" klasorune yaziliyordu.
-    head, sep, rest = raw.replace("\\", "/").partition("/")
-    if sep and head.lower() in shortcuts:
+    # Support both slash styles for shortcut-relative paths on every platform.
+    normalized = raw.replace("\\", "/")
+    head, separator, rest = normalized.partition("/")
+    if separator and head.casefold() in shortcuts:
         rest = rest.strip("/")
-        return shortcuts[head.lower()] / rest if rest else shortcuts[head.lower()]
+        return shortcuts[head.casefold()] / rest if rest else shortcuts[head.casefold()]
 
-    return Path(raw).expanduser()
+    candidate = Path(raw).expanduser()
+    windows_candidate = PureWindowsPath(raw)
+    if candidate.is_absolute():
+        return candidate
+    if windows_candidate.is_absolute() or windows_candidate.drive:
+        raise ValueError("The supplied Windows absolute path is not native to this operating system")
+
+    # Bare relative paths are user paths, not paths relative to the EDITH
+    # checkout. This keeps File Controller operations under the same home root
+    # used by its safety policy on Windows, Linux and macOS.
+    return Path.home() / candidate
 
 def _format_size(b: int) -> str:
     for unit in ["B", "KB", "MB", "GB", "TB"]:

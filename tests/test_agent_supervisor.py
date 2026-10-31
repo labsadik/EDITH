@@ -54,6 +54,27 @@ class AgentSupervisorWorkflowTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             agent_supervisor.run_agent_supervisor("   ")
 
+    def test_provider_http_429_returns_a_structured_failure_without_claiming_completion(self):
+        class RateLimitedProviderError(RuntimeError):
+            status_code = 429
+
+        class FailedGraph:
+            def invoke(self, _state):
+                raise RateLimitedProviderError("Too Many Requests")
+
+        with patch.object(agent_supervisor, "_build_graph", return_value=FailedGraph()):
+            result = agent_supervisor.run_agent_supervisor("Build a report")
+
+        self.assertIn("Agent Supervisor failed", result)
+        self.assertIn("HTTP 429", result)
+        self.assertIn("No final plan or delegated result was produced", result)
+
+    def test_rate_limit_exception_is_detected_through_cause_chain(self):
+        provider_error = RuntimeError("429 Client Error: Too Many Requests")
+        wrapper_error = RuntimeError("LLM call failed")
+        wrapper_error.__cause__ = provider_error
+        self.assertTrue(agent_supervisor._is_rate_limit_error(wrapper_error))
+
 
 if __name__ == "__main__":
     unittest.main()

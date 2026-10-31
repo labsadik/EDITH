@@ -107,12 +107,49 @@ def _build_graph():
     return graph.compile()
 
 
+def _is_rate_limit_error(error: BaseException) -> bool:
+    """Inspect an exception chain for HTTP 429 without exposing provider details."""
+    pending: list[BaseException] = [error]
+    visited: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in visited:
+            continue
+        visited.add(id(current))
+        response = getattr(current, "response", None)
+        status = getattr(current, "status_code", None) or getattr(response, "status_code", None)
+        try:
+            if int(status) == 429:
+                return True
+        except (TypeError, ValueError):
+            pass
+        message = str(current).casefold()
+        if "too many requests" in message or "rate limit" in message or "http 429" in message:
+            return True
+        cause = getattr(current, "__cause__", None)
+        context = getattr(current, "__context__", None)
+        if isinstance(cause, BaseException):
+            pending.append(cause)
+        if isinstance(context, BaseException):
+            pending.append(context)
+    return False
+
+
 def run_agent_supervisor(request: str) -> str:
     """Run retrieval-augmented planning, specialist delegation and synthesis."""
     clean = str(request or "").strip()
     if not clean:
         raise ValueError("A task description is required")
-    result = _build_graph().invoke({"request": clean[:8000]})
+    try:
+        result = _build_graph().invoke({"request": clean[:8000]})
+    except Exception as exc:
+        if _is_rate_limit_error(exc):
+            return (
+                "Agent Supervisor failed: the configured LLM provider rate-limited "
+                "this request (HTTP 429). No final plan or delegated result was produced. "
+                "Check the provider quota and retry after it resets."
+            )
+        raise
     answer = str(result.get("answer") or "").strip()
     if not answer:
         raise RuntimeError("Supervisor graph completed without a final answer")
