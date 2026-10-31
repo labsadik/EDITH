@@ -8,6 +8,7 @@
 ## Contents
 
 - [Product overview](#product-overview)
+- [Demo screenshot](#demo-screenshot)
 - [Features](#features)
 - [Productivity, media and personal utilities](#productivity-media-and-personal-utilities)
 - [First launch and setup](#first-launch-and-setup)
@@ -40,6 +41,15 @@ These are separate responsibilities, not two competing text brains. A generic Op
 The app adapts to the current operating system and exposes structured capability results. Unsupported sensors, OS features, permissions or hardware are reported as unavailable instead of being fabricated.
 
 To clone this project, open its repository page in GitHub, choose **Code → HTTPS → Copy URL**, and use that copied URL in the platform-specific clone command below. The documentation deliberately does not embed an owner-specific repository URL or assume a particular local checkout-folder name. Git creates the checkout directory from the repository URL; enter the directory name shown by the `git clone` command.
+
+
+## Demo screenshot
+
+The following image is a visual demo of EDITH's File Explorer interface.
+
+![EDITH File Explorer demo screenshot](https://ik.imagekit.io/xvqovhmcyr/Upgrade_Autonomous%20-%20File%20Explorer%2010_31_2026%2010_39_54%20AM.png)
+
+[Open the File Explorer demo image]( https://ik.imagekit.io/xvqovhmcyr/Upgrade_Autonomous%20-%20File%20Explorer%2010_31_2026%2010_39_54%20AM.png )
 
 ## Features
 
