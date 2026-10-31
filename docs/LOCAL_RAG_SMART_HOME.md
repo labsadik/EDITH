@@ -19,6 +19,24 @@ Use the \`knowledge_base\` tool with \`index_file\`, \`search\` or \`stats\`. Th
 planner/researcher/developer/security tasks through Powerful Brain, and synthesize
 the results.
 
+### Separate the chat model from local embeddings
+
+Powerful Brain is responsible for the supervisor's planning, delegation instructions
+and final synthesis. The local RAG embedding model (configured through
+\`EDITH_EMBEDDING_MODEL\`, commonly \`nomic-embed-text\`) performs a different job:
+converting indexed documents and search queries into vectors. Replacing Powerful Brain
+with a stronger paid cloud model does not automatically change the embedding model,
+repair an incomplete index or make missing source documents retrievable. RAG quality
+also depends on the selected embedding model, indexed content, chunking and retrieval.
+
+For multi-step supervisor tasks, use a capable reasoning model with tool/function-call
+support, valid provider credentials, enough context/output-token capacity and available
+provider quota. A paid API tier may be preferable for sustained usage if a free quota is
+restrictive, but all provider tiers can enforce rate limits and budgets. A paid
+consumer chat subscription does not necessarily include API credits for EDITH; check
+the provider's API billing and quota separately. Gemini Live voice/audio is a separate
+service path and must be tested separately.
+
 ## Authenticated smart-home integration
 
 Create a long-lived access token in the user's own Home Assistant profile, then run:

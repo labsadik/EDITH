@@ -59,6 +59,28 @@ In EDITH → Controls → API Providers:
 3. Ask EDITH a normal factual question, then ask it to produce a multi-step implementation plan. The second request should use Powerful Brain.
 4. Do not paste API keys into chat or Activity Log. Use the settings UI; it stores secrets via EDITH's credential helper.
 
+### Model quality and capacity check
+
+A stronger reasoning/coding model with compatible tool/function calling can improve
+multi-step plans, research synthesis, code generation and debugging. Verify that the
+selected model is appropriate for the workload and that the request fits its context
+window and output-token limit. The API credential (key/access token) must be valid and
+permitted for that model; it is different from the model's input/output token budget.
+
+Run an actual response test, then a multi-step plan and a harmless tool-assisted task.
+Confirm the provider account has quota/credits available and review its current
+requests-per-minute, tokens-per-minute, context and spending limits. A paid plan/tier
+may provide capacity better suited to regular use than a restrictive free quota, but
+it does not remove model-specific limits, spending caps or provider outages. An HTTP
+429/quota response must be recorded as a provider-capacity failure, not treated as a
+code failure or an EDITH action result. Never share provider credentials in logs. A
+paid consumer chat subscription does not necessarily include API credits used by
+EDITH; verify the actual API account billing and quota separately.
+
+Gemini Live is a separate realtime voice/audio dependency. Passing Powerful Brain
+text tests does not replace the Gemini Live voice check or the real microphone/speaker
+checks.
+
 ## 4. Agents and LangGraph supervisor
 
 Ask EDITH: "list agents and versions". Confirm each built-in specialist has a version/status. Disable one non-critical agent in Plugins → Agents, confirm it is disabled, then enable it again.

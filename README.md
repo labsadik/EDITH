@@ -15,6 +15,7 @@
 - [Architecture: how EDITH works](#architecture-how-edith-works)
 - [Agents: roles and capabilities](#agents-roles-and-capabilities)
 - [Agent supervisor and local knowledge](#agent-supervisor-and-local-knowledge)
+- [LLM quality, token capacity and provider reliability](#llm-quality-token-capacity-and-provider-reliability)
 - [Security and execution boundaries](#security-and-execution-boundaries)
 - [Voice, audio and speech](#voice-audio-and-speech)
 - [Providers, APIs and MCP connectors](#providers-apis-and-mcp-connectors)
@@ -42,6 +43,33 @@ The app adapts to the current operating system and exposes structured capability
 
 To clone this project, open its repository page in GitHub, choose **Code → HTTPS → Copy URL**, and use that copied URL in the platform-specific clone command below. The documentation deliberately does not embed an owner-specific repository URL or assume a particular local checkout-folder name. Git creates the checkout directory from the repository URL; enter the directory name shown by the `git clone` command.
 
+
+## LLM quality, token capacity and provider reliability
+
+EDITH's application logic, local tools and safety checks are important, but the configured AI model is also a major factor in the quality of AI-assisted work. A more capable model with strong reasoning, coding and tool/function-calling support will generally handle complex instructions, multi-step plans, code generation, debugging and tool selection better than a smaller or less capable model. A capable model still needs clear instructions, relevant context and a correctly configured runtime.
+
+During EDITH's implementation and follow-up testing, we observed that fixing application-side issues was only part of the result. Tasks became more consistent when the selected LLM could be reached successfully, its credentials were accepted, the request had enough context and output-token capacity, and the provider completed the request without quota or rate-limit errors. When a provider rejected requests or could not return a complete response, an otherwise-correct EDITH workflow could not finish the model-dependent part of the task. This is a practical observation from project testing, not a claim that every task or provider has been benchmarked.
+
+### Two different kinds of tokens
+
+- **Provider API credential:** the API key or access token that authenticates EDITH with the selected provider. It must be valid, active, permitted for the selected model and stored in the correct provider profile.
+- **Model tokens:** the input/context and output capacity used by the model. The context window must be large enough for the system instructions, conversation, tool definitions, relevant files and retrieved knowledge. The output allowance must be sufficient for the model to finish its plan, answer or generated file. If these limits are too small, requests may be rejected, clipped, truncated or unable to complete.
+
+### Recommended provider setup for regular use
+
+1. Choose a model suited to the workload. For coding and agent workflows, verify that the model supports the tool/function-calling format EDITH uses; a high general-chat score alone does not guarantee compatible tool calls.
+2. Configure the correct provider, model identifier, endpoint and API credential. Run the provider's real response test, not just a connectivity or HTTP handshake check.
+3. Confirm that the account has available credits/billing and that the selected model is enabled. Check the provider's current context-window, maximum-output, requests-per-minute and tokens-per-minute limits.
+4. For frequent or multi-step use, a paid API plan or tier with capacity appropriate to the workload is usually a better operational choice than relying on a restrictive free quota. A paid plan is **not unlimited**: model-specific rate limits, spending limits, account restrictions and temporary provider outages can still apply.
+5. Test a normal question, a multi-step plan and a representative tool-assisted task. Re-run the test after changing the provider, model, endpoint or credential. Keep API keys private.
+
+**API billing note:** a paid consumer chat subscription does not necessarily include API credits for EDITH. EDITH sends requests through the selected provider's API account, so check API billing, credits and quotas separately.
+
+### What a stronger LLM can—and cannot—change
+
+A stronger and reliably connected model can improve interpretation, planning, code quality, debugging suggestions and the selection/sequence of registered tools. It cannot bypass EDITH's permission checks or Rust sandbox, grant missing operating-system permissions, install a missing driver, repair an unavailable external service, or prove that a tool action succeeded without the tool's result.
+
+**Gemini Live is a separate dependency.** It provides the current real-time voice/audio session. The Powerful Brain text/reasoning provider does not replace the Gemini Live API connection, and a healthy text-model connection does not by itself prove that microphone, speaker or live-voice operation is working. Test the voice path separately with **TEST KEY**.
 
 ## Demo screenshot
 

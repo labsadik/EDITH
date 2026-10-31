@@ -96,9 +96,51 @@ The GitHub Actions Quality checks workflow runs the repository checks on support
 5. Click **TEST LOCAL LLM**. The test should make an actual short inference through `core.llm_client.call_llm` and show success plus response time. Check the configured model is the same one shown by the panel. If using `llm_provider=openai`, make sure the configured OpenAI-compatible server and model are running.
 6. Run **TEST KEY**. The test should open a Gemini Live session, send a short prompt, wait for the first actual model output, and show the time to first response. A successful handshake without model output must not be reported as a passed test.
 7. Save/reconnect only if the Gemini model-response test succeeds. The local status check must not overwrite existing local-LLM settings.
+
 8. Confirm that the main EDITH UI opens, text input works, the microphone can be enabled/muted, the interrupt control responds, and the Activity Log remains visible.
 9. Inspect the main controls and file cards: icons should render as line icons rather than emoji placeholders.
 10. Close and restart EDITH normally once to check that the local configuration remains available.
+
+
+### Model quality, token capacity and provider reliability
+
+The configured model is a major quality dependency for planning, research synthesis,
+tool selection and software-development tasks. A capable reasoning/coding model with
+compatible tool/function calling generally handles complex workflows better than a
+small or tool-incompatible model, but model strength alone does not make an external
+action succeed.
+
+Project testing showed that application-side fixes and provider reliability are both
+necessary: the LLM-dependent part of a task can complete only when the provider
+accepts the credential, the configured model is available, the request fits the
+model's context and output-token limits, and the provider returns a response. Check
+both types of token:
+
+- The **API credential** (API key/access token) authenticates the account and must
+  be valid for the selected provider/model.
+- The **model token budget** must leave enough context for system instructions,
+  conversation, tool schemas and relevant project/document content, with enough
+  output capacity for a complete plan or generated file.
+
+For regular multi-step use, choose a model that supports EDITH's tool/function-call
+format and consider a paid provider API tier with quota appropriate to the expected
+workload. Free tiers may be sufficient for experiments but can have restrictive
+quotas. Paid access is not unlimited: requests-per-minute, tokens-per-minute,
+model-specific caps, spending limits and provider outages can still affect service.
+Verify the current limits in the provider's own account dashboard.
+
+**API billing note:** a paid consumer chat subscription does not necessarily include API credits for EDITH. EDITH uses the selected provider's API account, so check API billing, credits and quota separately.
+
+A successful provider check should receive an actual model response. Also test a
+multi-step plan and a representative tool-assisted task. An HTTP 200 or a reachable
+endpoint alone is not proof that the selected model can complete EDITH's workflow.
+HTTP 429 / rate-limit / quota errors are provider-capacity failures; record the
+sanitized status and retry only after the provider permits it. Do not include keys
+or access tokens in test output.
+
+Gemini Live is checked separately with **TEST KEY** because it supplies the live
+voice/audio session; a successful Powerful Brain text-model test does not certify
+the microphone, speaker or Gemini Live connection.
 
 ### Native glass appearance check
 

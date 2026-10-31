@@ -8,6 +8,34 @@ EDITH has one text/reasoning model profile: **Powerful Brain**. The provider sel
 
 Gemini Live remains the current real-time audio session. It captures and streams microphone/speaker audio and handles the interactive voice session; it is not a second text/reasoning brain. Multimodal image/audio operations that require a media-capable provider retain their dedicated media path.
 
+### Model capability and provider reliability
+
+The Powerful Brain model is a quality dependency for agent planning, reasoning, generated
+code, debugging and tool selection. A more capable reasoning/coding model that supports
+EDITH's tool/function-call format will generally handle complicated tasks better, but it
+must receive enough relevant context and output-token budget to finish the request.
+
+EDITH testing has shown that application fixes alone are not enough when the LLM service
+is unavailable or constrained. The provider API credential must be valid for the selected
+profile/model, the model endpoint must respond with an actual completion, and the account
+must have available quota. Keep the API credential separate from the model's token budget:
+the key authenticates the request; context/input/output tokens determine how much the
+model can process and return. System prompts, conversation history, tool schemas and
+retrieved project context all consume context capacity.
+
+For frequent agent and code-generation work, use a model with reliable tool calling and
+choose a paid provider tier if the free quota cannot sustain the workload. Free and paid
+plans alike can have per-minute request/token limits, spending caps and outages; paid does
+not mean unlimited. A paid consumer chat subscription does not necessarily include
+API credits for EDITH; verify API billing and quota separately. HTTP 429 or quota errors
+are provider-side capacity failures, not proof that a generated project contains a
+code defect. EDITH's Dev Agent stops safely on provider rate-limit errors instead of
+continuing with an incomplete set of files.
+
+This model dependency does not weaken the local security boundary: the model cannot
+bypass tool policy, permission checks, DevSecOps review or the Rust sandbox. Gemini Live
+voice/audio remains separate and must be tested independently from Powerful Brain.
+
 Built-in agents are versioned in `agents/manifest.json`. Ask EDITH **"list agents and versions"** to see their active state. `agent_manager` can also list, enable or disable a specialist. Local toggles are stored in `config/agents.json`.
 
 | Agent | Initial version | Responsibility |
