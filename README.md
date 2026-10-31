@@ -16,6 +16,7 @@
 - [Agents: roles and capabilities](#agents-roles-and-capabilities)
 - [Agent supervisor and local knowledge](#agent-supervisor-and-local-knowledge)
 - [LLM quality, token capacity and provider reliability](#llm-quality-token-capacity-and-provider-reliability)
+- [Local LLM, hardware and multimodal options](#local-llm-hardware-and-multimodal-options)
 - [Security and execution boundaries](#security-and-execution-boundaries)
 - [Voice, audio and speech](#voice-audio-and-speech)
 - [Providers, APIs and MCP connectors](#providers-apis-and-mcp-connectors)
@@ -70,6 +71,21 @@ During EDITH's implementation and follow-up testing, we observed that fixing app
 A stronger and reliably connected model can improve interpretation, planning, code quality, debugging suggestions and the selection/sequence of registered tools. It cannot bypass EDITH's permission checks or Rust sandbox, grant missing operating-system permissions, install a missing driver, repair an unavailable external service, or prove that a tool action succeeded without the tool's result.
 
 **Gemini Live is a separate dependency.** It provides the current real-time voice/audio session. The Powerful Brain text/reasoning provider does not replace the Gemini Live API connection, and a healthy text-model connection does not by itself prove that microphone, speaker or live-voice operation is working. Test the voice path separately with **TEST KEY**.
+
+## Local LLM, hardware and multimodal options
+
+EDITH can run in a **cloud-first** or **hybrid local/cloud** configuration.
+
+- **Recommended starting point:** Gemini Live for the integrated realtime voice and current screen/webcam vision path, plus a capable hosted provider (OpenAI, Anthropic Claude, Groq or xAI) for Powerful Brain text reasoning.
+- **Local text model:** Powerful Brain can use Ollama or an OpenAI-compatible local server such as LM Studio, Jan, LocalAI, llama.cpp server or vLLM. The local server must be running, the model must be installed, and it must support EDITH's chat/tool-call format.
+- **Local speech:** EDITH includes faster-whisper and Vosk local speech-to-text engines, plus Kokoro offline text-to-speech. These are separate speech components, not the same as the Gemini Live audio session.
+- **Local vision:** vision-capable local models can accept image input, but EDITH's current screen/webcam analysis path uses Gemini Live. Selecting a local Powerful Brain model does not currently route screenshots or camera frames to a local vision model.
+
+A stronger computer can make local inference more practical. GPU VRAM, system/unified memory, model quantization, context length, CPU performance, disk capacity and driver/backend support all matter. Check the actual model's memory needs and verify GPU offload with `ollama ps`; a large model or long context can still be slow or run out of memory on an otherwise capable machine.
+
+For most users, start with the cloud recommendation. For a computer with sufficient memory and a supported accelerator, a hybrid setup can run Powerful Brain locally and keep Gemini Live for the current integrated realtime voice/vision features. Local STT/TTS can also be selected separately. This reduces cloud text-model use without claiming that every EDITH feature is offline.
+
+See the detailed [Local LLM, Hardware and Multimodal Guide](docs/LOCAL_LLM_GUIDE.md) for setup steps, hardware guidance, local voice options and the current vision integration boundary.
 
 ## Demo screenshot
 
@@ -280,7 +296,9 @@ The generic host `shell_execute` tool is a separate, permission-graded and audit
 - The initial speech prebuffer is 60 ms. A genuine device output underrun increases the adaptive prebuffer gradually, up to 300 ms.
 - Generated speech chunks remain in order; they are not silently discarded to make the stream appear current.
 - A missing/disconnected output device is reported as unavailable. Stale buffered speech is cleared and is not replayed after device recovery.
-- Configurable STT engine packages include faster-whisper and Vosk. Configurable TTS package options include Edge TTS, Kokoro and ElevenLabs. These engine options are distinct from the current Gemini Live conversation transport.
+- **Local STT options:** faster-whisper (offline after its model is downloaded/cached) and Vosk (offline with its local language model).
+- **TTS options:** Kokoro is the offline neural TTS option; Edge TTS and ElevenLabs use network/cloud services. TTS selection is separate from the Powerful Brain provider.
+- These local speech engines do not replace the current Gemini Live realtime voice transport. A local text model plus local STT/TTS is a local-oriented speech setup, not the same as a fully local realtime multimodal audio LLM.
 
 Microphone, speaker and OS privacy permissions must be granted on the target device. CI tests use mocks for audio hardware and do not certify a particular audio driver or USB device.
 
@@ -297,7 +315,7 @@ Open **Controls → API Providers → Powerful Brain**. The supported provider p
 - xAI / Grok
 - OpenAI-compatible local or hosted endpoints
 
-Configure the endpoint and model, enter a provider key when required, run the real minimal connection/response test, and save only after verification. Powerful Brain settings and credentials are separate from Gemini Live voice credentials. A local Ollama profile does not require a cloud API key.
+Configure the endpoint and model, enter a provider key when required, run the real minimal connection/response test, and save only after verification. Powerful Brain settings and credentials are separate from Gemini Live voice credentials. A local Ollama or local OpenAI-compatible endpoint does not require a cloud API key. For local setup, hardware selection, offline voice and the current vision boundary, see [docs/LOCAL_LLM_GUIDE.md](docs/LOCAL_LLM_GUIDE.md).
 
 ### Gemini Live key
 
