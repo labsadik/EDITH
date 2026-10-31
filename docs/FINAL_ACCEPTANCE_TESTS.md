@@ -81,6 +81,20 @@ Gemini Live is a separate realtime voice/audio dependency. Passing Powerful Brai
 text tests does not replace the Gemini Live voice check or the real microphone/speaker
 checks.
 
+### Optional local Powerful Brain and speech check
+
+If testing a local setup, start Ollama or the selected OpenAI-compatible local server,
+confirm the exact model is loaded, and run **TEST LOCAL LLM**. Check `ollama ps` for
+processor offload and allocated context, then run one multi-step plan and one harmless
+tool-assisted task. Confirm the selected model supports the tool-call schema; a text
+reply alone is not enough to pass the agent workflow.
+
+For local speech, test faster-whisper or Vosk transcription and Kokoro playback
+separately after their model assets have been cached. The current realtime voice
+session remains Gemini Live. Current screen/webcam vision also uses the Gemini Live
+vision path; do not mark local vision as supported until a local image-input adapter
+is available and has passed an end-to-end test.
+
 ## 4. Agents and LangGraph supervisor
 
 Ask EDITH: "list agents and versions". Confirm each built-in specialist has a version/status. Disable one non-critical agent in Plugins → Agents, confirm it is disabled, then enable it again.
