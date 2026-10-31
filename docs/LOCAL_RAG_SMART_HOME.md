@@ -37,6 +37,20 @@ consumer chat subscription does not necessarily include API credits for EDITH; c
 the provider's API billing and quota separately. Gemini Live voice/audio is a separate
 service path and must be tested separately.
 
+### Local text, speech and vision options
+
+The Powerful Brain text route can use local Ollama or an OpenAI-compatible local
+server when the machine has enough memory/compute for the selected model. The local
+embedding model remains a separate service/model; changing the chat model does not
+change embeddings or repair retrieval quality.
+
+Optional local STT/TTS implementations include faster-whisper, Vosk and Kokoro,
+but they are separate speech components rather than a drop-in replacement for the
+integrated Gemini Live voice session. The current screen/camera image-analysis
+workflow also uses Gemini Live; a local vision-language model is not yet a selectable
+backend for that workflow. See [LOCAL_LLM_VISION_VOICE.md](LOCAL_LLM_VISION_VOICE.md)
+for hardware planning and precise current boundaries.
+
 ## Authenticated smart-home integration
 
 Create a long-lived access token in the user's own Home Assistant profile, then run:
