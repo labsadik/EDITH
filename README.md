@@ -49,7 +49,7 @@ The following image is a visual demo of EDITH's File Explorer interface.
 
 ![EDITH File Explorer demo screenshot](https://ik.imagekit.io/xvqovhmcyr/Upgrade_Autonomous%20-%20File%20Explorer%2010_31_2026%2010_39_54%20AM.png)
 
-[Open the File Explorer demo image]( https://ik.imagekit.io/xvqovhmcyr/Upgrade_Autonomous%20-%20File%20Explorer%2010_31_2026%2010_39_54%20AM.png )
+[Open the File Explorer demo image](https://ik.imagekit.io/xvqovhmcyr/Upgrade_Autonomous%20-%20File%20Explorer%2010_31_2026%2010_39_54%20AM.png)
 
 ## Features
 
