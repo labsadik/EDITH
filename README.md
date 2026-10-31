@@ -1,6 +1,6 @@
 # EDITH — Neuron Intelligence
 
-**EDITH** is a cross-platform desktop AI assistant and local agent platform created by Sadik Laskar. It combines a native desktop HUD, real-time voice, a separate text-reasoning profile, specialist agents, local device tools, a permission-aware automation layer, and an optional phone/remote dashboard.
+**EDITH** is a cross-platform desktop AI assistant and local agent platform. It combines a native desktop HUD, real-time voice, a separate text-reasoning profile, specialist agents, local device tools, a permission-aware automation layer, and an optional phone/remote dashboard.
 
 > **Release:** `1.0.0` · **Primary runtime:** Python 3.11 · **Desktop UI:** PyQt6 · **Local execution boundary:** Rust sandbox  
 > This repository is source-available under the proprietary terms in [LICENSE](LICENSE). Public visibility does not grant an open-source, reuse, or redistribution licence.
@@ -9,6 +9,7 @@
 
 - [Product overview](#product-overview)
 - [Features](#features)
+- [Productivity, media and personal utilities](#productivity-media-and-personal-utilities)
 - [First launch and setup](#first-launch-and-setup)
 - [Architecture: how EDITH works](#architecture-how-edith-works)
 - [Agents: roles and capabilities](#agents-roles-and-capabilities)
@@ -38,7 +39,7 @@ These are separate responsibilities, not two competing text brains. A generic Op
 
 The app adapts to the current operating system and exposes structured capability results. Unsupported sensors, OS features, permissions or hardware are reported as unavailable instead of being fabricated.
 
-The current maintained repository is **WorkRCS/EDITH_v1**. Older setup notes or links may still refer to the legacy `Upgrade_Autonomous.git` repository; use this repository URL for new clones and updates: https://github.com/WorkRCS/EDITH_v1.
+To clone this project, open its repository page in GitHub, choose **Code → HTTPS → Copy URL**, and use that copied URL in the platform-specific clone command below. The documentation deliberately does not embed an owner-specific repository URL or assume a particular local checkout-folder name. Git creates the checkout directory from the repository URL; enter the directory name shown by the `git clone` command.
 
 ## Features
 
@@ -80,6 +81,16 @@ The current maintained repository is **WorkRCS/EDITH_v1**. Older setup notes or 
 - Home Assistant pairing verifies the server API and token before credentials are stored.
 - Paired Home Assistant reads and a restricted set of entity controls are supported. Every smart-home write requires a separate local confirmation.
 - MQTT bridge actions are available through the Smart Network integration subject to its configured broker and action policy.
+
+### Productivity, media and personal utilities
+- **Reminders:** schedules local notifications using the host scheduler: Windows Task Scheduler, macOS launch agents, or Linux `systemd-run` with an `at` fallback where available.
+- **Background topic monitoring:** checks configured topics for new headlines on a daily cadence and reports new items; selected financial/crypto topics are deliberately excluded by the monitor.
+- **Weather lookup:** opens a browser search for the requested city and date/period.
+- **Flight Finder:** searches a requested route/date, prepares a text report and saves the report locally when the required provider access is configured.
+- **YouTube tools:** supports video search/playback, channel search, video information, trending lists and transcript-based summaries when a transcript is available.
+- **Webcam push-up counter:** counts repetitions from the camera feed, using MediaPipe pose tracking when installed and an OpenCV-based fallback otherwise. Camera access is required.
+- **Steam and Epic Games utilities:** discovers supported installed libraries/games and can request game updates; scheduled update support depends on the launcher, OS scheduler and desktop-session availability.
+- **TikTok Studio upload helper:** a narrow visible-browser automation path with fixed UI assumptions. Treat it as an optional, target-device-specific helper rather than a universal cross-platform upload guarantee.
 
 ## First launch and setup
 
@@ -350,53 +361,154 @@ The declared Python dependency list is in [requirements.txt](requirements.txt). 
 
 ## Platform support and permissions
 
-The platform adapter currently targets:
+EDITH shares one Python/PyQt application across the three desktop platforms, but the
+available device operations depend on each operating system, installed drivers,
+desktop session and granted permissions. The platform adapter reports unavailable
+capabilities instead of pretending that a feature worked.
 
-| Platform | Documented target | Notes |
-| --- | --- | --- |
-| Windows | Windows 10/11 x64 | Native WLAN, AppContainer sandbox and Windows automation depend on installed drivers and policies. |
-| macOS | macOS 13+ | Screen/audio access and sandbox utilities depend on OS permissions and version. |
-| Linux | Ubuntu 22.04+ and compatible distributions | bubblewrap, user namespaces, NetworkManager, multimedia libraries and desktop session affect feature availability. |
+### Windows 10/11 (x64)
 
-Grant microphone access for voice input. Grant screen recording/accessibility permission only for the relevant visible-desktop features. Camera permissions are needed only when using the camera features. Some native OS actions may display the operating system's own permission/elevation dialogue.
+**What is available**
+- Native desktop UI, application discovery through Start Menu/PATH, Win32 window
+  inspection, clipboard support and supported visible desktop workflows.
+- System telemetry and hardware discovery through `psutil`, CIM/WMI and Windows
+  adapters; NVIDIA utilization can use NVML or Windows/NVIDIA tooling where installed.
+- Wi-Fi scans through Windows-visible WLAN interfaces, including USB Wi-Fi adapters
+  whose drivers expose them as WLAN interfaces.
+- Volume and supported brightness controls through Windows audio/display APIs.
+- Generated-project isolation with Windows AppContainer, scoped filesystem ACLs,
+  child-process Job Objects and resource limits.
+- OS credential storage through Windows Credential Manager when available.
 
-No application can enumerate hardware that the operating system or its driver does not expose. For example, a USB Wi-Fi adapter must have a working driver and be available to the OS wireless subsystem.
+**Requirements and permissions**
+- Windows 10 or 11, 64-bit; Python 3.11 and Rust stable for source builds.
+- Rust's MSVC toolchain and Visual Studio C++ Build Tools/linker for native builds.
+- A working WLAN service and adapter driver for Wi-Fi scanning.
+- Grant microphone, camera, screen and accessibility-related access only for the
+  features that need them. Windows may display its own UAC or permission prompt.
 
-## Run from source
+**Clone and run**
 
-Python **3.11** and Rust stable are the recommended development toolchains for the current CI/package workflow.
-
-### Windows PowerShell
+Open the project page in GitHub, choose **Code → HTTPS → Copy URL**, then replace
+the placeholders below with the copied URL and the directory created by Git:
 
 ```powershell
-git clone https://github.com/WorkRCS/EDITH_v1.git
-cd EDITH_v1
+git clone "<COPIED_HTTPS_REPOSITORY_URL>"
+cd "<CLONED_REPOSITORY_DIRECTORY>"
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-
 cargo build --release --manifest-path sandbox-rs/Cargo.toml
 python main.py
 ```
 
-A Windows build environment needs the Rust MSVC toolchain and appropriate Visual Studio C++ Build Tools/linker. For Wi-Fi scanning, ensure the WLAN service is running and the adapter driver is installed.
+Build the Windows installer from PowerShell with
+`scripts/build_windows_installer.ps1`. The script packages the application and
+uses Inno Setup 6 for the setup executable.
 
-### macOS / Linux
+### macOS (13+)
+
+**What is available**
+- The shared PyQt6 desktop UI, `.app` discovery/launch, supported AppleScript
+  window inspection, Qt clipboard support and OS-backed device inventory.
+- Hardware/display inventory through `system_profiler`; audio I/O through PortAudio.
+- Wi-Fi scan through the macOS airport scan utility when that utility is present.
+- Volume and supported power actions through macOS scripting/system interfaces.
+- Generated-project isolation through the macOS Seatbelt profile, with restricted
+  writable paths and network access denied.
+- OS credential storage through Keychain when available.
+
+**Requirements and permissions**
+- macOS 13 or later, Python 3.11 and Rust stable for source builds.
+- Allow microphone and camera access when using those devices. Grant **Screen
+  Recording** for screenshots and **Accessibility** permission for supported
+  window/desktop automation. macOS controls these permissions in System Settings.
+- The Seatbelt sandbox utility and the Wi-Fi scan utility must be available on the
+  host; unavailable utilities are reported rather than silently replaced.
+
+**Clone and run**
+
+Copy the HTTPS clone URL from **GitHub → Code → HTTPS**, then run:
 
 ```bash
-git clone https://github.com/WorkRCS/EDITH_v1.git
-cd EDITH_v1
-python3 -m venv .venv
+git clone "<COPIED_HTTPS_REPOSITORY_URL>"
+cd "<CLONED_REPOSITORY_DIRECTORY>"
+python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-
 cargo build --release --manifest-path sandbox-rs/Cargo.toml
 python main.py
 ```
 
-On Linux, install bubblewrap and enable the required unprivileged user namespaces for sandboxed project execution. NetworkManager is used by the Wi-Fi scan implementation. macOS uses the OS Seatbelt utility for generated-code sandboxing.
+The installer workflow produces a PKG and an optional DMG. CI packages are unsigned;
+distribution to other users requires the publisher's Developer ID Installer
+certificate and Apple notarization.
+
+### Linux (Ubuntu 22.04+ and compatible distributions)
+
+**What is available**
+- The shared PyQt6 desktop UI, desktop-entry/PATH application discovery, shell
+  streaming through Bash/sh and supported desktop operations.
+- System telemetry and hardware discovery through `psutil`, DRM, PCI and USB probes.
+- Wi-Fi scan through NetworkManager's `nmcli`.
+- Volume controls through `pactl` or `wpctl`; supported brightness controls through
+  `brightnessctl`.
+- Generated-project isolation through bubblewrap namespaces, a workspace-only
+  writable mount and a denied network namespace.
+- OS credential storage through Secret Service or KWallet when available.
+
+**Requirements and permissions**
+- Ubuntu 22.04+ or a compatible distribution, Python 3.11 and Rust stable.
+- Install `bubblewrap` and enable usable unprivileged user namespaces for generated
+  project execution. If the kernel or distribution blocks them, sandboxed execution
+  stops safely.
+- Install/use NetworkManager for `nmcli` Wi-Fi scanning.
+- A supported audio backend (PipeWire, PulseAudio or ALSA) is required for local
+  audio. The exact desktop libraries and drivers vary by distribution.
+- On X11, supported window inspection and screen capture can use the available
+  desktop tools. On Wayland, screenshots may require a portal and window listing is
+  unsupported unless the compositor exposes a compatible API. EDITH reports
+  unavailable capabilities instead of returning fabricated screenshots.
+
+**Clone and run**
+
+Copy the HTTPS clone URL from **GitHub → Code → HTTPS**, then run:
+
+```bash
+git clone "<COPIED_HTTPS_REPOSITORY_URL>"
+cd "<CLONED_REPOSITORY_DIRECTORY>"
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+cargo build --release --manifest-path sandbox-rs/Cargo.toml
+python main.py
+```
+
+The Linux packaging workflow produces `EDITH-Linux-x64.tar.gz`; it is an archive,
+not a native Debian/RPM package.
+
+### Common permission and hardware notes
+
+- Microphone, speaker, camera, screen capture and accessibility features depend on
+  OS privacy controls and working device drivers.
+- A USB Wi-Fi adapter must be exposed by its driver to the operating system's
+  wireless subsystem. Network scans show only access points visible at scan time.
+- Hardware inventory does not guarantee that every sensor exposes a reading.
+  Missing values are returned as unavailable/N/A.
+- Linux/macOS generated-code execution is offline. Windows dependency installation
+  receives only its configured AppContainer InternetClient capability; generated
+  project execution itself remains network-restricted.
+- See [CAPABILITY_MATRIX.md](CAPABILITY_MATRIX.md) for the feature-by-feature matrix
+  and platform-specific fallbacks.
+
+## Run from source
+
+Python **3.11** and Rust stable are the recommended development toolchains. Use the
+clone and setup instructions in the Windows, macOS or Linux section above; do not
+reuse a sample machine-specific path from another computer.
 
 ## Build installers
 

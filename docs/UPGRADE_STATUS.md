@@ -1,7 +1,10 @@
-# EDITH upgrade status
+# EDITH upgrade status (historical checkpoint)
 
-All implementation remains on `ui/edith-interface`. Do not merge this branch into
-`main` until the owner has tested a pull of the branch and explicitly requests merge.
+This document records implementation stages and acceptance notes from an earlier
+upgrade cycle. Branch names, merge gates and outstanding items below are historical
+snapshots, not instructions for checking out the current project or a statement of
+current release status. For current cloning, installation and platform support, use
+[README.md](../README.md) and [TESTING.md](../TESTING.md).
 
 ## Current UI after owner feedback
 
