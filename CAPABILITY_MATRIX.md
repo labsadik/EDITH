@@ -50,8 +50,9 @@ provider failures can stop model-dependent work regardless of the desktop OS.
 
 A paid provider tier can be a sensible choice for regular use when the available
 free quota is too restrictive; paid service is still subject to provider/model rate
-limits, account budgets and availability. Gemini Live voice/audio must be tested
-separately from Powerful Brain text reasoning. This matrix describes local OS
+limits, account budgets and availability. A paid consumer chat subscription does not
+necessarily include the API credits that EDITH uses; check API billing separately.
+Gemini Live voice/audio must be tested separately from Powerful Brain text reasoning. This matrix describes local OS
 capabilities and does not certify provider capacity or model quality.
 
 
