@@ -174,10 +174,12 @@ def _is_sandbox_environment_failure(output: str) -> bool:
     )
     if any(marker in low for marker in explicit_markers):
         return True
-    return (
-        "appcontainer" in low
-        and any(marker in low for marker in ("access denied", "access is denied", "permission denied", "failed", "cannot"))
-    )
+    return any(marker in low for marker in (
+        "appcontainer access denied",
+        "appcontainer: access denied",
+        "appcontainer permission denied",
+        "appcontainer creation failed",
+    ))
 
 class RateLimitError(Exception):
     pass
@@ -542,35 +544,37 @@ def _build_project(
     sorted_files = sorted(files, key=_dep_sort_key)
 
     file_codes: dict[str, str] = {}
+    generation_failure = ""
 
     for file_info in sorted_files:
         file_path = file_info.get("path", "")
         if not file_path:
-            continue
+            generation_failure = "planner returned an empty file path"
+            break
 
         log(f"Writing {file_path}...")
-        for attempt in range(2):
-            try:
-                code = _write_file(
-                    file_info=file_info,
-                    project_description=description,
-                    all_files=files,
-                    language=language,
-                    project_dir=project_dir,
-                    already_written=file_codes,
-                )
-                file_codes[file_path] = code
-                time.sleep(0.4)
-                break
-            except RateLimitError:
-                if attempt == 0:
-                    log("Rate limit — waiting 20s...")
-                    time.sleep(20)
-                else:
-                    log(f"Rate limit retry failed for {file_path}, skipping.")
-            except Exception as e:
-                log(f"Failed to write {file_path}: {e}")
-                break
+        try:
+            code = _write_file(
+                file_info=file_info,
+                project_description=description,
+                all_files=files,
+                language=language,
+                project_dir=project_dir,
+                already_written=file_codes,
+            )
+            file_codes[file_path] = code
+            time.sleep(0.4)
+        except RateLimitError:
+            generation_failure = "LLM provider rate limit"
+            log(
+                f"Provider rate limit while writing {file_path}; stopping generation "
+                "to avoid repeated requests."
+            )
+            break
+        except Exception as e:
+            generation_failure = f"{file_path} ({type(e).__name__})"
+            log(f"Failed to write {file_path}: {type(e).__name__}")
+            break
 
     if not file_codes:
         msg = "I could not write any project files, sir. No generated code was executed."
@@ -596,7 +600,8 @@ def _build_project(
             f"Project generation incomplete: wrote and verified "
             f"{len(files) - len(missing_files)} of {len(files)} planned files. "
             f"Missing or unverified: {missing_list}. "
-            "No dependencies were installed and no generated project code was executed."
+            + (f"Generation stopped because of {generation_failure}. " if generation_failure else "")
+            + "No dependencies were installed and no generated project code was executed."
         )
         log(msg)
         if speak:

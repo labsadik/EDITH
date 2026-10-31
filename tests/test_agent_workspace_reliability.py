@@ -83,7 +83,7 @@ class DevelopmentAgentReliabilityTests(unittest.TestCase):
                 patch("actions.dev_agent.prepare_projects_dir", return_value=projects),
                 patch("core.sandbox_runner.ensure_project_venv", return_value=Path(sys.executable)),
                 patch("core.sandbox_runner.ensure_sandbox_ready"),
-                patch.object(dev_agent, "_write_file", side_effect=write_one_file),
+                patch.object(dev_agent, "_write_file", side_effect=write_one_file) as write_mock,
                 patch.object(dev_agent.time, "sleep"),
                 patch.object(dev_agent, "_install_dependencies") as install,
                 patch.object(dev_agent, "_run_project") as run_project,
@@ -93,6 +93,8 @@ class DevelopmentAgentReliabilityTests(unittest.TestCase):
 
             self.assertIn("Project generation incomplete", result)
             self.assertIn("main.py", result)
+            self.assertIn("LLM provider rate limit", result)
+            self.assertEqual(write_mock.call_count, 2)
             install.assert_not_called()
             run_project.assert_not_called()
             open_vscode.assert_not_called()
