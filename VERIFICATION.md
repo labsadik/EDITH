@@ -1,7 +1,8 @@
 # EDITH verification ledger
 
-Branch: `ui/edith-interface`. This document maps the owner's twelve acceptance
-items to evidence available in the repository. A green hosted runner verifies
+This document maps the twelve acceptance items to evidence available in the
+repository. It began as an earlier release-verification snapshot; use the root
+README for current clone and platform setup instructions. A green hosted runner verifies
 the code paths it exercises; it cannot validate the owner's display, audio
 devices, API credentials, permissions or network. Record target-device results
 in `TESTING.md` before calling this release production ready.
@@ -60,7 +61,7 @@ Additional completion gates from the staged plan:
   integrated or certified by this branch. Only documented local OS capabilities
   have been wired into the device bridge.
 
-Release status: **pending owner target-device checks**. Keep changes on
-`ui/edith-interface`; merging to `main` follows explicit owner instruction
-after those checks and resulting fixes.
+Release status: **pending target-device checks**. This ledger records evidence
+requirements, not a prescribed Git branch or merge procedure. Complete the relevant
+Windows, macOS and Linux checks on the actual target devices before claiming release readiness.
 

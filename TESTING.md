@@ -266,7 +266,7 @@ the Gemini Live model, or the sensitive-action confirmation rules.
 
 ### Automated checks
 
-Run the existing three automated commands in section 2 on ui/edith-interface.
+Run the existing automated commands in section 2 from the current default-branch checkout.
 The new tests in tests/test_task_scheduler.py cover four simultaneous independent
 jobs, worker limits, priorities, dependency barriers, queued cancellation,
 failure propagation, missing prerequisites, read-only classification, and
@@ -331,7 +331,7 @@ requesting audio hardware or connecting to Gemini/Local LLM.
 
 ### Windows visual and accessibility verification
 
-1. Run EDITH normally from the **same** `ui/edith-interface` branch. Confirm
+1. Run EDITH normally from the **same** current default-branch checkout. Confirm
    the recognizable original HUD, existing colors, title, microphone control,
    file upload, Activity Log, quick drawer, and voice controls are unchanged.
 2. Resize the window to its minimum size. Check neither side panel overlaps
@@ -393,7 +393,7 @@ your phone and Windows networking function together.
 
 ### Windows PC and phone testing (trusted LAN only)
 
-1. Update `ui/edith-interface`, activate the same Python environment used
+1. Update the current default branch, activate the same Python environment used
    in Phase 1, and start EDITH. Do not modify `config/api_keys.json` or
    re-enter previously saved credentials just to test this phase.
 2. Connect the phone to the PC's **trusted local Wi-Fi/LAN**, open Remote
@@ -441,8 +441,8 @@ internet access is not guaranteed or implicitly enabled.
 ## Phase 6 — Agent execution reliability release gate
 
 **Do not mark Phase 6 complete based only on CI.** Complete the on-device
-checks below, then approve Phase 6 explicitly. Stay on `ui/edith-interface`;
-do not merge into main or create a new branch. Preserve both Gemini Live and
+checks below, then approve Phase 6 explicitly. Use the current default-branch checkout for these checks; do not mix unrelated
+feature work into the test run. Preserve both Gemini Live and
 the existing local Ollama/OpenAI-compatible agent settings.
 
 ### Automated checks
@@ -463,7 +463,7 @@ These are mocked/local tests; they cannot confirm actual Windows GUI results.
 
 ### Windows and live-provider verification
 
-1. Update only `ui/edith-interface`, install dependencies into the selected
+1. Update the current default branch, install dependencies into the selected
    Python environment, and run `python -m core.startup_check`.
 2. Run `python main.py`. Confirm the **original** EDITH UI, name, icon,
    microphone, text input, settings and desktop shortcut all work as before.

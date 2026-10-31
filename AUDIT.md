@@ -1,6 +1,6 @@
 # Repository audit — pre-implementation baseline
 
-Baseline: `a21c4b8ba59b7c96088349db2358a14d121fea34`, branch `ui/edith-interface`.
+Baseline: `a21c4b8ba59b7c96088349db2358a14d121fea34`, captured during an earlier UI development cycle.
 Scope: all 100 committed files (1,227,566 local UTF-8 bytes plus the video). Every
 committed text file was read in full by the audit scanner, Python was parsed with
 AST, HTML/JS contracts were inventoried, and entry/dispatch/UI/platform paths were
