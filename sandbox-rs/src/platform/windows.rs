@@ -265,16 +265,16 @@ mod path_tests {
     #[test]
     fn program_files_on_nondefault_drives_are_protected_from_acl_updates() {
         assert!(is_windows_default_readonly_path(Path::new(
-            r"D:\\Program Files\\Git\\cmd"
+            r"D:\Program Files\Git\cmd"
         )));
         assert!(is_windows_default_readonly_path(Path::new(
-            r"\\\\?\\D:\\Program Files (x86)\\Tool\\bin"
+            r"\\?\D:\Program Files (x86)\Tool\bin"
         )));
         assert!(!is_windows_default_readonly_path(Path::new(
-            r"D:\\Program FilesBackup\\tool"
+            r"D:\Program FilesBackup\tool"
         )));
         assert!(!is_windows_default_readonly_path(Path::new(
-            r"D:\\Development\\Program Files\\tool"
+            r"D:\Development\Program Files\tool"
         )));
     }
 
