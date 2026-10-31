@@ -37,6 +37,13 @@ consumer chat subscription does not necessarily include API credits for EDITH; c
 the provider's API billing and quota separately. Gemini Live voice/audio is a separate
 service path and must be tested separately.
 
+For a local-first configuration, Powerful Brain can run on the computer through
+Ollama or an OpenAI-compatible local server, while speech can use the separate local
+faster-whisper/Vosk STT and Kokoro TTS engines. The current screen/webcam vision route
+still uses Gemini Live; a local vision-capable model needs a separate image-input
+adapter before EDITH can route those frames to it. See
+[LOCAL_LLM_GUIDE.md](LOCAL_LLM_GUIDE.md) for hardware and multimodal deployment options.
+
 ## Authenticated smart-home integration
 
 Create a long-lived access token in the user's own Home Assistant profile, then run:
