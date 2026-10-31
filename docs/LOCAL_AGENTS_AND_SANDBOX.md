@@ -26,9 +26,11 @@ retrieved project context all consume context capacity.
 For frequent agent and code-generation work, use a model with reliable tool calling and
 choose a paid provider tier if the free quota cannot sustain the workload. Free and paid
 plans alike can have per-minute request/token limits, spending caps and outages; paid does
-not mean unlimited. HTTP 429 or quota errors are provider-side capacity failures, not
-proof that a generated project contains a code defect. EDITH's Dev Agent stops safely
-on provider rate-limit errors instead of continuing with an incomplete set of files.
+not mean unlimited. A paid consumer chat subscription does not necessarily include
+API credits for EDITH; verify API billing and quota separately. HTTP 429 or quota errors
+are provider-side capacity failures, not proof that a generated project contains a
+code defect. EDITH's Dev Agent stops safely on provider rate-limit errors instead of
+continuing with an incomplete set of files.
 
 This model dependency does not weaken the local security boundary: the model cannot
 bypass tool policy, permission checks, DevSecOps review or the Rust sandbox. Gemini Live
