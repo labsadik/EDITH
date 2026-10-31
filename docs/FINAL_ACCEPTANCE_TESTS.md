@@ -73,7 +73,9 @@ requests-per-minute, tokens-per-minute, context and spending limits. A paid plan
 may provide capacity better suited to regular use than a restrictive free quota, but
 it does not remove model-specific limits, spending caps or provider outages. An HTTP
 429/quota response must be recorded as a provider-capacity failure, not treated as a
-code failure or an EDITH action result. Never share provider credentials in logs.
+code failure or an EDITH action result. Never share provider credentials in logs. A
+paid consumer chat subscription does not necessarily include API credits used by
+EDITH; verify the actual API account billing and quota separately.
 
 Gemini Live is a separate realtime voice/audio dependency. Passing Powerful Brain
 text tests does not replace the Gemini Live voice check or the real microphone/speaker
