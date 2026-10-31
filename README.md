@@ -63,6 +63,8 @@ During EDITH's implementation and follow-up testing, we observed that fixing app
 4. For frequent or multi-step use, a paid API plan or tier with capacity appropriate to the workload is usually a better operational choice than relying on a restrictive free quota. A paid plan is **not unlimited**: model-specific rate limits, spending limits, account restrictions and temporary provider outages can still apply.
 5. Test a normal question, a multi-step plan and a representative tool-assisted task. Re-run the test after changing the provider, model, endpoint or credential. Keep API keys private.
 
+**API billing note:** a paid consumer chat subscription does not necessarily include API credits for EDITH. EDITH sends requests through the selected provider's API account, so check API billing, credits and quotas separately.
+
 ### What a stronger LLM can—and cannot—change
 
 A stronger and reliably connected model can improve interpretation, planning, code quality, debugging suggestions and the selection/sequence of registered tools. It cannot bypass EDITH's permission checks or Rust sandbox, grant missing operating-system permissions, install a missing driver, repair an unavailable external service, or prove that a tool action succeeded without the tool's result.
