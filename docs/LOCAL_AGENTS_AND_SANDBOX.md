@@ -36,6 +36,33 @@ This model dependency does not weaken the local security boundary: the model can
 bypass tool policy, permission checks, DevSecOps review or the Rust sandbox. Gemini Live
 voice/audio remains separate and must be tested independently from Powerful Brain.
 
+### Local model, offline speech and vision boundaries
+
+The Powerful Brain text profile can point to a local Ollama server or a local
+OpenAI-compatible server. This is a genuine local text-inference path when the endpoint
+is bound to the user's machine and the requested model is installed. Select a model
+with the tool/function-calling support required by the specialist-agent workflows;
+not all local chat models can return compatible tool calls.
+
+The repository also includes independent offline speech components: faster-whisper
+or Vosk for local speech-to-text, and Kokoro for local text-to-speech after their
+model files are downloaded and cached. These components can be combined with a local
+Powerful Brain model for a local-oriented speech workflow. They are not a replacement
+for the current Gemini Live realtime conversation transport, which still uses the
+Gemini API.
+
+Local vision-capable models are available in the wider local-model ecosystem, but
+EDITH's current screen/webcam analysis code in `actions/screen_processor.py` connects
+to Gemini Live and sends image input through that session. The Powerful Brain text
+router does not currently forward screenshots or webcam frames to a local vision
+model. Local image analysis therefore requires a dedicated image-input adapter and
+an end-to-end test; selecting Ollama alone does not enable it.
+
+Use [LOCAL_LLM_GUIDE.md](LOCAL_LLM_GUIDE.md) for hardware, setup and hybrid deployment
+recommendations. For GPU inference, check the backend's supported GPU/driver matrix,
+the selected model's memory requirements and the actual offload/context reported by
+the local server. Long contexts and parallel agent requests increase memory use.
+
 Built-in agents are versioned in `agents/manifest.json`. Ask EDITH **"list agents and versions"** to see their active state. `agent_manager` can also list, enable or disable a specialist. Local toggles are stored in `config/agents.json`.
 
 | Agent | Initial version | Responsibility |
