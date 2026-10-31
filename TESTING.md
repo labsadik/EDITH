@@ -142,6 +142,7 @@ or access tokens in test output.
 Gemini Live is checked separately with **TEST KEY** because it supplies the live
 voice/audio session; a successful Powerful Brain text-model test does not certify
 the microphone, speaker or Gemini Live connection.
+
 ### Native glass appearance check
 
 1. In Preferences choose **System**. Switch the OS between Light and Dark. Within two seconds, verify the header, both side panels, metric cards, Activity Log, input, existing log text and popups switch together. The center reference video should continue playing on its dark stage.
