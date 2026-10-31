@@ -11,8 +11,10 @@ and agent orchestration must be paired with a working provider connection, valid
 credential, a model capable of the required reasoning/tool calls, sufficient context
 and output-token budgets, and available provider quota. Free quotas can be restrictive;
 a paid tier may suit repeated agent/code tasks better, but paid access is still subject
-to provider rate limits, model caps, budgets and outages. This is an operational
-requirement, not a guarantee that a more expensive model will make every action succeed.
+to provider rate limits, model caps, budgets and outages. A paid consumer chat
+subscription does not necessarily include API credits for EDITH; the API account must
+be billed and monitored separately. This is an operational requirement, not a guarantee
+that a more expensive model will make every action succeed.
 Gemini Live audio and Powerful Brain text reasoning remain separate paths.
 
 | Step | State | Evidence / next gate |
