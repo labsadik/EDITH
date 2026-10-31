@@ -97,6 +97,12 @@ The GitHub Actions Quality checks workflow runs the repository checks on support
 6. Run **TEST KEY**. The test should open a Gemini Live session, send a short prompt, wait for the first actual model output, and show the time to first response. A successful handshake without model output must not be reported as a passed test.
 7. Save/reconnect only if the Gemini model-response test succeeds. The local status check must not overwrite existing local-LLM settings.
 
+
+8. Confirm that the main EDITH UI opens, text input works, the microphone can be enabled/muted, the interrupt control responds, and the Activity Log remains visible.
+9. Inspect the main controls and file cards: icons should render as line icons rather than emoji placeholders.
+10. Close and restart EDITH normally once to check that the local configuration remains available.
+
+
 ### Model quality, token capacity and provider reliability
 
 The configured model is a major quality dependency for planning, research synthesis,
@@ -124,6 +130,8 @@ quotas. Paid access is not unlimited: requests-per-minute, tokens-per-minute,
 model-specific caps, spending limits and provider outages can still affect service.
 Verify the current limits in the provider's own account dashboard.
 
+**API billing note:** a paid consumer chat subscription does not necessarily include API credits for EDITH. EDITH uses the selected provider's API account, so check API billing, credits and quota separately.
+
 A successful provider check should receive an actual model response. Also test a
 multi-step plan and a representative tool-assisted task. An HTTP 200 or a reachable
 endpoint alone is not proof that the selected model can complete EDITH's workflow.
@@ -134,11 +142,6 @@ or access tokens in test output.
 Gemini Live is checked separately with **TEST KEY** because it supplies the live
 voice/audio session; a successful Powerful Brain text-model test does not certify
 the microphone, speaker or Gemini Live connection.
-
-8. Confirm that the main EDITH UI opens, text input works, the microphone can be enabled/muted, the interrupt control responds, and the Activity Log remains visible.
-9. Inspect the main controls and file cards: icons should render as line icons rather than emoji placeholders.
-10. Close and restart EDITH normally once to check that the local configuration remains available.
-
 ### Native glass appearance check
 
 1. In Preferences choose **System**. Switch the OS between Light and Dark. Within two seconds, verify the header, both side panels, metric cards, Activity Log, input, existing log text and popups switch together. The center reference video should continue playing on its dark stage.
