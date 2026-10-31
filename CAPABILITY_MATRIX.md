@@ -56,4 +56,22 @@ Gemini Live voice/audio must be tested separately from Powerful Brain text reaso
 This matrix describes local OS capabilities and does not certify provider capacity or
 model quality.
 
+## Local model, speech and vision paths
+
+| Capability | Current EDITH path | Local-use status / limit |
+| --- | --- | --- |
+| Powerful Brain text reasoning | Ollama native chat API or OpenAI-compatible provider endpoint | Local text inference is supported when the local server/model is running and supports the request/tool-call format. |
+| Local speech-to-text | faster-whisper or Vosk | Offline local STT is available after the selected model/language files are installed or cached. |
+| Local text-to-speech | Kokoro | Offline local TTS is available after its voice model is downloaded and cached. |
+| Network TTS | Edge TTS or ElevenLabs | Requires the relevant network service; ElevenLabs also needs its API credential. |
+| Realtime voice conversation | Gemini Live API | Current integrated realtime voice transport; configuring local Powerful Brain does not replace it. |
+| Screen/webcam vision | `actions/screen_processor.py` → Gemini Live API | Current EDITH image-analysis path is Gemini-based. Local vision models exist, but image input is not yet routed through the Powerful Brain local text-provider setting. |
+
+Local inference performance depends on model size/quantization, GPU VRAM, system or
+unified memory, context length, concurrency, CPU and driver/backend support. A larger
+context or multiple parallel requests needs additional memory. Use the local LLM guide
+for setup and check the backend's current hardware support before selecting a model.
+This table distinguishes available local components from a fully local multimodal
+assistant; it does not claim that every image/audio route is local.
+
 
