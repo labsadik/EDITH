@@ -86,14 +86,19 @@ class SandboxRunnerTests(unittest.TestCase):
     def test_missing_rust_sandbox_never_falls_back_to_host_shell(self):
         with tempfile.TemporaryDirectory() as folder:
             workspace = Path(folder)
+            marker = workspace / "host-fallback-must-not-run.txt"
+            command = f'echo HOST_FALLBACK_RAN > "{marker}"'
             with patch.object(
                 sandbox_runner, "ensure_sandbox_ready",
                 side_effect=sandbox_runner.SandboxUnavailable("sandbox unavailable"),
-            ), patch.object(sandbox_runner.subprocess, "run") as run:
+            ):
                 result = sandbox_runner.run_project_command(
-                    "python main.py", workspace=workspace, timeout=10
+                    command, workspace=workspace, timeout=10
                 )
-            run.assert_not_called()
+            # Observe the side effect instead of mocking subprocess.run globally:
+            # unrelated Qt/platform tests may legitimately start a PowerShell
+            # hardware probe on another thread during the full test suite.
+            self.assertFalse(marker.exists(), "Host-shell fallback executed unexpectedly.")
             self.assertIn("host execution was not attempted", result)
             self.assertIn("sandbox unavailable", result)
 
