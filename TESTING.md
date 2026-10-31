@@ -142,6 +142,27 @@ Gemini Live is checked separately with **TEST KEY** because it supplies the live
 voice/audio session; a successful Powerful Brain text-model test does not certify
 the microphone, speaker or Gemini Live connection.
 
+### Optional local LLM and speech checks
+
+Run this section only when a local model or local speech engine is configured.
+
+1. Start Ollama or the chosen OpenAI-compatible local server. Confirm the configured
+   endpoint is local and that the selected model is available.
+2. Run **TEST LOCAL LLM** and verify an actual response, not just a reachable HTTP
+   port. Then test a multi-step plan and a harmless tool/function call. Some chat
+   models do not support the tool-call schema EDITH needs.
+3. Observe model loading, RAM/VRAM use and response time. Larger models and longer
+   context windows require more memory; use a quantized/smaller model or a hosted
+   provider if the local device cannot run it reliably.
+4. If you use local Whisper/Vosk/Kokoro, install their optional dependencies and
+   model files separately, then test the microphone/speaker path. They do not
+   automatically replace EDITH's Gemini Live full-duplex session.
+5. Screen/camera image analysis currently uses Gemini Live. Do not count local
+   screen/camera vision as passed unless a future local VLM image adapter is installed
+   and separately tested.
+
+See [docs/LOCAL_LLM_VISION_VOICE.md](docs/LOCAL_LLM_VISION_VOICE.md).
+
 ### Native glass appearance check
 
 1. In Preferences choose **System**. Switch the OS between Light and Dark. Within two seconds, verify the header, both side panels, metric cards, Activity Log, input, existing log text and popups switch together. The center reference video should continue playing on its dark stage.
